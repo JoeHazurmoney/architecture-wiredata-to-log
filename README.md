@@ -68,11 +68,12 @@ Start with [docs/architecture.md](docs/architecture.md).
 ## Try it
 
 ```bash
-pip install pytest && python3 -m pytest          # 64 tests, no root needed
+pip install pytest && python3 -m pytest          # 90 tests, no root needed
 
 sudo lab/run-lab.sh                               # full path in network namespaces
 sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly
 sudo lab/run-lab.sh --receiver-outage             # receiver stopped mid-run, archive replay fills it
+sudo lab/run-lab.sh --receiver-crash              # receiver killed mid-run: nothing lost
 ```
 
 The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `python3`.

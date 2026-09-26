@@ -7,12 +7,15 @@ All receiver output about itself is in the SIEM: `index=wd2l sourcetype=wd2l:hea
 
 | `type` | When | Key fields |
 |---|---|---|
-| `gap` | Events declared lost | `stream`, `first_seq`, `last_seq`, `count` |
+| `gap` | Events declared lost | `stream`, `first_seq`, `last_seq`, `count`, `reason` (below) |
 | `heartbeat_stale` | No heartbeat for `--hb-timeout` s | `age_s` |
 | `heartbeat_restored` | Heartbeats back | |
 | `stream_start` | A sender run seen for the first time (the sender restarted) | `stream` |
 | `stream_end` | Sender shut down cleanly (final heartbeat) | `stream`, `last_seq`, `sender` counters |
-| `stream_lost` | A stream went quiet without a clean shutdown | `stream`, `last_seq`, `idle_s` |
+| `stream_lost` | A stream went quiet without a clean shutdown | `stream`, `last_seq`, `idle_s`, `replaced_by` (if the next run already started) |
+| `stream_missing` | A sender run never reached Enclave 2 (needs sender `--state`) | `stream`, `boot`, `last_seq`; or `first_boot`, `last_boot`, `runs` when even the stream id is unknown |
+| `sender_boot_reset` | The sender's restart count went down (its state file was lost or replaced) | `boot`, `previous_boot` |
+| `stream_evicted` | Over 1,000 streams tracked: one with open gaps was dropped from tracking | `stream`, `open_gap_events`, `gaps` |
 | `health` | Every 60 s | counters below |
 
 `health` counters are cumulative since the receiver started:
@@ -21,6 +24,8 @@ All receiver output about itself is in the SIEM: `index=wd2l sourcetype=wd2l:hea
 |---|---|---|
 | `events_delivered` | Events handed to the SIEM (or file) | growing |
 | `gap_events` / `open_gap_events` | Events declared lost / still missing (includes earlier runs, from the state file) | 0 |
+| `uncommitted_at_start` | Events the last run handed to the SIEM output that were not confirmed before it stopped | 0 |
+| `output_dropped` | Events the output gave up on (memory queue or spool full) | 0 |
 | `late_fills` | Gaps filled later (archive replay) | — |
 | `duplicates` | Copies ignored | any (normal during replay) |
 | `heartbeats`, `heartbeat_age_s`, `heartbeat_stale` | Sender liveness | age ≤ ~1 s |
@@ -28,20 +33,30 @@ All receiver output about itself is in the SIEM: `index=wd2l sourcetype=wd2l:hea
 | `bad_frames`, `bad_events`, `digest_mismatch`, `bad_reasons` | Corrupt or malformed input | 0 |
 | `kernel_drops` | Packets the kernel dropped before the receiver read them | 0 |
 | `reasm_expired`, `reasm_evicted`, `event_too_big` | Split events that never completed | 0 |
-| `sender_drops`, `sender_truncated`, `sender_bad_input` | From the sender's heartbeat | 0 (truncated: expected if you have huge events) |
-| `hec_events_sent`, `hec_spool_files`, `hec_posts_failed`, `hec_rejected_batches` | SIEM delivery | spool 0, rejected 0 |
-| `streams` | Per sender run: `next_seq`, `known_seq`, `open_gap_events`, `sender` counters | |
+| `sender_drops`, `sender_truncated`, `sender_bad_input`, `sender_unread_bytes` | From the sender's heartbeat | 0 (truncated: expected if you have huge events) |
+| `hec_events_sent`, `hec_spool_files`, `hec_posts_failed`, `hec_rejected_events`, `hec_queue_overflow_events` | SIEM delivery | spool 0, rejected 0, overflow 0 |
+| `streams`, `retired_streams` | Per sender run: `next_seq`, `known_seq`, `open_gap_events`, `boot`, `sender` counters. Finished runs with nothing open are retired after `--stream-retention` (7 days) | |
+
+### Gap reasons
+
+| `reason` | Meaning | What to do |
+|---|---|---|
+| `not_received` | The packets never arrived on the capture NIC | Follow the steps below |
+| `receiver_restart` | Unresolved when the receiver last stopped: not received yet, or received but not confirmed by the SIEM before a crash | Replay the archive |
+| `output_dropped` | Received, but the receiver's output gave up (memory queue or spool disk full) | Fix the SIEM or disk, then replay the archive |
 
 ## Alert: events lost (`type=gap`)
 
-1. **Was the receiver down or restarted?** `journalctl -u wd2l-receiver` around the gap time.
+1. **Check `reason`.** `receiver_restart` and `output_dropped` are recovered by **replay**
+   (below). For `not_received`, go on.
+2. **Was the receiver down or restarted?** `journalctl -u wd2l-receiver` around the gap time.
    If yes, the packets are probably in the archive. **Replay** (below).
-2. **Kernel drops?** `kernel_drops` rising means the host can't keep up. Check CPU and the NIC
+3. **Kernel drops?** `kernel_drops` rising means the host can't keep up. Check CPU and the NIC
    ring size. Replay may still recover them, because tcpdump has its own buffer.
-3. **Heartbeat stale at the same time?** Then the link (cable, network tap, fiber) or Enclave 1
+4. **Heartbeat stale at the same time?** Then the link (cable, network tap, fiber) or Enclave 1
    was down. The packets never arrived and replay won't help. Ask the Enclave 1 team to re-send that
    time window (below).
-4. **Isolated single-event gaps with a live heartbeat** = packet loss on the path. Check optics
+5. **Isolated single-event gaps with a live heartbeat** = packet loss on the path. Check optics
    and interface error counters on the log server NIC, tap ports and receiver NIC.
 
 ## Replay from the capture archive
@@ -64,9 +79,11 @@ It prints a summary. `late_fills` is how many gap events it recovered; `open_gap
 what's still missing. tcpdump keeps capturing while the receiver is stopped, so the stop itself
 loses nothing. The restarted receiver reports the stop as a gap, and the next replay fills it.
 
-Only after a **crash** (not a clean stop) a replay can re-send up to about one second of events
-that had already reached the SIEM, because the state file is saved every second. To remove those
-duplicates in searches: `| dedup wd2l_stream wd2l_seq`.
+After a **crash** (not a clean stop) a replay can re-send some events that had already reached
+the SIEM: the ones that arrived after the last state save (it is saved every second) and the
+ones the SIEM accepted just before the crash. That is by design (duplicates over loss). To remove
+them in searches: `| dedup wd2l_stream wd2l_seq`. Nothing is lost: events that were still in
+memory are reported as `reason=receiver_restart` gaps at startup, and the replay fills them.
 
 ## Re-sending from Enclave 1
 
@@ -78,15 +95,20 @@ and push it through the aggregator again. It arrives as normal new events with n
 ## Routine
 
 * **Sender restarts** start a new stream. You'll see `stream_end` (clean) or `stream_lost` (crash)
-  for the old one, and `stream_start` for the new one. Not a problem.
+  for the old one, and `stream_start` for the new one. Not a problem. With `--state` the new run
+  names the old one, so a lost tail shows up as a `gap` and a run that never arrived as
+  `stream_missing`. **Don't delete the sender's state file** (`/var/lib/wd2l/sender.json`):
+  the restart count starts over and the receiver reports `sender_boot_reset`.
 * **Receiver restarts** are safe as long as `--state` is kept. **Don't delete the state file**:
   without it the receiver reports everything before the first event it sees in the current stream
   as missing.
 * **Disk**: watch `/var/lib/wd2l/pcap` (hourly files, 7-day prune) and `/var/lib/wd2l/spool`
   (only grows while the SIEM is unreachable; capped at 10 GB).
-* **Rejected HEC batches** (`hec_rejected_batches` > 0): look in `/var/lib/wd2l/spool/rejected/`.
-  Usually an index that doesn't exist in Enclave 2. Fix the index, then move the files back
-  into `/var/lib/wd2l/spool/` to resend them.
+* **Rejected HEC events** (`hec_rejected_events` > 0): look in `/var/lib/wd2l/spool/rejected/`.
+  When the SIEM refuses a batch, the receiver re-sends it one event at a time, so these files
+  hold only the events the SIEM refused. Usually an index that doesn't exist in Enclave 2. Fix
+  the index, then move the files back into `/var/lib/wd2l/spool/` to resend them. The re-send
+  of a refused batch can duplicate events the SIEM had already taken from it.
 
 ## Lab
 
@@ -96,6 +118,7 @@ and push it through the aggregator again. It arrives as normal new events with n
 sudo lab/run-lab.sh                     # clean run: 0 gaps, byte-for-byte match
 sudo lab/run-lab.sh --loss 1            # 1% wire loss: every lost event reported exactly
 sudo lab/run-lab.sh --receiver-outage   # stop the receiver mid-run, then replay: nothing lost
+sudo lab/run-lab.sh --receiver-crash    # kill it instead: nothing lost, a few duplicates
 sudo lab/run-lab.sh --events 25000 --eps 5000
 ```
 

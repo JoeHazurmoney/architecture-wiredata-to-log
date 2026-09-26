@@ -45,12 +45,29 @@ One piece, JSON, sent every second and once more on clean shutdown:
 
 ```json
 {"events_sent":5001,"datagrams_sent":8673,"sender_drops":0,"truncated":1,"bad_input":0,
- "sender_time":1790360018.66,"uptime":12.3,"final":true}
+ "send_errors":0,"shutdown_unread_bytes":0,"sender_time":1790360018.66,"uptime":12.3,
+ "boot":42,"prev_stream":9140175346201236511,"prev_last_seq":1837204,"final":true}
 ```
 
 `seq` in the header is the last event number sent. That's what lets the receiver notice events
 lost at the very end of a burst, when nothing newer arrives to reveal the hole. `final` is present
-only on the shutdown heartbeat.
+only on the shutdown heartbeat, and is always the last frame of a stream.
+
+`shutdown_unread_bytes` is input the log aggregator had already handed over (TCP acknowledged)
+that the sender could not read before it stopped. It is normally 0.
+
+`boot`, `prev_stream` and `prev_last_seq` are present only when the sender runs with `--state`:
+
+* `boot` counts sender runs (1, 2, 3, …). It lives in the sender's state file.
+* `prev_stream` / `prev_last_seq` name the run before this one and the last event number it
+  recorded (saved at every heartbeat, so after a crash it can be up to one heartbeat behind).
+
+## Why the sequence number never resets
+
+`seq` is 64 bits and restarts at 1 only with a new `stream_id`, i.e. when the sender restarts. At
+1,000 events/s it would take about 584 million years to run out, so there is no wraparound
+handling. The pair (`stream_id`, `seq`) identifies an event. Streams are linked into a chain by
+`boot` / `prev_stream`, which lets the receiver notice a run it never saw at all.
 
 ## Receiver rules
 
@@ -64,3 +81,13 @@ only on the shutdown heartbeat.
   event, or a heartbeat's `seq`) shows it should exist.
 * A number already delivered is a duplicate and is dropped. A number inside a reported gap fills
   that gap (this is how archive replay works).
+* An event counts as delivered in the saved state only once the output has made it durable (the
+  SIEM accepted it, it is in the on-disk spool, or it is fsync'd to a file). After a crash, events
+  handed over but not yet durable are reported as gaps (`reason=receiver_restart`) and can be
+  filled by replay.
+* Stream links (when present): the previous stream's known last number is raised to
+  `prev_last_seq`, so a lost tail becomes a gap. A `prev_stream` the receiver has never seen is
+  reported as `stream_missing` and its events 1..`prev_last_seq` as a gap. A jump in `boot` of
+  more than one reports the runs in between as `stream_missing`; a lower `boot` is reported as
+  `sender_boot_reset`. A brand-new receiver (no state) does not report history from before it
+  started.

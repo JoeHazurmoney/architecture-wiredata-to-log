@@ -20,6 +20,9 @@ ExecStart=/usr/bin/python3 -m wd2l.receiver \
     --health-index wd2l
 Restart=always
 RestartSec=2
+# On stop: final health record, up to 15 s for queued events to reach the SIEM (the rest go
+# to the spool), then the state file is saved.
+TimeoutStopSec=60
 
 # Raw socket for capture, nothing else.
 AmbientCapabilities=CAP_NET_RAW
