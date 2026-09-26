@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wd2l"
+version = "0.1.0"
+description = "One-way log transfer: frame logs into UDP, rebuild them from tapped packets"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+wd2l-sender = "wd2l.sender:main"
+wd2l-receiver = "wd2l.receiver:main"
+
+[tool.setuptools]
+packages = ["wd2l"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]

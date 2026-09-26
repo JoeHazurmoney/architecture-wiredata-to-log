@@ -1,0 +1,36 @@
+[Unit]
+Description=wd2l sender: log aggregator JSON lines in, one-way UDP frames out
+After=network-online.target wd2l-egress-nic.service
+Wants=network-online.target
+Requires=wd2l-egress-nic.service
+
+[Service]
+User=wd2l
+Group=wd2l
+Environment=PYTHONPATH=/opt/wd2l
+ExecStart=/usr/bin/python3 -m wd2l.sender \
+    --listen 127.0.0.1:10070 \
+    --bind 10.255.255.1 \
+    --dst 10.255.255.2:5514 \
+    --max-datagram 1472 \
+    --auth-token-file /etc/wd2l/aggregator.token
+# Final heartbeat (marks the stream as cleanly ended) is sent on SIGTERM.
+KillSignal=SIGTERM
+Restart=always
+RestartSec=2
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+CapabilityBoundingSet=
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

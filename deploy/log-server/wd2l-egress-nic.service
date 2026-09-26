@@ -1,0 +1,12 @@
+[Unit]
+Description=wd2l: configure the one-way egress NIC (static ARP, no IPv6)
+After=network-pre.target
+Before=network.target wd2l-sender.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/wd2l/deploy/log-server/egress-nic.sh
+
+[Install]
+WantedBy=multi-user.target

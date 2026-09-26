@@ -1,0 +1,84 @@
+# Notes for the accreditation package
+
+Material for a security review of this transfer: the one-way argument, what each side trusts, and
+the risks that remain. This is an engineering write-up, not a formal assessment.
+
+## The transfer
+
+* **Direction:** Enclave 1 → Enclave 2 only. Content: log events (text) and heartbeat counters.
+* **Enclave 1:** central log server (log aggregator + `wd2l-sender`), black-hole switch port, network tap.
+* **Enclave 2:** receiver host (tcpdump + `wd2l-receiver`), SIEM.
+* **Link between them:** one fiber strand from the network tap's monitor port TX to the receiver NIC's
+  RX. The other strand is not connected.
+
+## Why data can't flow from Enclave 2 to Enclave 1
+
+1. **Physical (the control that matters).** There is no transmit path from Enclave 2. The
+   receiver NIC's TX is not connected to anything. This is the same method already accepted for
+   another enclave.
+2. **Even if the strand were connected**, anything sent from Enclave 2 would reach the tap's **monitor port**.
+   A monitor port is an output and isn't bridged to the tap's inline ports. Confirm this for your model
+   and configuration.
+3. **Receiver host configuration:** capture NIC has no IP address, ARP is off, IPv6 is off,
+   nftables drops all egress on that NIC (kernel 5.16+). The receiver process opens a raw socket
+   and only reads from it.
+4. **Enclave 1** also drops everything arriving on the black-hole port (switch ACLs) and on the log
+   server's egress NIC (nftables).
+
+Items 2–4 are defense in depth. The one-way property doesn't depend on them.
+
+**Suggested physical check:** with the fiber disconnected at the tap end, put a light meter on
+the strand from the receiver. There should be no light (or better, no strand).
+
+## What Enclave 2 trusts
+
+Nothing that arrives on the wire. The receiver:
+
+* accepts only IPv4/UDP frames to the configured IP and port. Everything else is counted and dropped;
+* checks every packet (CRC-32, header fields, size limits) and every rebuilt event (length and
+  SHA-256) and parses one fixed JSON shape. Anything else is counted and dropped;
+* caps event size (256 KB), memory for part-built events (64 MB), number of tracked streams and gap
+  ranges;
+* has been fuzz-tested with thousands of random and mutated packets (`tests/`);
+* uses only the Python standard library (no third-party packages to review or patch);
+* runs as an unprivileged user with only `CAP_NET_RAW`, under systemd sandboxing
+  (`ProtectSystem=strict`, `NoNewPrivileges`, restricted address families).
+
+## Integrity and authenticity
+
+* CRC-32 per packet and SHA-256 per event detect **accidental** corruption.
+* They don't prove **who** sent the data. Anyone who can put frames on the Enclave 1 cable could
+  inject fake log events. Enclave 1 physical and administrative controls on the log server, the
+  cable and the network tap cover this today.
+* If reviewers want authenticity, add an HMAC-SHA256 per event with a key shared by the sender and
+  the receiver. It's a small change to `wd2l/wire.py`. The key would need a managed, one-way
+  distribution process.
+
+## Completeness
+
+Every event the sender numbers is either delivered or reported as lost. It's never silently
+missing. Shown in the lab with 1% injected loss: every lost event was reported by exact sequence
+number, with no false reports. Loss isn't recovered automatically (nothing can come back). The
+operator re-sends from Enclave 1 (`docs/operations.md`).
+
+The one exception: events the log aggregator handed to the sender but that the sender hadn't numbered yet
+when it crashed (well under a second of data). The aggregator's persistent queue reduces this but can't
+fully close it, because the sender acknowledges data at the TCP level before sending it.
+
+## Residual risks
+
+| Risk | Notes / mitigation |
+|---|---|
+| Malicious content inside log text (e.g. strings aimed at analyst tools, log injection) | Same as any log ingest. The SIEM stores it as data. Keep the Enclave 2 SIEM patched. Content filtering is out of scope |
+| Enclave 1 compromise injects fake events | Enclave 1 controls today. Optional HMAC (above) |
+| Loss is detected but not recovered | By design (requirement was detect and report). Operator re-send procedure |
+| Misconfigured tap filter forwards other Enclave 1 traffic | Enclave 2 still only accepts the log flow and counts everything else (`other_packets` alert). The switch-port isolation means little else is on that cable to begin with |
+| Receiver host compromise | It has no path back to Enclave 1. Treat it like any other Enclave 2 server |
+| Parser bugs | Small code base, standard library only, fuzz tests. Runs unprivileged and sandboxed |
+
+## If a listed cross-domain solution is required
+
+This design relies on your organization's existing acceptance of the one-strand fiber method. If
+approvers require an evaluated or listed cross-domain product for this data flow, a commercial data
+diode with a syslog/UDP proxy can replace the tap-to-receiver segment. The sender's wire format
+and the receiver's gap reporting still work over such a diode.

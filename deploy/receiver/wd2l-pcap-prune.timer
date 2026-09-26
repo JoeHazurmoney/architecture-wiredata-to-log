@@ -1,0 +1,9 @@
+[Unit]
+Description=wd2l: hourly capture archive cleanup
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
