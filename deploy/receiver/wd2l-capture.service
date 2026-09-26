@@ -1,0 +1,16 @@
+[Unit]
+Description=wd2l: raw packet archive of the tapped log stream (hourly pcap files)
+After=wd2l-capture-nic.service
+Requires=wd2l-capture-nic.service
+
+[Service]
+# Archive everything that arrives, not just the log flow, so unexpected traffic can be examined.
+# -U writes each packet as it arrives, so a replay can read the current hour's file.
+# Old files are removed by wd2l-pcap-prune.timer (tcpdump's -W with -G stops, it does not rotate).
+ExecStart=/usr/sbin/tcpdump -i ens256 -p -n -U -s 0 -G 3600 -Z wd2l \
+    -w /var/lib/wd2l/pcap/cap-%%Y%%m%%d%%H%%M%%S.pcap
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=wd2l: configure the receive-only capture NIC
+After=network-pre.target
+Before=wd2l-capture.service wd2l-receiver.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/wd2l/deploy/receiver/capture-nic.sh
+
+[Install]
+WantedBy=multi-user.target

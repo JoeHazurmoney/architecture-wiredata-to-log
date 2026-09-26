@@ -1,0 +1,40 @@
+[Unit]
+Description=wd2l receiver: rebuild logs from the tapped stream and send them to the SIEM
+After=wd2l-capture-nic.service network-online.target
+Requires=wd2l-capture-nic.service
+Wants=network-online.target
+
+[Service]
+User=wd2l
+Group=wd2l
+Environment=PYTHONPATH=/opt/wd2l
+ExecStart=/usr/bin/python3 -m wd2l.receiver \
+    --live ens256 \
+    --dst-ip 10.255.255.2 --dst-port 5514 --src-ip 10.255.255.1 \
+    --state /var/lib/wd2l/state.json \
+    --spool-dir /var/lib/wd2l/spool \
+    --hec-url https://siem.enclave2.example:8088 \
+    --hec-token-file /etc/wd2l/hec.token \
+    --hec-ca /etc/wd2l/siem-ca.pem \
+    --default-index enclave1 \
+    --health-index wd2l
+Restart=always
+RestartSec=2
+
+# Raw socket for capture, nothing else.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/wd2l
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_PACKET AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

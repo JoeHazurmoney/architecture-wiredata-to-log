@@ -1,0 +1,6 @@
+[Unit]
+Description=wd2l: delete capture files older than 7 days
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/find /var/lib/wd2l/pcap -name 'cap-*.pcap' -mmin +10080 -delete

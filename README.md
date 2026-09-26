@@ -1,2 +1,94 @@
 # architecture-wiredata-to-log
-Architecture and POC to convert wiredata to log files
+
+Architecture and proof of concept for moving logs **one way** from Enclave 1 to
+Enclave 2 by tapping a cable and rebuilding the logs from the raw packets.
+
+```mermaid
+flowchart TB
+  subgraph E1["Enclave 1"]
+    H["Hosts<br/>firewalls, switches, servers,<br/>workstations, hypervisors"]
+    A["Log aggregator"]
+    S["wd2l-sender<br/>numbers, splits, checksums"]
+    T{{"Network tap"}}
+    B["Black-hole switch port<br/>drops everything"]
+    H -- "agents / syslog" --> A
+    A -- "JSON lines over TCP" --> S
+    S -- "UDP to an IP<br/>nothing answers" --> T
+    T --> B
+  end
+
+  subgraph E2["Enclave 2"]
+    N["Capture NIC<br/>receive only, no IP"]
+    R["wd2l-receiver<br/>rebuild, verify, report gaps"]
+    P[("pcap archive")]
+    SIEM["SIEM"]
+    N --> R
+    N --> P
+    P -. "replay after<br/>an outage" .-> R
+    R -- "events +<br/>health records" --> SIEM
+  end
+
+  T == "one fiber strand, TX only<br/>(the one-way guarantee)" ==> N
+
+  classDef oneway stroke-width:3px
+  class T,N oneway
+```
+
+* The log server sends every event as numbered UDP packets to an IP that nothing answers. The
+  switch port drops them.
+* A network tap copies that cable to Enclave 2 over one fiber strand. That's the one-way guarantee.
+* The receiver rebuilds each event and checks it (CRC + SHA-256). It sends events to the SIEM with
+  their original host, source, sourcetype, index and time, and **reports every lost event by
+  sequence number**.
+* A rolling pcap archive lets you replay after a receiver outage without duplicates.
+
+The design is product-neutral: any log aggregator, network tap and SIEM that fill the roles
+work. The proof of concept was built against Cribl Stream (aggregator) and Splunk (SIEM) as
+examples.
+
+Start with [docs/architecture.md](docs/architecture.md).
+
+## Repo map
+
+| Path | What |
+|---|---|
+| `wd2l/` | Python package, standard library only (Python ≥ 3.9) |
+| `wd2l/sender.py` | Enclave 1: JSON lines in from the log aggregator, framed UDP out, heartbeats |
+| `wd2l/receiver.py` | Enclave 2: live capture or pcap replay → rebuild → gap tracking → outputs |
+| `wd2l/wire.py` | Packet format shared by both sides ([docs/wire-format.md](docs/wire-format.md)) |
+| `wd2l/packets.py` | Ethernet/IPv4/UDP parsing, pcap files, raw-socket capture |
+| `wd2l/outputs.py` | SIEM output over an HTTP event collector (HEC format, with disk spool) and JSONL file output |
+| `deploy/log-server/` | Egress NIC script, nftables, systemd units |
+| `deploy/switch/` | Black-hole port config (example for one switch platform) |
+| `deploy/receiver/` | Capture NIC script, tcpdump archive, receiver unit, example SIEM configs (Splunk) |
+| `docs/` | Architecture, wire format, deployment guides, operations runbook, accreditation notes |
+| `lab/` | Whole path simulated with Linux network namespaces |
+| `tests/` | Unit, fuzz and end-to-end tests |
+
+## Try it
+
+```bash
+pip install pytest && python3 -m pytest          # 64 tests, no root needed
+
+sudo lab/run-lab.sh                               # full path in network namespaces
+sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly
+sudo lab/run-lab.sh --receiver-outage             # receiver stopped mid-run, archive replay fills it
+```
+
+The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `python3`.
+
+**Want to run the POC yourself and see the results?** Follow the step-by-step guide in
+[docs/running-the-lab.md](docs/running-the-lab.md).
+
+## Deploying
+
+1. [Network](docs/deployment/network.md): black-hole switch port, network tap, one-strand fiber
+2. [Log server](docs/deployment/log-server.md): egress NIC, firewall, `wd2l-sender`, log aggregator
+3. [Receiver](docs/deployment/receiver.md): capture NIC, archive, `wd2l-receiver`, SIEM
+4. [Operations](docs/operations.md): health records, alerts, replay, re-send
+
+## Status
+
+Proof of concept. Verified in the namespace lab (see the end of
+[architecture.md](docs/architecture.md)). Not yet verified: the physical tap, switch and fiber
+behavior, and a real log aggregator and SIEM. The deployment guides list the checks for each.

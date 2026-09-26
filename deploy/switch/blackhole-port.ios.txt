@@ -1,0 +1,54 @@
+! Black-hole switch port - example for one switch platform (Cisco IOS / IOS-XE syntax).
+! Adapt names to your platform (NX-OS, Arista EOS, Juniper, HPE); the intent is what matters:
+!
+!   1. The port is alone in its own VLAN with no SVI (no IP on the switch side)
+!      -> unknown-unicast flooding has nowhere to go, the switch never routes it.
+!   2. Every frame arriving on the port is dropped (port ACL + MAC ACL).
+!   3. The switch itself stays silent on the port: no CDP, LLDP, STP BPDUs, DTP, VTP, UDLD,
+!      so the tapped cable carries nothing but the log server's frames.
+!      (The network tap's filter passes only the log flow anyway; this keeps the raw cable clean too.)
+!   4. The port stays link-up so the log server's NIC transmits.
+!
+! Gi1/0/48 is the port cabled (through the network tap's inline ports) to the log server.
+
+vlan 3999
+ name WD2L-BLACKHOLE
+!
+! No "interface Vlan3999" - deliberately no SVI.
+!
+ip access-list extended WD2L-DROP-ALL
+ deny ip any any
+!
+mac access-list extended WD2L-DROP-ALL-L2
+ deny any any
+!
+interface GigabitEthernet1/0/48
+ description WD2L black hole - tapped - DO NOT REPURPOSE
+ switchport mode access
+ switchport access vlan 3999
+ switchport nonegotiate
+ switchport block unicast
+ switchport block multicast
+ ip access-group WD2L-DROP-ALL in
+ mac access-group WD2L-DROP-ALL-L2 in
+ no cdp enable
+ no lldp transmit
+ no lldp receive
+ spanning-tree portfast
+ spanning-tree bpdufilter enable
+ no udld port
+ storm-control broadcast level 1.00
+ storm-control action drop
+ no shutdown
+!
+! Also make sure no other port is in VLAN 3999 and the VLAN is pruned from every trunk:
+!   interface <each trunk>
+!    switchport trunk allowed vlan remove 3999
+!
+! Checks after applying:
+!   show interfaces Gi1/0/48 status                -> connected, vlan 3999
+!   show vlan id 3999                              -> Gi1/0/48 only
+!   show ip interface brief | include Vlan3999     -> nothing
+!   show lldp neighbors / show cdp neighbors       -> log server NOT listed
+!   show access-lists WD2L-DROP-ALL                -> deny counter climbing at the log rate
+!   show mac address-table interface Gi1/0/48      -> only the log server's MAC
