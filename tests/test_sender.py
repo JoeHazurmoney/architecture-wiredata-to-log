@@ -137,3 +137,99 @@ def test_gzip_rejected(server):
     push(srv, gzip.compress(b'{"_raw":"a"}\n'))
     time.sleep(0.3)
     assert snd.counters["events_sent"] == 0
+
+
+# ---------------------------------------------------------------- restart chain
+
+
+def test_state_file_links_runs(tmp_path):
+    state = str(tmp_path / "sender.json")
+    a, sock_a = sender(state_path=state)
+    for _ in range(3):
+        a.send_event({"_raw": "x"})
+    a.send_heartbeat()
+    info = json.loads(decode_all(sock_a)[-1].payload)
+    assert info["boot"] == 1 and "prev_stream" not in info
+
+    b, sock_b = sender(state_path=state)   # restart (crash or clean, same thing here)
+    b.send_heartbeat()
+    info = json.loads(decode_all(sock_b)[-1].payload)
+    assert info["boot"] == 2
+    assert info["prev_stream"] == a.stream_id and info["prev_last_seq"] == 3
+
+
+def test_corrupt_state_file_starts_over(tmp_path):
+    state = tmp_path / "sender.json"
+    state.write_text("{not json")
+    s, sock = sender(state_path=str(state))
+    assert s.link == {"boot": 1}
+    assert json.loads(state.read_text())["boot"] == 1
+
+
+def test_nothing_is_sent_after_the_final_heartbeat():
+    s, sock = sender()
+    s.send_event({"_raw": "a"})
+    s.send_heartbeat(final=True)
+    assert s.send_event({"_raw": "late"}) == 0
+    s.send_heartbeat()
+    frames = decode_all(sock)
+    assert frames[-1].type == wire.TYPE_HEARTBEAT and json.loads(frames[-1].payload)["final"]
+
+
+class FailingSock:
+    def sendto(self, data, addr):
+        raise OSError(101, "Network is unreachable")
+
+
+def test_send_errors_are_counted_and_logged_sparingly(caplog):
+    s = Sender(("10.255.255.2", 5514), sock=FailingSock(), rate_pps=0)
+    with caplog.at_level("ERROR", logger="wd2l.sender"):
+        for _ in range(500):
+            s.send_event({"_raw": "x"})
+    assert s.counters["send_errors"] == 500 and s.counters["sender_drops"] == 500
+    assert len([r for r in caplog.records if "send failed" in r.message]) == 1
+
+
+def test_header_detection_does_not_swallow_events(server):
+    srv, snd, sock = server()
+    push(srv, b'{"fields":{"a":1},"host":"h1","sourcetype":"x"}\n{"_raw":"two"}\n')
+    assert wait_for(lambda: snd.counters["events_sent"] == 2)
+
+
+def test_drain_reads_what_already_arrived_then_final_heartbeat_is_last(server):
+    srv, snd, sock = server()
+    c = socket.create_connection(srv.server_address)
+    c.sendall(b"".join(b'{"_raw":"e%d"}\n' % i for i in range(200)))
+    srv.shutdown()
+    srv.drain()
+    snd.send_heartbeat(final=True)
+    c.close()
+    assert snd.counters["events_sent"] == 200
+    last = decode_all(sock)[-1]
+    assert last.type == wire.TYPE_HEARTBEAT and last.seq == 200
+    assert snd.counters["shutdown_unread_bytes"] == 0
+
+
+def test_drain_gives_up_on_a_connection_that_never_goes_quiet(server):
+    srv, snd, sock = server()
+    srv.drain_timeout = 0.5
+    c = socket.create_connection(srv.server_address)
+    stop = threading.Event()
+
+    def firehose():
+        line = b'{"_raw":"%s"}\n' % (b"y" * 500)
+        try:
+            while not stop.is_set():
+                c.sendall(line * 50)
+        except OSError:
+            pass
+
+    threading.Thread(target=firehose, daemon=True).start()
+    assert wait_for(lambda: snd.counters["events_sent"] > 100)
+    snd.rate = 2000.0           # slow the sender down so input backs up in the socket
+    t0 = time.monotonic()
+    srv.drain()
+    stop.set()
+    assert time.monotonic() - t0 < 3
+    assert snd.counters["shutdown_unread_bytes"] > 0
+    c.close()
