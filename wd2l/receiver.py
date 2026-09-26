@@ -18,8 +18,8 @@ import logging
 import os
 import signal
 import time
-from collections import deque
-from typing import Any, Deque, Dict, List, Optional, Sequence, Tuple
+from collections import OrderedDict, deque
+from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from . import packets, wire
 from .outputs import FileOutput, HecOutput, MultiOutput, Output
@@ -28,7 +28,24 @@ log = logging.getLogger("wd2l.receiver")
 
 MAX_GAP_RANGES = 100000
 MAX_STREAMS = 1000
+MAX_RETIRED = 10000
 MAX_REASONS = 32
+STATE_VERSION = 2
+
+
+def to_ranges(seqs: Iterable[int]) -> List[List[int]]:
+    """[1, 2, 3, 7, 9, 10] -> [[1, 3], [7, 7], [9, 10]]"""
+    out: List[List[int]] = []
+    for s in sorted(seqs):
+        if out and s == out[-1][1] + 1:
+            out[-1][1] = s
+        else:
+            out.append([s, s])
+    return out
+
+
+def from_ranges(ranges: Iterable[Sequence[int]]) -> List[int]:
+    return [s for a, b in ranges for s in range(int(a), int(b) + 1)]
 
 
 # ---------------------------------------------------------------- range bookkeeping
@@ -100,6 +117,8 @@ class StreamTracker:
         self.lost_reported = False
         self.hb: Dict[str, Any] = {}
         self.delivered = 0
+        self.boot: Optional[int] = None   # sender restart count, if the sender reports one
+        self.linked = False               # its link to the previous stream has been checked
 
     def needed(self, seq: int) -> bool:
         if seq < self.lo:
@@ -143,6 +162,23 @@ class StreamTracker:
         if info.get("final") is True:
             self.final = True
 
+    def reopen(self, seqs: Iterable[int]) -> List[Tuple[int, int]]:
+        """Events counted as delivered that the output never made durable: make them needed again.
+
+        Those below lo become gaps right away (returned, so they can be reported). Those at or
+        above lo become ordinary holes again and are declared by the usual gap window."""
+        lost: List[int] = []
+        for s in seqs:
+            if s < self.lo:
+                if s not in self.gaps:
+                    lost.append(s)
+            else:
+                self.above.discard(s)
+        ranges = [(a, b) for a, b in to_ranges(lost)]
+        for a, b in ranges:
+            self.gaps.add(a, b)
+        return ranges
+
     def declare(self, now: float, window: float, force: bool = False) -> List[Tuple[int, int]]:
         """Turn holes overtaken more than `window` ago (or all holes, if force) into gaps."""
         if force:
@@ -175,7 +211,7 @@ class StreamTracker:
                 "marks": list(self.marks), "gaps": self.gaps.r, "first_seen": self.first_seen,
                 "last_seen": self.last_seen, "final": self.final,
                 "lost_reported": self.lost_reported, "hb": self.hb,
-                "delivered": self.delivered}
+                "delivered": self.delivered, "boot": self.boot, "linked": self.linked}
 
     @classmethod
     def from_json(cls, sid: int, d: Dict[str, Any]) -> "StreamTracker":
@@ -183,13 +219,18 @@ class StreamTracker:
         t.lo = int(d["lo"])
         t.above = {int(x) for x in d.get("above", [])}
         t.known = int(d.get("known", 0))
-        t.marks = deque((int(a), float(b)) for a, b in d.get("marks", []))
+        # Marks from before a restart have been overtaken for longer than any gap window, and
+        # their times came from another run's clock. Time 0 makes them due right away.
+        t.marks = deque((int(a), 0.0) for a, _ in d.get("marks", []))
         t.gaps = RangeSet(d.get("gaps", []))
         t.last_seen = float(d.get("last_seen", 0))
         t.final = bool(d.get("final", False))
         t.lost_reported = bool(d.get("lost_reported", False))
         t.hb = d.get("hb", {}) if isinstance(d.get("hb"), dict) else {}
         t.delivered = int(d.get("delivered", 0))
+        boot = d.get("boot")
+        t.boot = int(boot) if isinstance(boot, int) else None
+        t.linked = bool(d.get("linked", False))
         return t
 
 
@@ -277,7 +318,12 @@ class Receiver:
                  src_ip: Optional[str] = None, state_path: Optional[str] = None,
                  max_event: int = wire.DEFAULT_MAX_EVENT, max_buffer: int = 64 * 1024 * 1024,
                  reasm_timeout: float = 5.0, gap_window: float = 2.0, hb_timeout: float = 5.0,
-                 health_interval: float = 60.0, stream_lost_after: float = 60.0):
+                 health_interval: float = 60.0, stream_lost_after: float = 60.0,
+                 stream_retention: float = 7 * 86400.0,
+                 record_clock: Optional[Callable[[], float]] = None):
+        """`now` passed to handle_frame/tick drives every timer. Live capture passes a steady
+        clock (immune to clock steps); pcap replay passes packet timestamps. `record_clock`,
+        if given, supplies the wall-clock `time` written into health records."""
         self.out = output
         self.dst_ip = dst_ip
         self.dst_port = dst_port
@@ -288,10 +334,18 @@ class Receiver:
         self.hb_timeout = hb_timeout
         self.health_interval = health_interval
         self.stream_lost_after = stream_lost_after
+        self.stream_retention = stream_retention
+        self.record_clock = record_clock
         self.streams: Dict[int, StreamTracker] = {}
+        # Streams no longer tracked in full: stream_id -> [known seq, final]. Enough to drop
+        # replayed duplicates and to follow a sender's restart chain.
+        self.retired: "OrderedDict[int, List[Any]]" = OrderedDict()
+        self.last_boot: Optional[int] = None
+        self.had_history = False
         self.counters = {"frames": 0, "other_packets": 0, "bad_frames": 0, "bad_events": 0,
                          "events_delivered": 0, "duplicates": 0, "late_fills": 0,
-                         "gap_events": 0, "heartbeats": 0, "kernel_drops": 0}
+                         "gap_events": 0, "heartbeats": 0, "kernel_drops": 0,
+                         "uncommitted_at_start": 0, "output_dropped": 0}
         self.other_reasons: Dict[str, int] = {}
         self.bad_reasons: Dict[str, int] = {}
         self.last_hb: Optional[float] = None
@@ -300,6 +354,7 @@ class Receiver:
         self.last_health: Optional[float] = None
         self.last_save = 0.0
         self.dirty = False
+        self.saved_with_pending = False
         if state_path and os.path.exists(state_path):
             self._load_state()
 
@@ -362,17 +417,63 @@ class Receiver:
         self.counters["events_delivered"] += 1
         self.dirty = True
 
+    # -- stream bookkeeping
+
     def _stream(self, sid: int, now: float) -> StreamTracker:
         t = self.streams.get(sid)
-        if t is None:
-            if len(self.streams) >= MAX_STREAMS:
-                oldest = min(self.streams.values(), key=lambda s: s.last_seen)
-                del self.streams[oldest.stream_id]
-            t = self.streams[sid] = StreamTracker(sid, now)
-            log.info("new stream %016x", sid)
-            self._health_record("stream_start", now, stream="%016x" % sid)
-            self.dirty = True
+        if t is not None:
+            return t
+        if sid in self.retired:
+            return self._restore(sid, now)
+        if self.streams or self.retired:
+            self.had_history = True
+        t = StreamTracker(sid, now)
+        self._add(t, now)
+        log.info("new stream %016x", sid)
+        self._health_record("stream_start", now, stream="%016x" % sid)
         return t
+
+    def _add(self, t: StreamTracker, now: float) -> None:
+        if len(self.streams) >= MAX_STREAMS:
+            self._evict(now)
+        self.streams[t.stream_id] = t
+        self.dirty = True
+
+    def _restore(self, sid: int, now: float) -> StreamTracker:
+        """Bring a retired stream back (e.g. an old archive is replayed): everything it had is
+        treated as delivered, so replayed copies are dropped as duplicates."""
+        known, final = self.retired.pop(sid)
+        t = StreamTracker(sid, now)
+        t.lo, t.known, t.final = int(known) + 1, int(known), bool(final)
+        t.lost_reported = t.linked = True
+        self._add(t, now)
+        return t
+
+    def _retire(self, t: StreamTracker) -> None:
+        self.retired[t.stream_id] = [t.known, t.final]
+        self.retired.move_to_end(t.stream_id)
+        while len(self.retired) > MAX_RETIRED:
+            self.retired.popitem(last=False)
+        del self.streams[t.stream_id]
+        self.dirty = True
+
+    def _evict(self, now: float) -> None:
+        """Too many streams: drop the quietest one, preferring one with nothing left open."""
+        clean = [t for t in self.streams.values() if not t.gaps.r]
+        victim = min(clean or list(self.streams.values()), key=lambda s: s.last_seen)
+        if victim.gaps.r:
+            log.warning("evicting stream %016x with %d open gap events",
+                        victim.stream_id, victim.gaps.count())
+            self._health_record("stream_evicted", now, stream="%016x" % victim.stream_id,
+                                open_gap_events=victim.gaps.count(), gaps=victim.gaps.r[:100])
+        self._retire(victim)
+
+    def _prune(self, now: float) -> None:
+        """Retire streams that are over, fully resolved and older than the archive retention."""
+        for t in list(self.streams.values()):
+            if ((t.final or t.lost_reported) and not t.gaps.r and t.lo > t.known
+                    and now - t.last_seen > self.stream_retention):
+                self._retire(t)
 
     def _heartbeat(self, t: StreamTracker, f: wire.Frame, now: float) -> None:
         try:
@@ -385,7 +486,11 @@ class Receiver:
             return
         info = {k: v for k, v in info.items()
                 if isinstance(k, str) and isinstance(v, (int, float, bool))}
+        # A 64-bit id is kept out of the stored counters: SIEMs read JSON numbers as floats.
+        prev = info.pop("prev_stream", None)
         self.counters["heartbeats"] += 1
+        if not t.linked:
+            self._link(t, info, prev, now)
         was_final = t.final
         t.on_heartbeat(f.seq, info, now)
         if t.final and not was_final:
@@ -397,11 +502,60 @@ class Receiver:
             self._health_record("heartbeat_restored", now)
         self.dirty = True
 
+    def _link(self, t: StreamTracker, info: Dict[str, Any], prev: Any, now: float) -> None:
+        """Check a new stream against the one before it (sender --state).
+
+        The sender reports its restart count (`boot`) and the previous run's stream id and last
+        sequence number. That reveals events lost at the end of the previous run, and whole
+        runs the receiver never saw (e.g. a sender restart during a link outage)."""
+        t.linked = True
+        boot = info.get("boot")
+        if not isinstance(boot, int) or isinstance(boot, bool) or boot < 1:
+            return
+        t.boot = boot
+        prev_last = info.get("prev_last_seq")
+        prev_known = False
+        if (isinstance(prev, int) and not isinstance(prev, bool) and 0 < prev != t.stream_id
+                and isinstance(prev_last, int) and prev_last >= 0):
+            p = self.streams.get(prev)
+            if p is None and prev in self.retired:
+                p = self._restore(prev, now)
+            if p is not None:
+                prev_known = True
+                p._raise_known(prev_last, now)  # a tail gap, if any, is declared as usual
+                if not p.final and not p.lost_reported:
+                    p.lost_reported = True
+                    self._health_record("stream_lost", now, stream="%016x" % p.stream_id,
+                                        last_seq=p.known, idle_s=round(now - p.last_seen, 1),
+                                        replaced_by="%016x" % t.stream_id)
+            elif self.had_history:
+                prev_known = True
+                p = StreamTracker(prev, now)
+                p.boot, p.lost_reported, p.linked = boot - 1, True, True
+                p._raise_known(prev_last, now)  # all of it becomes a gap after the window
+                self._add(p, now)
+                log.warning("stream %016x (sender boot %d) was never seen: %d events",
+                            prev, boot - 1, prev_last)
+                self._health_record("stream_missing", now, stream="%016x" % prev,
+                                    boot=boot - 1, last_seq=prev_last)
+        if self.last_boot is not None:
+            if boot <= self.last_boot:
+                self._health_record("sender_boot_reset", now, stream="%016x" % t.stream_id,
+                                    boot=boot, previous_boot=self.last_boot)
+            else:
+                first, last = self.last_boot + 1, boot - 1 - prev_known
+                if last >= first:
+                    self._health_record("stream_missing", now, first_boot=first, last_boot=last,
+                                        runs=last - first + 1, note="stream ids and event counts unknown")
+        self.last_boot = boot
+        self.dirty = True
+
     # -- time-driven work
 
     def tick(self, now: float) -> None:
         if self.started is None:
             self.started = now
+        self._apply_failed(now)
         self.reasm.expire(now)
         for t in list(self.streams.values()):
             self._report_gaps(t, t.declare(now, self.gap_window), now)
@@ -410,6 +564,7 @@ class Receiver:
                 t.lost_reported = True
                 self._health_record("stream_lost", now, stream="%016x" % t.stream_id,
                                     last_seq=t.known, idle_s=round(now - t.last_seen, 1))
+        self._prune(now)
         ref = self.last_hb if self.last_hb is not None else self.started
         if not self.hb_stale and now - ref > self.hb_timeout:
             self.hb_stale = True
@@ -420,20 +575,33 @@ class Receiver:
         elif now - self.last_health >= self.health_interval:
             self.last_health = now
             self.emit_health(now)
-        if self.state_path and self.dirty and time.monotonic() - self.last_save >= 1.0:
+        if (self.state_path and (self.dirty or self.saved_with_pending)
+                and time.monotonic() - self.last_save >= 1.0):
             self.save_state()
 
-    def _report_gaps(self, t: StreamTracker, declared: List[Tuple[int, int]], now: float) -> None:
+    def _apply_failed(self, now: float) -> None:
+        by: Dict[int, List[int]] = {}
+        for sid, seq in self.out.take_failed():
+            by.setdefault(sid, []).append(seq)
+        for sid, seqs in by.items():
+            self.counters["output_dropped"] += len(seqs)
+            log.error("output gave up on %d events of stream %016x", len(seqs), sid)
+            t = self.streams.get(sid)
+            if t is not None:
+                self._report_gaps(t, t.reopen(seqs), now, reason="output_dropped")
+
+    def _report_gaps(self, t: StreamTracker, declared: List[Tuple[int, int]], now: float,
+                     reason: str = "not_received") -> None:
         for a, b in declared:
             n = b - a + 1
             self.counters["gap_events"] += n
-            log.warning("GAP stream %016x seq %d-%d (%d events)", t.stream_id, a, b, n)
+            log.warning("GAP stream %016x seq %d-%d (%d events, %s)", t.stream_id, a, b, n, reason)
             self._health_record("gap", now, stream="%016x" % t.stream_id,
-                                first_seq=a, last_seq=b, count=n)
+                                first_seq=a, last_seq=b, count=n, reason=reason)
             self.dirty = True
 
     def _health_record(self, kind: str, now: float, **kw: Any) -> None:
-        rec = {"type": kind, "time": round(now, 3)}
+        rec = {"type": kind, "time": round(self.record_clock() if self.record_clock else now, 3)}
         rec.update(kw)
         self.out.health(rec)
 
@@ -444,7 +612,8 @@ class Receiver:
                 continue
             streams["%016x" % t.stream_id] = {
                 "next_seq": t.lo, "known_seq": t.known, "open_gap_events": t.gaps.count(),
-                "final": t.final, "idle_s": round(now - t.last_seen, 1), "sender": t.hb}
+                "final": t.final, "idle_s": round(now - t.last_seen, 1), "boot": t.boot,
+                "sender": t.hb}
         ref = self.last_hb if self.last_hb is not None else self.started
         rec = dict(self.counters, **self.reasm.counters, **self.out.stats())
         # Flat totals so SIEM alerts don't have to dig into the per-stream map.
@@ -452,8 +621,10 @@ class Receiver:
         rec.update(open_gap_events=sum(t.gaps.count() for t in self.streams.values()),
                    sender_drops=sum(int(t.hb.get("sender_drops", 0)) for t in live),
                    sender_truncated=sum(int(t.hb.get("truncated", 0)) for t in live),
-                   sender_bad_input=sum(int(t.hb.get("bad_input", 0)) for t in live))
-        rec.update(type="health", time=round(now, 3), streams=streams,
+                   sender_bad_input=sum(int(t.hb.get("bad_input", 0)) for t in live),
+                   sender_unread_bytes=sum(int(t.hb.get("shutdown_unread_bytes", 0)) for t in live))
+        rec.update(type="health", time=round(self.record_clock() if self.record_clock else now, 3),
+                   streams=streams, retired_streams=len(self.retired),
                    heartbeat_age_s=round(now - ref, 1) if ref is not None else None,
                    heartbeat_stale=self.hb_stale, other_reasons=self.other_reasons,
                    bad_reasons=self.bad_reasons, reasm_buffered=self.reasm.buffered)
@@ -461,20 +632,40 @@ class Receiver:
         return rec
 
     def finish(self, now: float) -> Dict[str, Any]:
-        """End of input: give up on partial events, declare every remaining hole a gap."""
+        """End of input (pcap replay): give up on partial events, declare every remaining hole
+        a gap, then close the output and save state."""
+        self._apply_failed(now)
         self.reasm.expire(now, force=True)
         for t in self.streams.values():
             self._report_gaps(t, t.declare(now, self.gap_window, force=True), now)
         rec = self.emit_health(now)
-        self.out.flush()
-        if self.state_path:
-            self.save_state()
+        self.close(now, health=False)
         return rec
+
+    def close(self, now: float, health: bool = True) -> None:
+        """Clean stop: final health record, let the output settle, save state. Anything the
+        output could not make durable is saved as uncommitted and reported on the next start."""
+        if health:
+            self.emit_health(now)
+        self.out.close()
+        if self.state_path:
+            self.save_state(extra_uncommitted=self.out.take_failed())
 
     # -- state
 
-    def save_state(self) -> None:
-        state = {"version": 1, "streams": {"%016x" % s: t.to_json() for s, t in self.streams.items()}}
+    def save_state(self, extra_uncommitted: Sequence[Tuple[int, int]] = ()) -> None:
+        self.out.flush()
+        pending = self.out.pending()
+        for sid, seq in extra_uncommitted:
+            pending.setdefault(sid, set()).add(seq)
+        streams = {}
+        for sid, t in self.streams.items():
+            d = t.to_json()
+            if pending.get(sid):
+                d["uncommitted"] = to_ranges(pending[sid])
+            streams["%016x" % sid] = d
+        state = {"version": STATE_VERSION, "last_boot": self.last_boot, "streams": streams,
+                 "retired": [["%016x" % sid, k, f] for sid, (k, f) in self.retired.items()]}
         tmp = self.state_path + ".tmp"  # type: ignore[operator]
         with open(tmp, "w") as f:
             json.dump(state, f, separators=(",", ":"))
@@ -483,13 +674,38 @@ class Receiver:
         os.replace(tmp, self.state_path)  # type: ignore[arg-type]
         self.last_save = time.monotonic()
         self.dirty = False
+        self.saved_with_pending = any(pending.values())
 
     def _load_state(self) -> None:
         with open(self.state_path) as f:  # type: ignore[arg-type]
             state = json.load(f)
-        for sid, d in state.get("streams", {}).items():
-            self.streams[int(sid, 16)] = StreamTracker.from_json(int(sid, 16), d)
-        log.info("loaded state for %d streams", len(self.streams))
+        if state.get("version", 1) not in (1, STATE_VERSION):
+            raise SystemExit("state file %s has unknown version %r"
+                             % (self.state_path, state.get("version")))
+        # Everything left unresolved by the last run is reported now, before any new input:
+        # events it handed to the output that were never confirmed, and holes still open.
+        # Both can be filled by replaying the archive.
+        now = self.record_clock() if self.record_clock else time.time()
+        reopened_total = 0
+        for sid_hex, d in state.get("streams", {}).items():
+            sid = int(sid_hex, 16)
+            t = self.streams[sid] = StreamTracker.from_json(sid, d)
+            unc = from_ranges(d.get("uncommitted", []))
+            reopened_total += len(unc)
+            lost = t.reopen(unc) + t.declare(now, self.gap_window, force=True)
+            self._report_gaps(t, sorted(lost), now, reason="receiver_restart")
+        for sid_hex, known, final in state.get("retired", []):
+            self.retired[int(sid_hex, 16)] = [int(known), bool(final)]
+        lb = state.get("last_boot")
+        self.last_boot = lb if isinstance(lb, int) else None
+        self.had_history = bool(self.streams or self.retired)
+        if reopened_total:
+            self.counters["uncommitted_at_start"] = reopened_total
+            self.dirty = True
+            log.warning("%d events were handed to the output but not confirmed before the last "
+                        "stop; they are reported as gaps (reason=receiver_restart). Replay the "
+                        "archive to fill them.", reopened_total)
+        log.info("loaded state for %d streams (%d retired)", len(self.streams), len(self.retired))
 
 
 # ---------------------------------------------------------------- main
@@ -504,10 +720,18 @@ def build_output(a: argparse.Namespace) -> Output:
         with open(a.hec_token_file) as f:
             token = f.read().strip()
         outs.append(HecOutput(a.hec_url, token, a.spool_dir, a.hec_ca, a.hec_insecure,
-                              a.default_index, a.health_index, a.force_index))
+                              a.default_index, a.health_index, a.force_index,
+                              queue_size=a.hec_queue))
     if not outs:
         raise SystemExit("need at least one output: --out-dir and/or --hec-url")
     return outs[0] if len(outs) == 1 else MultiOutput(outs)
+
+
+def steady_clock() -> Callable[[], float]:
+    """Wall-clock time at start plus monotonic time since: it reads like wall time but a clock
+    step (NTP correction, operator change) can't make timers fire early or stall."""
+    wall0, mono0 = time.time(), time.monotonic()
+    return lambda: wall0 + (time.monotonic() - mono0)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -527,6 +751,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--hec-token-file")
     p.add_argument("--hec-ca", help="CA bundle for the HEC certificate")
     p.add_argument("--hec-insecure", action="store_true", help="skip TLS verification (lab only)")
+    p.add_argument("--hec-queue", type=int, default=100000,
+                   help="events held in memory for the SIEM; overflow is reported as gaps")
     p.add_argument("--spool-dir", default="/var/lib/wd2l/spool")
     p.add_argument("--default-index", help="index for events that arrive without one")
     p.add_argument("--force-index", help="send every event to this index, ignoring the one set in Enclave 1")
@@ -540,17 +766,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--hb-timeout", type=float, default=5.0)
     p.add_argument("--health-interval", type=float, default=60.0)
     p.add_argument("--stream-lost-after", type=float, default=60.0)
+    p.add_argument("--stream-retention", type=float, default=7 * 86400.0,
+                   help="seconds to keep full records of finished streams with nothing open; "
+                        "keep it at least as long as the pcap archive")
     p.add_argument("-v", "--verbose", action="store_true")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
     out = build_output(a)
-    rx = Receiver(out, a.dst_ip or None, a.dst_port, a.src_ip or None, a.state, a.max_event,
-                  a.max_buffer, a.reasm_timeout, a.gap_window, a.hb_timeout,
-                  a.health_interval, a.stream_lost_after)
+    kw = dict(dst_ip=a.dst_ip or None, dst_port=a.dst_port, src_ip=a.src_ip or None,
+              state_path=a.state, max_event=a.max_event, max_buffer=a.max_buffer,
+              reasm_timeout=a.reasm_timeout, gap_window=a.gap_window, hb_timeout=a.hb_timeout,
+              health_interval=a.health_interval, stream_lost_after=a.stream_lost_after,
+              stream_retention=a.stream_retention)
     try:
         if a.pcap:
+            rx = Receiver(out, **kw)
             last = None
             for ts, frame in packets.iter_pcap_paths(a.pcap):
                 rx.handle_frame(frame, ts)
@@ -561,6 +793,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(json.dumps(summary, sort_keys=True))
             return 0
 
+        clock = steady_clock()
+        rx = Receiver(out, record_clock=time.time, **kw)
         stop = []
         signal.signal(signal.SIGTERM, lambda *_: stop.append(1))
         signal.signal(signal.SIGINT, lambda *_: stop.append(1))
@@ -569,7 +803,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         last = 0.0
         while not stop:
             frame = cap.recv()
-            now = time.time()
+            now = clock()
             if frame is not None:
                 rx.handle_frame(frame, now)
             if now - last >= 0.2:
@@ -579,9 +813,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 rx.out.flush()
                 last = now
         cap.close()
-        rx.emit_health(time.time())
-        if a.state:
-            rx.save_state()
+        rx.close(clock())
         return 0
     finally:
         out.close()

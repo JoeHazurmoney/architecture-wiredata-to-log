@@ -62,3 +62,33 @@ def make_events(n: int, seed: int = 1):
         out.append({"_time": 1727265600 + i * 0.001, "host": host, "source": "src%d" % kind,
                     "sourcetype": st, "index": "main", "_raw": raw})
     return out
+
+
+class SlowOutput(MemOutput):
+    """Like a SIEM output: events wait in memory until commit(), and can be dropped with fail()."""
+
+    def __init__(self):
+        super().__init__()
+        self.waiting = []
+        self.failed = []
+
+    def event(self, evt, stream_id, seq):
+        super().event(evt, stream_id, seq)
+        self.waiting.append((stream_id, seq))
+
+    def commit(self):
+        self.waiting = []
+
+    def fail(self, stream_id, seq):
+        self.waiting.remove((stream_id, seq))
+        self.failed.append((stream_id, seq))
+
+    def pending(self):
+        out = {}
+        for sid, seq in self.waiting:
+            out.setdefault(sid, set()).add(seq)
+        return out
+
+    def take_failed(self):
+        f, self.failed = self.failed, []
+        return f
