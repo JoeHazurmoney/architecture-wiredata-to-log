@@ -57,7 +57,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 |---|---|---|
 | `--live IFACE` / `--pcap FILES` | | Live capture, or read pcap files (replay) |
 | `--dst-ip`, `--dst-port`, `--src-ip` | `10.255.255.2`, `5514`, any | Which packets are the log flow. Everything else is counted as `other_packets` |
-| `--state` | none | Gap tracking that survives restarts. Always set it in production |
+| `--state` | none | Gap tracking that survives restarts, including which events the SIEM has not confirmed yet. Always set it in production |
 | `--hec-url`, `--hec-token-file`, `--hec-ca` | | SIEM HTTP event collector. `--hec-insecure` is for labs only |
 | `--spool-dir` | `/var/lib/wd2l/spool` | Where batches wait while the SIEM is unreachable |
 | `--default-index` | none | For events that arrive without an index |
@@ -69,6 +69,8 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--hb-timeout` | `5` s | No heartbeat for this long → `heartbeat_stale` |
 | `--health-interval` | `60` s | Summary record interval |
 | `--max-event`, `--max-buffer` | 256 KB, 64 MB | Input caps |
+| `--hec-queue` | `100000` | Events held in memory for the SIEM. Overflow is reported as `reason=output_dropped` gaps (replay recovers them) |
+| `--stream-retention` | 7 days | How long finished sender runs with nothing open stay fully tracked. Keep it at least as long as the pcap archive |
 
 ## 5. SIEM
 
@@ -80,9 +82,9 @@ file output and the SIEM's own file ingestion. The SIEM needs:
 
 * **Indexes** (or the SIEM's equivalent): one for the imported events and one for `wd2l`
   health records. **Every index name Enclave 1 uses must exist**, and the token must be allowed to
-  write to it. Otherwise the collector rejects the whole batch with HTTP 400; the receiver moves
-  the batch to `<spool>/rejected/` and counts `hec_rejected_batches`. Or run with
-  `--force-index` and put everything in one index.
+  write to it. Otherwise the collector rejects the batch with HTTP 400; the receiver re-sends it
+  one event at a time, moves only the refused events to `<spool>/rejected/` and counts
+  `hec_rejected_events`. Or run with `--force-index` and put everything in one index.
 * **A token** for the receiver, over TLS.
 * **Indexed (searchable) fields** `wd2l_stream`, `wd2l_seq` and `wd2l_truncated`, sent in each
   event's `fields` object.

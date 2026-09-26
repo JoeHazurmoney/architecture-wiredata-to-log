@@ -61,9 +61,21 @@ missing. Shown in the lab with 1% injected loss: every lost event was reported b
 number, with no false reports. Loss isn't recovered automatically (nothing can come back). The
 operator re-sends from Enclave 1 (`docs/operations.md`).
 
-The one exception: events the log aggregator handed to the sender but that the sender hadn't numbered yet
-when it crashed (well under a second of data). The aggregator's persistent queue reduces this but can't
-fully close it, because the sender acknowledges data at the TCP level before sending it.
+This holds across a receiver crash: an event counts as delivered only once the SIEM accepted it
+or it is on disk, so anything in memory at a crash is reported (`reason=receiver_restart`) and
+recovered from the pcap archive. The cost is occasional duplicates, which carry the same
+`wd2l_stream` / `wd2l_seq` and are removed in searches.
+
+Sender restarts are chained (`boot`, `prev_stream`, `prev_last_seq` in the heartbeat), so a
+sender run that never reached Enclave 2 at all is reported as `stream_missing` rather than going
+unnoticed.
+
+The one exception: input the log aggregator handed to the sender that the sender had not
+numbered yet when it stopped. On a clean stop the sender first reads what is already arriving
+(up to 2 seconds) and reports anything left as `shutdown_unread_bytes`. On a crash, up to one TCP
+receive buffer (256 KB by default) can be lost without a report. The aggregator's persistent
+queue reduces this but can't fully close it, because TCP acknowledges data before the sender
+reads it.
 
 ## Residual risks
 

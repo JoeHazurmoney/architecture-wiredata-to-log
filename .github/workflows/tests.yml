@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 3.9 is the oldest version the package supports (pyproject.toml).
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install pytest
+      - run: python -m pytest -q
+      - name: Byte-compile everything (catches syntax the oldest Python can't read)
+        run: python -m compileall -q wd2l lab tests
+
+  lab:
+    # The full one-way path in network namespaces, including loss, outage and crash runs.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q iproute2 nftables tcpdump
+      - run: sudo lab/run-lab.sh
+      - run: sudo lab/run-lab.sh --loss 1
+      - run: sudo lab/run-lab.sh --receiver-outage
+      - run: sudo lab/run-lab.sh --receiver-crash

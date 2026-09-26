@@ -40,6 +40,8 @@ def main():
     p.add_argument("--state", help="receiver state file: open gaps are read from here")
     p.add_argument("--max-event", type=int, default=wire.DEFAULT_MAX_EVENT)
     p.add_argument("--expect-gaps", action="store_true", help="loss was injected on purpose")
+    p.add_argument("--allow-duplicates", action="store_true",
+                   help="identical copies of an event are fine (after a receiver crash)")
     a = p.parse_args()
 
     fitter = Sender(("127.0.0.1", 9), sock=_NoSock(), max_event=a.max_event, rate_pps=0)
@@ -54,11 +56,14 @@ def main():
     if len(streams) > 1:
         problems.append("expected one sender stream, saw %d" % len(streams))
     seen = {}
+    dups = 0
     for g in got:
         seq = g.pop("wd2l_seq")
         g.pop("wd2l_stream")
         if seq in seen:
-            problems.append("duplicate seq %d" % seq)
+            dups += 1
+            if not a.allow_duplicates or seen[seq] != g:
+                problems.append("duplicate seq %d" % seq)
         seen[seq] = g
         if seq not in expected:
             problems.append("unexpected seq %d" % seq)
@@ -98,6 +103,7 @@ def main():
 
     print("sent:            %d" % len(expected))
     print("received:        %d" % len(seen))
+    print("duplicates:      %d" % dups)
     print("gaps (reported): %d" % len(open_gaps))
     print("truncated:       %d (seq %s)" % (len(truncated), truncated))
     print("other packets on the tapped cable: %s" % last.get("other_packets"))

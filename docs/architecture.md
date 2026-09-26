@@ -66,7 +66,9 @@ flowchart LR
    elsewhere. The switch and NIC settings are hygiene on top of it.
 6. **Every event gets a sequence number, and the sender sends a heartbeat every second.** UDP loses
    packets without telling anyone. With numbers and heartbeats the receiver can prove it got
-   everything, or name exactly what's missing. It can also tell "quiet" apart from "broken".
+   everything, or name exactly what's missing. It can also tell "quiet" apart from "broken". Each
+   sender run is a new stream, and runs are chained (`boot`, `prev_stream`) so a whole missed run
+   is visible too.
 7. **No IP fragmentation.** Events that don't fit one packet are split by the sender and rebuilt by
    the receiver, which checks a SHA-256 of the whole event. (If one IP fragment is lost the whole
    packet is lost, and fragments are awkward to filter on the tap.)
@@ -75,6 +77,11 @@ flowchart LR
    code uses only the Python standard library.
 9. **Keep the raw packets.** The pcap archive means a receiver crash or restart loses nothing that
    reached Enclave 2: replay the archive and only the missing events are sent to the SIEM.
+10. **An event only counts as delivered once it is safe.** The receiver records an event as
+    delivered in its state file only after the SIEM accepted it or it was written to disk.
+    Anything still in memory at a crash is reported as a gap and filled by replay. The rule is
+    duplicates over loss: every event carries `wd2l_stream` and `wd2l_seq`, so copies are easy
+    to remove.
 
 ## Data path details
 
@@ -103,12 +110,15 @@ flowchart LR
 | Failure | Effect on logs | What you see in Enclave 2 | Recovery |
 |---|---|---|---|
 | Packet loss on the wire (bad optic, overrun) | Those events lost | `type=gap` records with exact stream and sequence ranges | Pull the events again from Enclave 1 for that time window (see operations.md) |
-| Receiver process stops or restarts | Nothing lost: tcpdump keeps capturing | `type=gap` after restart | Replay the pcap archive: only the gaps are sent |
+| Receiver process stops cleanly | Nothing lost: tcpdump keeps capturing, queued events go to the spool | `type=gap` after restart | Replay the pcap archive: only the gaps are sent |
+| Receiver process crashes (killed, out of memory, host reboot) | Nothing lost: events still in memory are reported, not assumed delivered | `type=gap reason=receiver_restart` at startup | Replay the pcap archive. A few events may arrive twice (`dedup wd2l_stream wd2l_seq`) |
 | Receiver host down (capture down too) | Events sent during the outage never land in Enclave 2 | `type=gap` covering the outage once it's back (the next heartbeat carries the last sequence number) | Re-send from Enclave 1 |
 | SIEM ingest down | Nothing lost | `hec_spool_files` > 0 in health (once the SIEM is back) | Automatic drain |
+| Receiver can't keep up with the SIEM (memory queue full) or spool disk full | Those events are not sent | `type=gap reason=output_dropped`, `output_dropped` in health | Replay the pcap archive once the SIEM or disk is healthy |
 | Cable, tap or fiber down | Events sent during the outage lost | `heartbeat_stale`, then a gap for the exact range when it comes back | Re-send from Enclave 1 |
-| `wd2l-sender` stops | Nothing sent. The aggregator blocks or queues (with a persistent queue nothing is lost) | `heartbeat_stale`, `stream_lost` (or `stream_end` if it stopped cleanly) | Restart. It starts a new stream (new `wd2l_stream`), so no false gaps |
-| `wd2l-sender` crashes | Events the aggregator had already handed over but not yet sent are lost (well under a second's worth) | Not visible as a gap if they never got a sequence number | The aggregator's persistent queue narrows this. See accreditation notes |
+| `wd2l-sender` stops cleanly | It reads what the aggregator already sent (up to 2 s), then sends a final heartbeat. The aggregator blocks or queues after that | `stream_end`; `sender.shutdown_unread_bytes` > 0 if input was still arriving when it gave up | Restart. It starts a new stream linked to the old one, so no false gaps |
+| `wd2l-sender` crashes | Input the aggregator had already handed over but the sender had not numbered is lost (bounded by a 256 KB receive buffer). Numbered events sent after the last heartbeat that were also lost on the wire show up via the next run's link | Unnumbered input: not visible as a gap. Numbered tail: `gap` once the new run starts | The aggregator's persistent queue narrows this. See accreditation notes |
+| `wd2l-sender` restarts while the link is down | That whole run never reaches Enclave 2 | `stream_missing` (with `--state` on the sender): the run's stream id and event count | Re-send from Enclave 1 |
 | Log aggregator down | Hosts buffer or drop per their own settings (agents usually buffer; UDP syslog drops) | Heartbeats continue, no events | Enclave 1 monitoring of the aggregator |
 | Garbage or foreign traffic on the tap | Ignored | `other_packets` / `bad_frames` in health | Investigate the Enclave 1 cable/switch |
 
@@ -138,6 +148,8 @@ In the network-namespace lab (`lab/run-lab.sh`), which builds the full path in s
   sequence number. There were no false gaps and no unreported losses.
 * With the receiver stopped for 2 seconds mid-run, the archive replay delivered exactly the
   missing events with no duplicates.
+* With the receiver killed (SIGKILL) mid-run, nothing was lost: the replay filled every gap and
+  a few hundred events arrived twice, as designed.
 * Zero non-log packets reached Enclave 2, and zero frames came back from it.
 * 5,000 events/s with no drops.
 

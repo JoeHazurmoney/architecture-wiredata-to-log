@@ -10,10 +10,13 @@
 #
 # Needs: root, iproute2, nftables (kernel >= 5.16 for the netdev egress hook), tcpdump, python3.
 #
-# Usage: sudo lab/run-lab.sh [--events N] [--eps N] [--loss PCT] [--receiver-outage] [--keep]
+# Usage: sudo lab/run-lab.sh [--events N] [--eps N] [--loss PCT] [--receiver-outage]
+#                            [--receiver-crash] [--keep]
 #   --loss PCT          drop PCT% of packets on the cable (before the tap): gaps must be reported
 #   --receiver-outage   stop the receiver mid-run, restart it, then replay the pcap archive:
 #                       everything must end up delivered with no duplicates
+#   --receiver-crash    same, but the receiver is killed (SIGKILL) instead of stopped: nothing
+#                       may be lost; a few duplicates are allowed (dedup on wd2l_stream/wd2l_seq)
 #   --keep              leave namespaces up afterwards (lab/teardown.sh removes them)
 set -euo pipefail
 
@@ -24,6 +27,7 @@ EVENTS=5000
 EPS=1000
 LOSS=""
 OUTAGE=0
+KILLSIG=TERM
 KEEP=0
 MAX_EVENT=262144
 
@@ -33,6 +37,7 @@ while [ $# -gt 0 ]; do
     --eps) EPS="$2"; shift 2 ;;
     --loss) LOSS="$2"; shift 2 ;;
     --receiver-outage) OUTAGE=1; shift ;;
+    --receiver-crash) OUTAGE=1; KILLSIG=KILL; shift ;;
     --keep) KEEP=1; shift ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
@@ -143,7 +148,8 @@ sleep 1
 
 echo "== starting Enclave 1: wd2l-sender + stand-in log aggregator"
 $ENC1 python3 -m wd2l.sender --listen 127.0.0.1:10070 --dst 10.255.255.2:5514 \
-  --bind 10.255.255.1 --max-event "$MAX_EVENT" --stats-interval 5 >"$OUT/sender.log" 2>&1 &
+  --bind 10.255.255.1 --max-event "$MAX_EVENT" --stats-interval 5 --state "$OUT/sender.json" \
+  >"$OUT/sender.log" 2>&1 &
 TX_PID=$!
 PIDS+=($TX_PID)
 sleep 1
@@ -153,8 +159,8 @@ AGG_PID=$!
 
 if [ "$OUTAGE" = 1 ]; then
   sleep 1.5
-  echo "== simulating receiver outage (capture keeps running)"
-  kill -TERM "$RX_PID"; wait "$RX_PID" 2>/dev/null || true
+  echo "== simulating receiver outage with SIG$KILLSIG (capture keeps running)"
+  kill -"$KILLSIG" "$RX_PID"; wait "$RX_PID" 2>/dev/null || true
   sleep 2
   start_receiver
   echo "== receiver restarted"
@@ -182,6 +188,7 @@ echo "== verifying"
 VERIFY_ARGS=("$OUT/sent.jsonl" "$OUT/received" --max-event "$MAX_EVENT")
 if [ -n "$LOSS" ]; then VERIFY_ARGS+=(--expect-gaps); fi
 if [ "$OUTAGE" = 1 ]; then VERIFY_ARGS+=(--state "$OUT/state.json"); fi
+if [ "$KILLSIG" = KILL ]; then VERIFY_ARGS+=(--allow-duplicates); fi
 set +e
 python3 "$HERE/verify.py" "${VERIFY_ARGS[@]}"
 RC=$?

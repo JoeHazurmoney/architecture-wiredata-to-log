@@ -80,6 +80,9 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | `--rate-pps` | `20000` | Packet rate cap, smooths bursts. 0 = off |
 | `--auth-token-file` | none | Must match the token set in the log aggregator |
 | `--extra-field` | none | Extra aggregator field to carry as an indexed field in the SIEM (repeatable) |
+| `--state` | none | Restart count and previous stream, so the receiver can link runs and report a missed one. The unit uses `/var/lib/wd2l/sender.json` |
+| `--drain-timeout` | `2` s | On shutdown, how long to keep reading input that is already arriving |
+| `--input-rcvbuf` | `262144` | TCP receive buffer for the aggregator connection. Bounds input that is acknowledged but not yet read |
 
 ## 5. Log aggregator
 
@@ -102,7 +105,7 @@ Stream, Fluentd/Fluent Bit, Logstash, Vector, rsyslog/syslog-ng with a JSON temp
 | Format | One JSON object per line with `_raw` (the log text), `_time` (epoch seconds), `host`, `source`, `sourcetype`, `index`. Other fields are ignored unless named with `--extra-field` |
 | Optional first line | `{"authToken": "<contents of /etc/wd2l/aggregator.token>"}`. Required if the sender was started with `--auth-token-file` |
 | Compression | **None**. The sender refuses gzip and logs why |
-| Backpressure | **Persistent queue** (recommended) or block. Either way nothing is dropped in the aggregator if the sender restarts |
+| Backpressure | **Persistent queue** (recommended) or block. On a clean sender restart, anything that couldn't be read in time is counted in `shutdown_unread_bytes`; on a crash, up to one receive buffer of input can be lost (see accreditation notes) |
 
 Send everything that should cross (usually all of it) to that output. Anything you *don't* want
 in Enclave 2 should be filtered here, in Enclave 1.

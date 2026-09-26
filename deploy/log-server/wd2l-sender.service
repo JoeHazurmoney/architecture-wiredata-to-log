@@ -13,9 +13,14 @@ ExecStart=/usr/bin/python3 -m wd2l.sender \
     --bind 10.255.255.1 \
     --dst 10.255.255.2:5514 \
     --max-datagram 1472 \
-    --auth-token-file /etc/wd2l/aggregator.token
-# Final heartbeat (marks the stream as cleanly ended) is sent on SIGTERM.
+    --auth-token-file /etc/wd2l/aggregator.token \
+    --state /var/lib/wd2l/sender.json
+# Restart count + previous stream, so the receiver can link runs (see docs/wire-format.md).
+StateDirectory=wd2l
+# On SIGTERM the sender stops accepting, reads what is already arriving (--drain-timeout,
+# 2 s), then sends the final heartbeat (marks the stream as cleanly ended).
 KillSignal=SIGTERM
+TimeoutStopSec=30
 Restart=always
 RestartSec=2
 

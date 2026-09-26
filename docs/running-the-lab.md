@@ -57,7 +57,7 @@ If the repository is private, git will ask you to sign in to GitHub.
 python3 -m pytest
 ```
 
-These run without root and take about 15 seconds. You should see `64 passed`.
+These run without root and take about 25 seconds. You should see `90 passed`.
 
 ## 5. Run the lab
 
@@ -67,6 +67,7 @@ Each run takes about 15–20 seconds and cleans up after itself.
 sudo lab/run-lab.sh                             # clean run
 sudo lab/run-lab.sh --loss 1                    # drop 1% of packets on the "cable"
 sudo lab/run-lab.sh --receiver-outage           # stop the receiver mid-run, then replay the archive
+sudo lab/run-lab.sh --receiver-crash            # kill the receiver mid-run, then replay the archive
 sudo lab/run-lab.sh --events 25000 --eps 5000   # more logs, faster
 ```
 
@@ -87,6 +88,7 @@ What each run proves:
 | Clean | Every log arrives byte-for-byte identical. One 300 KB log arrives cut down and flagged. |
 | `--loss 1` | Some logs are lost, and every one is reported by number. PASS means nothing went missing unreported and nothing was falsely reported as missing. |
 | `--receiver-outage` | The receiver misses about 2 seconds of logs, then replay from the packet archive fills them in with no duplicates. |
+| `--receiver-crash` | Same, but the receiver is killed with no chance to clean up. Nothing is lost; some logs arrive twice (the `duplicates` line), which is allowed here because they are identical and carry the same sequence number. |
 
 Every run also checks two things:
 
