@@ -96,3 +96,6 @@ The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `pyt
 Proof of concept. Verified in the namespace lab (see the end of
 [architecture.md](docs/architecture.md)). Not yet verified: the physical tap, switch and fiber
 behavior, and a real log aggregator and SIEM. The deployment guides list the checks for each.
+
+Next: audit records (NIST SP 800-53 Rev 5, Moderate) and a fault-location health dashboard.
+Proposal for review: [docs/audit-and-health-plan.md](docs/audit-and-health-plan.md).
