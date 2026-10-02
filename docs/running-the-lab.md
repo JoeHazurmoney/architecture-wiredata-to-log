@@ -57,7 +57,7 @@ If the repository is private, git will ask you to sign in to GitHub.
 python3 -m pytest
 ```
 
-These run without root and take about 25 seconds. You should see `90 passed`.
+These run without root and take about 25 seconds. You should see `97 passed`.
 
 ## 5. Run the lab
 
@@ -106,6 +106,7 @@ Everything is written to `lab/out/`:
 | `received/health.jsonl` | The receiver's health, gap and heartbeat records (what the SIEM would get) |
 | `pcap/*.pcap` | The raw packet archive |
 | `sender.log`, `receiver.log`, `tcpdump.log` | Program logs |
+| `manifest.json`, `rebuilt/`, `hashes.txt` | Only with `--files`: what was sent, the files rebuilt in Enclave 2, and the hash comparison (section 8) |
 
 To look at the raw packets:
 
@@ -126,6 +127,95 @@ sudo ip netns exec wd2l-enc1 ip neigh                # the static ARP entry for 
 sudo ip netns exec wd2l-enc2 ip -d link show cap0    # capture NIC: no IP, NOARP, PROMISC
 sudo lab/teardown.sh                                 # remove everything when done
 ```
+
+## 8. Run real log files through and verify byte for byte
+
+`--files` sends whole log files instead of generated events. Each line becomes one event.
+Enclave 2 puts the files back together, and the lab compares SHA-256 hashes of the originals
+and the rebuilt copies. If any byte differed, the hash would differ.
+
+### With the sample logs in this repo
+
+`samples/logs/` holds three real logs (`messages`, `secure`, `audit.log`) captured from a
+disposable cloud VM. See [samples/logs/README.md](../samples/logs/README.md).
+
+```bash
+sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
+```
+
+It takes about 25 seconds and ends with:
+
+```
+file         result     sha256 original                                                  sha256 rebuilt
+messages     MATCH      b40e6d0aa8c8e1ea44aea988e5acb10db9b2dd3c7ff178b2ecd2c1c11ce784b5 b40e6d0aa8c8e1ea...
+secure       MATCH      a1889c62064889fde80f6724bd31cd022e41fd30a9ab05541cb3f9a7f4cdaab0 a1889c62064889fd...
+audit.log    MATCH      45667f63a67123549f835a3233d20605b2dec26ac2574571475b3eddef4fa9c6 45667f63a67123549...
+PASS: every file rebuilt byte for byte
+```
+
+To check the rebuilt copies yourself with the standard tool, against the hashes shipped in the
+repo:
+
+```bash
+(cd lab/out/rebuilt && sha256sum -c ../../../samples/logs/SHA256SUMS)
+```
+
+Each file should print `OK`.
+
+With `--loss 1` added before `--files`, some lines are lost on the "cable". The affected files are
+then reported as `INCOMPLETE`, with the number of missing lines, never as a false `MATCH`.
+
+### With your own computer's logs
+
+1. Copy the logs and hash the copies **before** they go in. Copy first: live logs keep growing,
+   so a hash of the live file won't stay the same.
+
+   ```bash
+   mkdir -p ~/wd2l-logs
+   sudo cp /var/log/messages /var/log/secure /var/log/audit/audit.log ~/wd2l-logs/
+   sudo chown "$USER": ~/wd2l-logs/*
+   (cd ~/wd2l-logs && sha256sum messages secure audit.log | tee SHA256SUMS)
+   ```
+
+2. Send them through the lab:
+
+   ```bash
+   sudo lab/run-lab.sh --files ~/wd2l-logs/messages ~/wd2l-logs/secure ~/wd2l-logs/audit.log
+   ```
+
+   `--files` must be the last option. The lab sends 1,000 lines a second by default, so for big
+   files put `--eps 5000` before it.
+
+3. Hash the rebuilt copies **after**, against your own "before" hashes:
+
+   ```bash
+   (cd lab/out/rebuilt && sha256sum -c ~/wd2l-logs/SHA256SUMS)
+   ```
+
+   Every file should print `OK`. The lab's own table (`lab/out/hashes.txt`) shows the same
+   comparison.
+
+4. Clean up. `lab/out/` and `~/wd2l-logs/` now hold copies of your real logs:
+
+   ```bash
+   sudo rm -rf lab/out ~/wd2l-logs
+   ```
+
+> **Ubuntu/Debian:** the files are named differently. Use `/var/log/syslog` (instead of
+> `messages`) and `/var/log/auth.log` (instead of `secure`), and change the names in the
+> `sha256sum` and `--files` lines to match. `audit.log` only exists if auditd is installed
+> (`sudo apt install auditd`).
+
+Things to know:
+
+* **Don't commit your own logs.** They contain real usernames, hostnames and IP addresses.
+  `lab/out/` is already ignored by git; `~/wd2l-logs/` is outside the repo.
+* Any text log works, not just these three: rotated files like `messages-20261001` too. Two files
+  with the same name (from different folders) can't go in the same run.
+* A single line longer than 256 KB would arrive truncated, so the lab refuses such a file up
+  front instead of reporting a false mismatch.
+* Lines that aren't valid UTF-8 (rare, but some logs have them) are carried base64-encoded and
+  restored exactly.
 
 ## If something goes wrong
 

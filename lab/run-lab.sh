@@ -11,13 +11,16 @@
 # Needs: root, iproute2, nftables (kernel >= 5.16 for the netdev egress hook), tcpdump, python3.
 #
 # Usage: sudo lab/run-lab.sh [--events N] [--eps N] [--loss PCT] [--receiver-outage]
-#                            [--receiver-crash] [--keep]
+#                            [--receiver-crash] [--keep] [--files FILE...]
 #   --loss PCT          drop PCT% of packets on the cable (before the tap): gaps must be reported
 #   --receiver-outage   stop the receiver mid-run, restart it, then replay the pcap archive:
 #                       everything must end up delivered with no duplicates
 #   --receiver-crash    same, but the receiver is killed (SIGKILL) instead of stopped: nothing
 #                       may be lost; a few duplicates are allowed (dedup on wd2l_stream/wd2l_seq)
 #   --keep              leave namespaces up afterwards (lab/teardown.sh removes them)
+#   --files FILE...     send these log files (one event per line) instead of generated events,
+#                       then rebuild them in Enclave 2 and compare SHA-256 hashes. Must be the
+#                       last option: everything after it is a file.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -30,6 +33,7 @@ OUTAGE=0
 KILLSIG=TERM
 KEEP=0
 MAX_EVENT=262144
+FILES=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -39,6 +43,7 @@ while [ $# -gt 0 ]; do
     --receiver-outage) OUTAGE=1; shift ;;
     --receiver-crash) OUTAGE=1; KILLSIG=KILL; shift ;;
     --keep) KEEP=1; shift ;;
+    --files) shift; FILES=("$@"); [ ${#FILES[@]} -gt 0 ] || { echo "--files needs files" >&2; exit 2; }; break ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -127,8 +132,16 @@ table netdev notx {
 }
 EOF
 
-echo "== generating $EVENTS events (+1 oversize)"
-python3 "$HERE/gen_events.py" -n "$EVENTS" "$OUT/sent.jsonl"
+SENDER_EXTRA=()
+if [ ${#FILES[@]} -gt 0 ]; then
+  echo "== turning ${#FILES[@]} file(s) into events, one per line"
+  python3 "$HERE/files_to_events.py" --out "$OUT/sent.jsonl" --manifest "$OUT/manifest.json" \
+    --max-event "$MAX_EVENT" "${FILES[@]}"
+  SENDER_EXTRA=(--extra-field wd2l_b64)
+else
+  echo "== generating $EVENTS events (+1 oversize)"
+  python3 "$HERE/gen_events.py" -n "$EVENTS" "$OUT/sent.jsonl"
+fi
 
 echo "== starting Enclave 2: capture archive + receiver"
 $ENC2 tcpdump -i cap0 -U -Z root -G 3600 -w "$OUT/pcap/cap-%Y%m%d%H%M%S.pcap" \
@@ -149,7 +162,7 @@ sleep 1
 echo "== starting Enclave 1: wd2l-sender + stand-in log aggregator"
 $ENC1 python3 -m wd2l.sender --listen 127.0.0.1:10070 --dst 10.255.255.2:5514 \
   --bind 10.255.255.1 --max-event "$MAX_EVENT" --stats-interval 5 --state "$OUT/sender.json" \
-  >"$OUT/sender.log" 2>&1 &
+  "${SENDER_EXTRA[@]}" >"$OUT/sender.log" 2>&1 &
 TX_PID=$!
 PIDS+=($TX_PID)
 sleep 1
@@ -185,7 +198,7 @@ BACK=$($BH cat /sys/class/net/tap0/statistics/rx_packets)
 echo "== frames sent back toward Enclave 1 from Enclave 2: $BACK"
 
 echo "== verifying"
-VERIFY_ARGS=("$OUT/sent.jsonl" "$OUT/received" --max-event "$MAX_EVENT")
+VERIFY_ARGS=("$OUT/sent.jsonl" "$OUT/received" --max-event "$MAX_EVENT" "${SENDER_EXTRA[@]}")
 if [ -n "$LOSS" ]; then VERIFY_ARGS+=(--expect-gaps); fi
 if [ "$OUTAGE" = 1 ]; then VERIFY_ARGS+=(--state "$OUT/state.json"); fi
 if [ "$KILLSIG" = KILL ]; then VERIFY_ARGS+=(--allow-duplicates); fi
@@ -197,5 +210,21 @@ if [ "$OUTAGE" = 1 ]; then
   echo "(during the outage the live receiver reported $(grep -c '"type": "gap"' "$OUT/received/health.jsonl" || true) gap record(s); the archive replay filled them)"
 fi
 [ "$BACK" = 0 ] || { echo "FAIL: Enclave 2 transmitted $BACK frames"; RC=1; }
+if [ ${#FILES[@]} -gt 0 ]; then
+  echo
+  echo "== rebuilding the files in Enclave 2 and comparing SHA-256 hashes"
+  set +e
+  python3 "$HERE/rebuild_files.py" "$OUT/manifest.json" "$OUT/received/events.jsonl" \
+    "$OUT/rebuilt" --hashes "$OUT/hashes.txt"
+  HRC=$?
+  set -e
+  if [ "$HRC" = 0 ]; then
+    echo "PASS: every file rebuilt byte for byte (rebuilt copies in $OUT/rebuilt)"
+  elif [ -n "$LOSS" ]; then
+    echo "(expected with --loss: files with lost lines are INCOMPLETE, never a false MATCH)"
+  else
+    echo "FAIL: not every file was rebuilt identically"; RC=1
+  fi
+fi
 echo "logs and captures: $OUT"
 exit $RC

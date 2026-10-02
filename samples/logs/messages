@@ -1,0 +1,722 @@
+Oct  2 00:22:33 sample-host rsyslogd: [origin software="rsyslogd" swVersion="8.2312.0" x-pid="5527" x-info="https://www.rsyslog.com"] start
+Oct  2 00:22:34 sample-host auditd[5534]: No plugins found, not dispatching events
+Oct  2 00:22:34 sample-host auditd[5534]: Unable to adjust out of memory score
+Oct  2 00:22:34 sample-host auditd[5534]: Init complete, auditd 3.1.2 listening for events (startup state enable)
+Oct  2 00:22:36 sample-host sshd[5590]: Server listening on 0.0.0.0 port 2222.
+Oct  2 00:22:37 sample-host sshd[5595]: Accepted publickey for labuser from 127.0.0.1 port 40828 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:22:37 sample-host sshd[5606]: Received disconnect from 127.0.0.1 port 40828:11: disconnected by user
+Oct  2 00:22:37 sample-host sshd[5606]: Disconnected from user labuser 127.0.0.1 port 40828
+Oct  2 00:22:37 sample-host sshd[5613]: Accepted password for labadmin from 127.0.0.1 port 40836 ssh2
+Oct  2 00:22:37 sample-host sshd[5624]: Received disconnect from 127.0.0.1 port 40836:11: disconnected by user
+Oct  2 00:22:37 sample-host sshd[5624]: Disconnected from user labadmin 127.0.0.1 port 40836
+Oct  2 00:22:39 sample-host sshd[5633]: Failed password for labuser from 127.0.0.1 port 40840 ssh2
+Oct  2 00:22:40 sample-host sshd[5633]: Connection closed by authenticating user labuser 127.0.0.1 port 40840 [preauth]
+Oct  2 00:22:40 sample-host sshd[5640]: Invalid user admin from 127.0.0.1 port 40846
+Oct  2 00:22:42 sample-host sshd[5640]: Failed password for invalid user admin from 127.0.0.1 port 40846 ssh2
+Oct  2 00:22:43 sample-host sshd[5640]: Connection closed by invalid user admin 127.0.0.1 port 40846 [preauth]
+Oct  2 00:22:43 sample-host su[5642]: (to labuser) root on none
+Oct  2 00:22:43 sample-host su[5645]: (to labadmin) root on none
+Oct  2 00:22:43 sample-host backupd: job nightly-1 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:22:43 sample-host backupd: job nightly-1: 2 files changed during read, retrying
+Oct  2 00:22:43 sample-host webapp: GET /api/v1/orders/1 200 41ms user=labuser
+Oct  2 00:22:43 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=1
+Oct  2 00:22:43 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:22:43 sample-host sshd[5686]: Accepted publickey for labuser from 127.0.0.1 port 40856 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:22:43 sample-host sshd[5697]: Received disconnect from 127.0.0.1 port 40856:11: disconnected by user
+Oct  2 00:22:43 sample-host sshd[5697]: Disconnected from user labuser 127.0.0.1 port 40856
+Oct  2 00:22:44 sample-host sshd[5704]: Accepted password for labadmin from 127.0.0.1 port 40858 ssh2
+Oct  2 00:22:44 sample-host sshd[5715]: Received disconnect from 127.0.0.1 port 40858:11: disconnected by user
+Oct  2 00:22:44 sample-host sshd[5715]: Disconnected from user labadmin 127.0.0.1 port 40858
+Oct  2 00:22:46 sample-host sshd[5724]: Failed password for labuser from 127.0.0.1 port 40866 ssh2
+Oct  2 00:22:46 sample-host sshd[5724]: Connection closed by authenticating user labuser 127.0.0.1 port 40866 [preauth]
+Oct  2 00:22:46 sample-host sshd[5728]: Invalid user oracle from 127.0.0.1 port 40882
+Oct  2 00:22:48 sample-host sshd[5728]: Failed password for invalid user oracle from 127.0.0.1 port 40882 ssh2
+Oct  2 00:22:50 sample-host sshd[5728]: Connection closed by invalid user oracle 127.0.0.1 port 40882 [preauth]
+Oct  2 00:22:52 sample-host sshd[5732]: Failed password for ubuntu from 127.0.0.1 port 36640 ssh2
+Oct  2 00:22:53 sample-host sshd[5732]: Connection closed by authenticating user ubuntu 127.0.0.1 port 36640 [preauth]
+Oct  2 00:22:53 sample-host su[5734]: (to labuser) root on none
+Oct  2 00:22:53 sample-host su[5737]: (to labadmin) root on none
+Oct  2 00:22:53 sample-host backupd: job nightly-2 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:22:53 sample-host backupd: job nightly-2: 2 files changed during read, retrying
+Oct  2 00:22:53 sample-host webapp: GET /api/v1/orders/2 200 41ms user=labuser
+Oct  2 00:22:53 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=2
+Oct  2 00:22:53 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:22:54 sample-host sshd[5755]: Accepted publickey for labuser from 127.0.0.1 port 36654 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:22:54 sample-host sshd[5766]: Received disconnect from 127.0.0.1 port 36654:11: disconnected by user
+Oct  2 00:22:54 sample-host sshd[5766]: Disconnected from user labuser 127.0.0.1 port 36654
+Oct  2 00:22:54 sample-host sshd[5773]: Accepted password for labadmin from 127.0.0.1 port 36668 ssh2
+Oct  2 00:22:54 sample-host sshd[5784]: Received disconnect from 127.0.0.1 port 36668:11: disconnected by user
+Oct  2 00:22:54 sample-host sshd[5784]: Disconnected from user labadmin 127.0.0.1 port 36668
+Oct  2 00:22:56 sample-host sshd[5793]: Failed password for labuser from 127.0.0.1 port 36678 ssh2
+Oct  2 00:22:56 sample-host sshd[5793]: Connection closed by authenticating user labuser 127.0.0.1 port 36678 [preauth]
+Oct  2 00:22:56 sample-host su[5795]: (to labuser) root on none
+Oct  2 00:22:56 sample-host su[5798]: (to labadmin) root on none
+Oct  2 00:22:56 sample-host backupd: job nightly-3 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:22:56 sample-host backupd: job nightly-3: 2 files changed during read, retrying
+Oct  2 00:22:56 sample-host webapp: GET /api/v1/orders/3 200 41ms user=labuser
+Oct  2 00:22:56 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=3
+Oct  2 00:22:56 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:22:57 sample-host sshd[5813]: Accepted publickey for labuser from 127.0.0.1 port 54752 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:22:57 sample-host sshd[5824]: Received disconnect from 127.0.0.1 port 54752:11: disconnected by user
+Oct  2 00:22:57 sample-host sshd[5824]: Disconnected from user labuser 127.0.0.1 port 54752
+Oct  2 00:22:57 sample-host sshd[5831]: Accepted password for labadmin from 127.0.0.1 port 54762 ssh2
+Oct  2 00:22:57 sample-host sshd[5842]: Received disconnect from 127.0.0.1 port 54762:11: disconnected by user
+Oct  2 00:22:57 sample-host sshd[5842]: Disconnected from user labadmin 127.0.0.1 port 54762
+Oct  2 00:22:59 sample-host sshd[5851]: Failed password for labuser from 127.0.0.1 port 54776 ssh2
+Oct  2 00:22:59 sample-host sshd[5851]: Connection closed by authenticating user labuser 127.0.0.1 port 54776 [preauth]
+Oct  2 00:23:00 sample-host sshd[5855]: Invalid user test from 127.0.0.1 port 54784
+Oct  2 00:23:01 sample-host sshd[5855]: Failed password for invalid user test from 127.0.0.1 port 54784 ssh2
+Oct  2 00:23:02 sample-host sshd[5855]: Connection closed by invalid user test 127.0.0.1 port 54784 [preauth]
+Oct  2 00:23:02 sample-host su[5857]: (to labuser) root on none
+Oct  2 00:23:02 sample-host su[5860]: (to labadmin) root on none
+Oct  2 00:23:02 sample-host backupd: job nightly-4 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:23:02 sample-host backupd: job nightly-4: 2 files changed during read, retrying
+Oct  2 00:23:02 sample-host webapp: GET /api/v1/orders/4 200 41ms user=labuser
+Oct  2 00:23:02 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=4
+Oct  2 00:23:02 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:23:02 sample-host sshd[5874]: Accepted publickey for labuser from 127.0.0.1 port 54786 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:23:02 sample-host sshd[5885]: Received disconnect from 127.0.0.1 port 54786:11: disconnected by user
+Oct  2 00:23:02 sample-host sshd[5885]: Disconnected from user labuser 127.0.0.1 port 54786
+Oct  2 00:23:02 sample-host sshd[5892]: Accepted password for labadmin from 127.0.0.1 port 54788 ssh2
+Oct  2 00:23:02 sample-host sshd[5903]: Received disconnect from 127.0.0.1 port 54788:11: disconnected by user
+Oct  2 00:23:02 sample-host sshd[5903]: Disconnected from user labadmin 127.0.0.1 port 54788
+Oct  2 00:23:05 sample-host sshd[5912]: Failed password for labuser from 127.0.0.1 port 54802 ssh2
+Oct  2 00:23:07 sample-host sshd[5912]: Connection closed by authenticating user labuser 127.0.0.1 port 54802 [preauth]
+Oct  2 00:23:07 sample-host sshd[5916]: Invalid user admin from 127.0.0.1 port 54080
+Oct  2 00:23:09 sample-host sshd[5916]: Failed password for invalid user admin from 127.0.0.1 port 54080 ssh2
+Oct  2 00:23:10 sample-host sshd[5916]: Connection closed by invalid user admin 127.0.0.1 port 54080 [preauth]
+Oct  2 00:23:10 sample-host su[5919]: (to labuser) root on none
+Oct  2 00:23:10 sample-host su[5922]: (to labadmin) root on none
+Oct  2 00:23:10 sample-host backupd: job nightly-5 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:23:10 sample-host backupd: job nightly-5: 2 files changed during read, retrying
+Oct  2 00:23:10 sample-host webapp: GET /api/v1/orders/5 200 41ms user=labuser
+Oct  2 00:23:10 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=5
+Oct  2 00:23:10 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:23:10 sample-host sshd[5937]: Accepted publickey for labuser from 127.0.0.1 port 54088 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:23:10 sample-host sshd[5948]: Received disconnect from 127.0.0.1 port 54088:11: disconnected by user
+Oct  2 00:23:10 sample-host sshd[5948]: Disconnected from user labuser 127.0.0.1 port 54088
+Oct  2 00:23:11 sample-host sshd[5955]: Accepted password for labadmin from 127.0.0.1 port 54096 ssh2
+Oct  2 00:23:11 sample-host sshd[5966]: Received disconnect from 127.0.0.1 port 54096:11: disconnected by user
+Oct  2 00:23:11 sample-host sshd[5966]: Disconnected from user labadmin 127.0.0.1 port 54096
+Oct  2 00:23:13 sample-host sshd[5975]: Failed password for labuser from 127.0.0.1 port 54100 ssh2
+Oct  2 00:23:15 sample-host sshd[5975]: Connection closed by authenticating user labuser 127.0.0.1 port 54100 [preauth]
+Oct  2 00:23:15 sample-host sshd[5982]: Invalid user oracle from 127.0.0.1 port 54104
+Oct  2 00:23:17 sample-host sshd[5982]: Failed password for invalid user oracle from 127.0.0.1 port 54104 ssh2
+Oct  2 00:23:17 sample-host sshd[5982]: Connection closed by invalid user oracle 127.0.0.1 port 54104 [preauth]
+Oct  2 00:23:20 sample-host sshd[5986]: Failed password for ubuntu from 127.0.0.1 port 43686 ssh2
+Oct  2 00:23:20 sample-host sshd[5986]: Connection closed by authenticating user ubuntu 127.0.0.1 port 43686 [preauth]
+Oct  2 00:23:20 sample-host su[5988]: (to labuser) root on none
+Oct  2 00:23:20 sample-host su[5991]: (to labadmin) root on none
+Oct  2 00:23:20 sample-host backupd: job nightly-6 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:23:20 sample-host backupd: job nightly-6: 2 files changed during read, retrying
+Oct  2 00:23:20 sample-host webapp: GET /api/v1/orders/6 200 41ms user=labuser
+Oct  2 00:23:20 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=6
+Oct  2 00:23:20 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:23:21 sample-host sshd[6005]: Accepted publickey for labuser from 127.0.0.1 port 43696 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:23:21 sample-host sshd[6016]: Received disconnect from 127.0.0.1 port 43696:11: disconnected by user
+Oct  2 00:23:21 sample-host sshd[6016]: Disconnected from user labuser 127.0.0.1 port 43696
+Oct  2 00:23:21 sample-host sshd[6023]: Accepted password for labadmin from 127.0.0.1 port 43712 ssh2
+Oct  2 00:23:21 sample-host sshd[6034]: Received disconnect from 127.0.0.1 port 43712:11: disconnected by user
+Oct  2 00:23:21 sample-host sshd[6034]: Disconnected from user labadmin 127.0.0.1 port 43712
+Oct  2 00:23:24 sample-host sshd[6043]: Failed password for labuser from 127.0.0.1 port 43718 ssh2
+Oct  2 00:23:26 sample-host sshd[6043]: Connection closed by authenticating user labuser 127.0.0.1 port 43718 [preauth]
+Oct  2 00:23:26 sample-host su[6045]: (to labuser) root on none
+Oct  2 00:23:26 sample-host su[6048]: (to labadmin) root on none
+Oct  2 00:23:26 sample-host backupd: job nightly-7 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:23:26 sample-host backupd: job nightly-7: 2 files changed during read, retrying
+Oct  2 00:23:26 sample-host webapp: GET /api/v1/orders/7 200 41ms user=labuser
+Oct  2 00:23:26 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=7
+Oct  2 00:23:26 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:23:26 sample-host ntpd: time step of 0.412 s exceeds panic threshold
+Oct  2 00:23:26 sample-host sshd[6063]: Accepted publickey for labuser from 127.0.0.1 port 43726 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:23:26 sample-host sshd[6074]: Received disconnect from 127.0.0.1 port 43726:11: disconnected by user
+Oct  2 00:23:26 sample-host sshd[6074]: Disconnected from user labuser 127.0.0.1 port 43726
+Oct  2 00:23:26 sample-host sshd[6081]: Accepted password for labadmin from 127.0.0.1 port 43732 ssh2
+Oct  2 00:23:26 sample-host sshd[6092]: Received disconnect from 127.0.0.1 port 43732:11: disconnected by user
+Oct  2 00:23:26 sample-host sshd[6092]: Disconnected from user labadmin 127.0.0.1 port 43732
+Oct  2 00:23:29 sample-host sshd[6101]: Failed password for labuser from 127.0.0.1 port 34080 ssh2
+Oct  2 00:23:30 sample-host sshd[6101]: Connection closed by authenticating user labuser 127.0.0.1 port 34080 [preauth]
+Oct  2 00:23:31 sample-host sshd[6105]: Invalid user test from 127.0.0.1 port 34090
+Oct  2 00:23:32 sample-host sshd[6105]: Failed password for invalid user test from 127.0.0.1 port 34090 ssh2
+Oct  2 00:23:33 sample-host sshd[6105]: Connection closed by invalid user test 127.0.0.1 port 34090 [preauth]
+Oct  2 00:23:33 sample-host su[6107]: (to labuser) root on none
+Oct  2 00:23:33 sample-host su[6110]: (to labadmin) root on none
+Oct  2 00:23:33 sample-host backupd: job nightly-8 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:23:33 sample-host backupd: job nightly-8: 2 files changed during read, retrying
+Oct  2 00:23:33 sample-host webapp: GET /api/v1/orders/8 200 41ms user=labuser
+Oct  2 00:23:33 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=8
+Oct  2 00:23:33 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:23:33 sample-host sshd[6124]: Accepted publickey for labuser from 127.0.0.1 port 34098 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:23:33 sample-host sshd[6135]: Received disconnect from 127.0.0.1 port 34098:11: disconnected by user
+Oct  2 00:23:33 sample-host sshd[6135]: Disconnected from user labuser 127.0.0.1 port 34098
+Oct  2 00:23:33 sample-host sshd[6142]: Accepted password for labadmin from 127.0.0.1 port 34114 ssh2
+Oct  2 00:23:33 sample-host sshd[6153]: Received disconnect from 127.0.0.1 port 34114:11: disconnected by user
+Oct  2 00:23:33 sample-host sshd[6153]: Disconnected from user labadmin 127.0.0.1 port 34114
+Oct  2 00:23:36 sample-host sshd[6162]: Failed password for labuser from 127.0.0.1 port 34116 ssh2
+Oct  2 00:23:38 sample-host sshd[6162]: Connection closed by authenticating user labuser 127.0.0.1 port 34116 [preauth]
+Oct  2 00:23:38 sample-host sshd[6166]: Invalid user admin from 127.0.0.1 port 53124
+Oct  2 00:23:40 sample-host sshd[6166]: Failed password for invalid user admin from 127.0.0.1 port 53124 ssh2
+Oct  2 00:23:41 sample-host sshd[6166]: Connection closed by invalid user admin 127.0.0.1 port 53124 [preauth]
+Oct  2 00:23:41 sample-host su[6172]: (to labuser) root on none
+Oct  2 00:23:41 sample-host su[6175]: (to labadmin) root on none
+Oct  2 00:23:41 sample-host backupd: job nightly-9 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:23:41 sample-host backupd: job nightly-9: 2 files changed during read, retrying
+Oct  2 00:23:41 sample-host webapp: GET /api/v1/orders/9 200 41ms user=labuser
+Oct  2 00:23:41 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=9
+Oct  2 00:23:41 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:23:41 sample-host sshd[6189]: Accepted publickey for labuser from 127.0.0.1 port 53128 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:23:41 sample-host sshd[6200]: Received disconnect from 127.0.0.1 port 53128:11: disconnected by user
+Oct  2 00:23:41 sample-host sshd[6200]: Disconnected from user labuser 127.0.0.1 port 53128
+Oct  2 00:23:42 sample-host sshd[6207]: Accepted password for labadmin from 127.0.0.1 port 53134 ssh2
+Oct  2 00:23:42 sample-host sshd[6218]: Received disconnect from 127.0.0.1 port 53134:11: disconnected by user
+Oct  2 00:23:42 sample-host sshd[6218]: Disconnected from user labadmin 127.0.0.1 port 53134
+Oct  2 00:23:43 sample-host sshd[6227]: Failed password for labuser from 127.0.0.1 port 53146 ssh2
+Oct  2 00:23:44 sample-host sshd[6227]: Connection closed by authenticating user labuser 127.0.0.1 port 53146 [preauth]
+Oct  2 00:23:44 sample-host sshd[6231]: Invalid user oracle from 127.0.0.1 port 53154
+Oct  2 00:23:46 sample-host sshd[6231]: Failed password for invalid user oracle from 127.0.0.1 port 53154 ssh2
+Oct  2 00:23:46 sample-host sshd[6231]: Connection closed by invalid user oracle 127.0.0.1 port 53154 [preauth]
+Oct  2 00:23:48 sample-host sshd[6235]: Failed password for ubuntu from 127.0.0.1 port 53170 ssh2
+Oct  2 00:23:49 sample-host sshd[6235]: Connection closed by authenticating user ubuntu 127.0.0.1 port 53170 [preauth]
+Oct  2 00:23:49 sample-host su[6237]: (to labuser) root on none
+Oct  2 00:23:49 sample-host su[6240]: (to labadmin) root on none
+Oct  2 00:23:49 sample-host backupd: job nightly-10 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:23:49 sample-host backupd: job nightly-10: 2 files changed during read, retrying
+Oct  2 00:23:49 sample-host webapp: GET /api/v1/orders/10 200 41ms user=labuser
+Oct  2 00:23:49 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=10
+Oct  2 00:23:49 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:23:50 sample-host sshd[6255]: Accepted publickey for labuser from 127.0.0.1 port 46632 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:23:50 sample-host sshd[6266]: Received disconnect from 127.0.0.1 port 46632:11: disconnected by user
+Oct  2 00:23:50 sample-host sshd[6266]: Disconnected from user labuser 127.0.0.1 port 46632
+Oct  2 00:23:50 sample-host sshd[6273]: Accepted password for labadmin from 127.0.0.1 port 46640 ssh2
+Oct  2 00:23:50 sample-host sshd[6284]: Received disconnect from 127.0.0.1 port 46640:11: disconnected by user
+Oct  2 00:23:50 sample-host sshd[6284]: Disconnected from user labadmin 127.0.0.1 port 46640
+Oct  2 00:23:52 sample-host sshd[6293]: Failed password for labuser from 127.0.0.1 port 46652 ssh2
+Oct  2 00:23:52 sample-host sshd[6293]: Connection closed by authenticating user labuser 127.0.0.1 port 46652 [preauth]
+Oct  2 00:23:52 sample-host su[6295]: (to labuser) root on none
+Oct  2 00:23:52 sample-host su[6298]: (to labadmin) root on none
+Oct  2 00:23:53 sample-host backupd: job nightly-11 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:23:53 sample-host backupd: job nightly-11: 2 files changed during read, retrying
+Oct  2 00:23:53 sample-host webapp: GET /api/v1/orders/11 200 41ms user=labuser
+Oct  2 00:23:53 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=11
+Oct  2 00:23:53 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:23:53 sample-host sshd[6340]: Accepted publickey for labuser from 127.0.0.1 port 46664 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:23:53 sample-host sshd[6351]: Received disconnect from 127.0.0.1 port 46664:11: disconnected by user
+Oct  2 00:23:53 sample-host sshd[6351]: Disconnected from user labuser 127.0.0.1 port 46664
+Oct  2 00:23:53 sample-host sshd[6358]: Accepted password for labadmin from 127.0.0.1 port 46678 ssh2
+Oct  2 00:23:53 sample-host sshd[6369]: Received disconnect from 127.0.0.1 port 46678:11: disconnected by user
+Oct  2 00:23:53 sample-host sshd[6369]: Disconnected from user labadmin 127.0.0.1 port 46678
+Oct  2 00:23:56 sample-host sshd[6378]: Failed password for labuser from 127.0.0.1 port 46686 ssh2
+Oct  2 00:23:58 sample-host sshd[6378]: Connection closed by authenticating user labuser 127.0.0.1 port 46686 [preauth]
+Oct  2 00:23:58 sample-host sshd[6382]: Invalid user test from 127.0.0.1 port 56008
+Oct  2 00:24:00 sample-host sshd[6382]: Failed password for invalid user test from 127.0.0.1 port 56008 ssh2
+Oct  2 00:24:02 sample-host sshd[6382]: Connection closed by invalid user test 127.0.0.1 port 56008 [preauth]
+Oct  2 00:24:02 sample-host su[6384]: (to labuser) root on none
+Oct  2 00:24:02 sample-host su[6387]: (to labadmin) root on none
+Oct  2 00:24:02 sample-host backupd: job nightly-12 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:24:02 sample-host backupd: job nightly-12: 2 files changed during read, retrying
+Oct  2 00:24:02 sample-host webapp: GET /api/v1/orders/12 200 41ms user=labuser
+Oct  2 00:24:02 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=12
+Oct  2 00:24:02 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:24:02 sample-host sshd[6401]: Accepted publickey for labuser from 127.0.0.1 port 56018 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:24:02 sample-host sshd[6412]: Received disconnect from 127.0.0.1 port 56018:11: disconnected by user
+Oct  2 00:24:02 sample-host sshd[6412]: Disconnected from user labuser 127.0.0.1 port 56018
+Oct  2 00:24:02 sample-host sshd[6419]: Accepted password for labadmin from 127.0.0.1 port 56020 ssh2
+Oct  2 00:24:02 sample-host sshd[6430]: Received disconnect from 127.0.0.1 port 56020:11: disconnected by user
+Oct  2 00:24:02 sample-host sshd[6430]: Disconnected from user labadmin 127.0.0.1 port 56020
+Oct  2 00:24:05 sample-host sshd[6439]: Failed password for labuser from 127.0.0.1 port 56022 ssh2
+Oct  2 00:24:07 sample-host sshd[6439]: Connection closed by authenticating user labuser 127.0.0.1 port 56022 [preauth]
+Oct  2 00:24:07 sample-host sshd[6443]: Invalid user admin from 127.0.0.1 port 47206
+Oct  2 00:24:08 sample-host sshd[6443]: Failed password for invalid user admin from 127.0.0.1 port 47206 ssh2
+Oct  2 00:24:08 sample-host sshd[6443]: Connection closed by invalid user admin 127.0.0.1 port 47206 [preauth]
+Oct  2 00:24:08 sample-host su[6445]: (to labuser) root on none
+Oct  2 00:24:08 sample-host su[6448]: (to labadmin) root on none
+Oct  2 00:24:08 sample-host backupd: job nightly-13 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:24:08 sample-host backupd: job nightly-13: 2 files changed during read, retrying
+Oct  2 00:24:08 sample-host webapp: GET /api/v1/orders/13 200 41ms user=labuser
+Oct  2 00:24:08 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=13
+Oct  2 00:24:08 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:24:09 sample-host sshd[6462]: Accepted publickey for labuser from 127.0.0.1 port 47222 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:24:09 sample-host sshd[6473]: Received disconnect from 127.0.0.1 port 47222:11: disconnected by user
+Oct  2 00:24:09 sample-host sshd[6473]: Disconnected from user labuser 127.0.0.1 port 47222
+Oct  2 00:24:09 sample-host sshd[6480]: Accepted password for labadmin from 127.0.0.1 port 47234 ssh2
+Oct  2 00:24:09 sample-host sshd[6491]: Received disconnect from 127.0.0.1 port 47234:11: disconnected by user
+Oct  2 00:24:09 sample-host sshd[6491]: Disconnected from user labadmin 127.0.0.1 port 47234
+Oct  2 00:24:11 sample-host sshd[6500]: Failed password for labuser from 127.0.0.1 port 47248 ssh2
+Oct  2 00:24:11 sample-host sshd[6500]: Connection closed by authenticating user labuser 127.0.0.1 port 47248 [preauth]
+Oct  2 00:24:12 sample-host sshd[6505]: Invalid user oracle from 127.0.0.1 port 47250
+Oct  2 00:24:13 sample-host sshd[6505]: Failed password for invalid user oracle from 127.0.0.1 port 47250 ssh2
+Oct  2 00:24:14 sample-host sshd[6505]: Connection closed by invalid user oracle 127.0.0.1 port 47250 [preauth]
+Oct  2 00:24:15 sample-host sshd[6512]: Failed password for ubuntu from 127.0.0.1 port 47258 ssh2
+Oct  2 00:24:17 sample-host sshd[6512]: Connection closed by authenticating user ubuntu 127.0.0.1 port 47258 [preauth]
+Oct  2 00:24:17 sample-host su[6514]: (to labuser) root on none
+Oct  2 00:24:17 sample-host su[6517]: (to labadmin) root on none
+Oct  2 00:24:17 sample-host backupd: job nightly-14 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:24:17 sample-host backupd: job nightly-14: 2 files changed during read, retrying
+Oct  2 00:24:17 sample-host webapp: GET /api/v1/orders/14 200 41ms user=labuser
+Oct  2 00:24:17 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=14
+Oct  2 00:24:17 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:24:17 sample-host ntpd: time step of 0.412 s exceeds panic threshold
+Oct  2 00:24:17 sample-host sshd[6532]: Accepted publickey for labuser from 127.0.0.1 port 52126 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:24:17 sample-host sshd[6543]: Received disconnect from 127.0.0.1 port 52126:11: disconnected by user
+Oct  2 00:24:17 sample-host sshd[6543]: Disconnected from user labuser 127.0.0.1 port 52126
+Oct  2 00:24:18 sample-host sshd[6550]: Accepted password for labadmin from 127.0.0.1 port 52136 ssh2
+Oct  2 00:24:18 sample-host sshd[6561]: Received disconnect from 127.0.0.1 port 52136:11: disconnected by user
+Oct  2 00:24:18 sample-host sshd[6561]: Disconnected from user labadmin 127.0.0.1 port 52136
+Oct  2 00:24:20 sample-host sshd[6570]: Failed password for labuser from 127.0.0.1 port 52150 ssh2
+Oct  2 00:24:20 sample-host sshd[6570]: Connection closed by authenticating user labuser 127.0.0.1 port 52150 [preauth]
+Oct  2 00:24:20 sample-host su[6573]: (to labuser) root on none
+Oct  2 00:24:20 sample-host su[6576]: (to labadmin) root on none
+Oct  2 00:24:20 sample-host backupd: job nightly-15 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:24:20 sample-host backupd: job nightly-15: 2 files changed during read, retrying
+Oct  2 00:24:20 sample-host webapp: GET /api/v1/orders/15 200 41ms user=labuser
+Oct  2 00:24:20 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=15
+Oct  2 00:24:20 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:24:20 sample-host sshd[6591]: Accepted publickey for labuser from 127.0.0.1 port 52156 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:24:20 sample-host sshd[6602]: Received disconnect from 127.0.0.1 port 52156:11: disconnected by user
+Oct  2 00:24:20 sample-host sshd[6602]: Disconnected from user labuser 127.0.0.1 port 52156
+Oct  2 00:24:21 sample-host sshd[6609]: Accepted password for labadmin from 127.0.0.1 port 52164 ssh2
+Oct  2 00:24:21 sample-host sshd[6620]: Received disconnect from 127.0.0.1 port 52164:11: disconnected by user
+Oct  2 00:24:21 sample-host sshd[6620]: Disconnected from user labadmin 127.0.0.1 port 52164
+Oct  2 00:24:23 sample-host sshd[6629]: Failed password for labuser from 127.0.0.1 port 52168 ssh2
+Oct  2 00:24:23 sample-host sshd[6629]: Connection closed by authenticating user labuser 127.0.0.1 port 52168 [preauth]
+Oct  2 00:24:23 sample-host sshd[6633]: Invalid user test from 127.0.0.1 port 52182
+Oct  2 00:24:26 sample-host sshd[6633]: Failed password for invalid user test from 127.0.0.1 port 52182 ssh2
+Oct  2 00:24:27 sample-host sshd[6633]: Connection closed by invalid user test 127.0.0.1 port 52182 [preauth]
+Oct  2 00:24:27 sample-host su[6635]: (to labuser) root on none
+Oct  2 00:24:27 sample-host su[6638]: (to labadmin) root on none
+Oct  2 00:24:27 sample-host backupd: job nightly-16 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:24:27 sample-host backupd: job nightly-16: 2 files changed during read, retrying
+Oct  2 00:24:27 sample-host webapp: GET /api/v1/orders/16 200 41ms user=labuser
+Oct  2 00:24:27 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=16
+Oct  2 00:24:27 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:24:27 sample-host sshd[6652]: Accepted publickey for labuser from 127.0.0.1 port 47204 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:24:27 sample-host sshd[6663]: Received disconnect from 127.0.0.1 port 47204:11: disconnected by user
+Oct  2 00:24:27 sample-host sshd[6663]: Disconnected from user labuser 127.0.0.1 port 47204
+Oct  2 00:24:28 sample-host sshd[6670]: Accepted password for labadmin from 127.0.0.1 port 47216 ssh2
+Oct  2 00:24:28 sample-host sshd[6681]: Received disconnect from 127.0.0.1 port 47216:11: disconnected by user
+Oct  2 00:24:28 sample-host sshd[6681]: Disconnected from user labadmin 127.0.0.1 port 47216
+Oct  2 00:24:30 sample-host sshd[6690]: Failed password for labuser from 127.0.0.1 port 47222 ssh2
+Oct  2 00:24:30 sample-host sshd[6690]: Connection closed by authenticating user labuser 127.0.0.1 port 47222 [preauth]
+Oct  2 00:24:30 sample-host sshd[6694]: Invalid user admin from 127.0.0.1 port 47236
+Oct  2 00:24:32 sample-host sshd[6694]: Failed password for invalid user admin from 127.0.0.1 port 47236 ssh2
+Oct  2 00:24:33 sample-host sshd[6694]: Connection closed by invalid user admin 127.0.0.1 port 47236 [preauth]
+Oct  2 00:24:33 sample-host su[6696]: (to labuser) root on none
+Oct  2 00:24:33 sample-host su[6699]: (to labadmin) root on none
+Oct  2 00:24:33 sample-host backupd: job nightly-17 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:24:33 sample-host backupd: job nightly-17: 2 files changed during read, retrying
+Oct  2 00:24:33 sample-host webapp: GET /api/v1/orders/17 200 41ms user=labuser
+Oct  2 00:24:33 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=17
+Oct  2 00:24:33 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:24:34 sample-host sshd[6717]: Accepted publickey for labuser from 127.0.0.1 port 47246 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:24:34 sample-host sshd[6728]: Received disconnect from 127.0.0.1 port 47246:11: disconnected by user
+Oct  2 00:24:34 sample-host sshd[6728]: Disconnected from user labuser 127.0.0.1 port 47246
+Oct  2 00:24:34 sample-host sshd[6735]: Accepted password for labadmin from 127.0.0.1 port 47260 ssh2
+Oct  2 00:24:34 sample-host sshd[6746]: Received disconnect from 127.0.0.1 port 47260:11: disconnected by user
+Oct  2 00:24:34 sample-host sshd[6746]: Disconnected from user labadmin 127.0.0.1 port 47260
+Oct  2 00:24:37 sample-host sshd[6755]: Failed password for labuser from 127.0.0.1 port 47262 ssh2
+Oct  2 00:24:38 sample-host sshd[6755]: Connection closed by authenticating user labuser 127.0.0.1 port 47262 [preauth]
+Oct  2 00:24:38 sample-host sshd[6759]: Invalid user oracle from 127.0.0.1 port 46832
+Oct  2 00:24:40 sample-host sshd[6759]: Failed password for invalid user oracle from 127.0.0.1 port 46832 ssh2
+Oct  2 00:24:40 sample-host sshd[6759]: Connection closed by invalid user oracle 127.0.0.1 port 46832 [preauth]
+Oct  2 00:24:43 sample-host sshd[6763]: Failed password for ubuntu from 127.0.0.1 port 46834 ssh2
+Oct  2 00:24:44 sample-host sshd[6763]: Connection closed by authenticating user ubuntu 127.0.0.1 port 46834 [preauth]
+Oct  2 00:24:44 sample-host su[6769]: (to labuser) root on none
+Oct  2 00:24:44 sample-host su[6772]: (to labadmin) root on none
+Oct  2 00:24:44 sample-host backupd: job nightly-18 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:24:44 sample-host backupd: job nightly-18: 2 files changed during read, retrying
+Oct  2 00:24:44 sample-host webapp: GET /api/v1/orders/18 200 41ms user=labuser
+Oct  2 00:24:44 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=18
+Oct  2 00:24:44 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:24:44 sample-host sshd[6786]: Accepted publickey for labuser from 127.0.0.1 port 46840 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:24:44 sample-host sshd[6797]: Received disconnect from 127.0.0.1 port 46840:11: disconnected by user
+Oct  2 00:24:44 sample-host sshd[6797]: Disconnected from user labuser 127.0.0.1 port 46840
+Oct  2 00:24:44 sample-host sshd[6804]: Accepted password for labadmin from 127.0.0.1 port 46852 ssh2
+Oct  2 00:24:45 sample-host sshd[6815]: Received disconnect from 127.0.0.1 port 46852:11: disconnected by user
+Oct  2 00:24:45 sample-host sshd[6815]: Disconnected from user labadmin 127.0.0.1 port 46852
+Oct  2 00:24:47 sample-host sshd[6824]: Failed password for labuser from 127.0.0.1 port 46862 ssh2
+Oct  2 00:24:47 sample-host sshd[6824]: Connection closed by authenticating user labuser 127.0.0.1 port 46862 [preauth]
+Oct  2 00:24:47 sample-host su[6826]: (to labuser) root on none
+Oct  2 00:24:47 sample-host su[6829]: (to labadmin) root on none
+Oct  2 00:24:47 sample-host backupd: job nightly-19 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:24:47 sample-host backupd: job nightly-19: 2 files changed during read, retrying
+Oct  2 00:24:47 sample-host webapp: GET /api/v1/orders/19 200 41ms user=labuser
+Oct  2 00:24:47 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=19
+Oct  2 00:24:47 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:24:47 sample-host sshd[6844]: Accepted publickey for labuser from 127.0.0.1 port 50382 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:24:47 sample-host sshd[6855]: Received disconnect from 127.0.0.1 port 50382:11: disconnected by user
+Oct  2 00:24:47 sample-host sshd[6855]: Disconnected from user labuser 127.0.0.1 port 50382
+Oct  2 00:24:48 sample-host sshd[6862]: Accepted password for labadmin from 127.0.0.1 port 50394 ssh2
+Oct  2 00:24:48 sample-host sshd[6873]: Received disconnect from 127.0.0.1 port 50394:11: disconnected by user
+Oct  2 00:24:48 sample-host sshd[6873]: Disconnected from user labadmin 127.0.0.1 port 50394
+Oct  2 00:24:49 sample-host sshd[6882]: Failed password for labuser from 127.0.0.1 port 50396 ssh2
+Oct  2 00:24:50 sample-host sshd[6882]: Connection closed by authenticating user labuser 127.0.0.1 port 50396 [preauth]
+Oct  2 00:24:50 sample-host sshd[6886]: Invalid user test from 127.0.0.1 port 50400
+Oct  2 00:24:52 sample-host sshd[6886]: Failed password for invalid user test from 127.0.0.1 port 50400 ssh2
+Oct  2 00:24:52 sample-host sshd[6886]: Connection closed by invalid user test 127.0.0.1 port 50400 [preauth]
+Oct  2 00:24:52 sample-host su[6888]: (to labuser) root on none
+Oct  2 00:24:52 sample-host su[6891]: (to labadmin) root on none
+Oct  2 00:24:52 sample-host backupd: job nightly-20 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:24:52 sample-host backupd: job nightly-20: 2 files changed during read, retrying
+Oct  2 00:24:52 sample-host webapp: GET /api/v1/orders/20 200 41ms user=labuser
+Oct  2 00:24:52 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=20
+Oct  2 00:24:52 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:24:52 sample-host sshd[6906]: Accepted publickey for labuser from 127.0.0.1 port 50410 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:24:52 sample-host sshd[6917]: Received disconnect from 127.0.0.1 port 50410:11: disconnected by user
+Oct  2 00:24:52 sample-host sshd[6917]: Disconnected from user labuser 127.0.0.1 port 50410
+Oct  2 00:24:53 sample-host sshd[6924]: Accepted password for labadmin from 127.0.0.1 port 50420 ssh2
+Oct  2 00:24:53 sample-host sshd[6935]: Received disconnect from 127.0.0.1 port 50420:11: disconnected by user
+Oct  2 00:24:53 sample-host sshd[6935]: Disconnected from user labadmin 127.0.0.1 port 50420
+Oct  2 00:24:56 sample-host sshd[6944]: Failed password for labuser from 127.0.0.1 port 50422 ssh2
+Oct  2 00:24:57 sample-host sshd[6944]: Connection closed by authenticating user labuser 127.0.0.1 port 50422 [preauth]
+Oct  2 00:24:57 sample-host sshd[6948]: Invalid user admin from 127.0.0.1 port 54956
+Oct  2 00:24:59 sample-host sshd[6948]: Failed password for invalid user admin from 127.0.0.1 port 54956 ssh2
+Oct  2 00:25:00 sample-host sshd[6948]: Connection closed by invalid user admin 127.0.0.1 port 54956 [preauth]
+Oct  2 00:25:00 sample-host su[6950]: (to labuser) root on none
+Oct  2 00:25:00 sample-host su[6953]: (to labadmin) root on none
+Oct  2 00:25:00 sample-host backupd: job nightly-21 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:25:00 sample-host backupd: job nightly-21: 2 files changed during read, retrying
+Oct  2 00:25:00 sample-host webapp: GET /api/v1/orders/21 200 41ms user=labuser
+Oct  2 00:25:00 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=21
+Oct  2 00:25:00 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:25:00 sample-host ntpd: time step of 0.412 s exceeds panic threshold
+Oct  2 00:25:01 sample-host sshd[6995]: Accepted publickey for labuser from 127.0.0.1 port 54962 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:25:01 sample-host sshd[7006]: Received disconnect from 127.0.0.1 port 54962:11: disconnected by user
+Oct  2 00:25:01 sample-host sshd[7006]: Disconnected from user labuser 127.0.0.1 port 54962
+Oct  2 00:25:01 sample-host sshd[7013]: Accepted password for labadmin from 127.0.0.1 port 54964 ssh2
+Oct  2 00:25:01 sample-host sshd[7024]: Received disconnect from 127.0.0.1 port 54964:11: disconnected by user
+Oct  2 00:25:01 sample-host sshd[7024]: Disconnected from user labadmin 127.0.0.1 port 54964
+Oct  2 00:25:03 sample-host sshd[7033]: Failed password for labuser from 127.0.0.1 port 54976 ssh2
+Oct  2 00:25:05 sample-host sshd[7033]: Connection closed by authenticating user labuser 127.0.0.1 port 54976 [preauth]
+Oct  2 00:25:05 sample-host sshd[7037]: Invalid user oracle from 127.0.0.1 port 54988
+Oct  2 00:25:08 sample-host sshd[7037]: Failed password for invalid user oracle from 127.0.0.1 port 54988 ssh2
+Oct  2 00:25:09 sample-host sshd[7037]: Connection closed by invalid user oracle 127.0.0.1 port 54988 [preauth]
+Oct  2 00:25:12 sample-host sshd[7041]: Failed password for ubuntu from 127.0.0.1 port 44886 ssh2
+Oct  2 00:25:13 sample-host sshd[7041]: Connection closed by authenticating user ubuntu 127.0.0.1 port 44886 [preauth]
+Oct  2 00:25:13 sample-host su[7047]: (to labuser) root on none
+Oct  2 00:25:13 sample-host su[7050]: (to labadmin) root on none
+Oct  2 00:25:13 sample-host backupd: job nightly-22 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:25:13 sample-host backupd: job nightly-22: 2 files changed during read, retrying
+Oct  2 00:25:13 sample-host webapp: GET /api/v1/orders/22 200 41ms user=labuser
+Oct  2 00:25:13 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=22
+Oct  2 00:25:13 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:25:13 sample-host sshd[7064]: Accepted publickey for labuser from 127.0.0.1 port 44894 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:25:13 sample-host sshd[7075]: Received disconnect from 127.0.0.1 port 44894:11: disconnected by user
+Oct  2 00:25:13 sample-host sshd[7075]: Disconnected from user labuser 127.0.0.1 port 44894
+Oct  2 00:25:13 sample-host sshd[7082]: Accepted password for labadmin from 127.0.0.1 port 44896 ssh2
+Oct  2 00:25:14 sample-host sshd[7093]: Received disconnect from 127.0.0.1 port 44896:11: disconnected by user
+Oct  2 00:25:14 sample-host sshd[7093]: Disconnected from user labadmin 127.0.0.1 port 44896
+Oct  2 00:25:16 sample-host sshd[7102]: Failed password for labuser from 127.0.0.1 port 44908 ssh2
+Oct  2 00:25:18 sample-host sshd[7102]: Connection closed by authenticating user labuser 127.0.0.1 port 44908 [preauth]
+Oct  2 00:25:18 sample-host su[7105]: (to labuser) root on none
+Oct  2 00:25:18 sample-host su[7108]: (to labadmin) root on none
+Oct  2 00:25:18 sample-host backupd: job nightly-23 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:25:18 sample-host backupd: job nightly-23: 2 files changed during read, retrying
+Oct  2 00:25:18 sample-host webapp: GET /api/v1/orders/23 200 41ms user=labuser
+Oct  2 00:25:18 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=23
+Oct  2 00:25:18 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:25:18 sample-host sshd[7122]: Accepted publickey for labuser from 127.0.0.1 port 50510 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:25:18 sample-host sshd[7133]: Received disconnect from 127.0.0.1 port 50510:11: disconnected by user
+Oct  2 00:25:18 sample-host sshd[7133]: Disconnected from user labuser 127.0.0.1 port 50510
+Oct  2 00:25:19 sample-host sshd[7140]: Accepted password for labadmin from 127.0.0.1 port 50512 ssh2
+Oct  2 00:25:19 sample-host sshd[7151]: Received disconnect from 127.0.0.1 port 50512:11: disconnected by user
+Oct  2 00:25:19 sample-host sshd[7151]: Disconnected from user labadmin 127.0.0.1 port 50512
+Oct  2 00:25:21 sample-host sshd[7160]: Failed password for labuser from 127.0.0.1 port 50518 ssh2
+Oct  2 00:25:23 sample-host sshd[7160]: Connection closed by authenticating user labuser 127.0.0.1 port 50518 [preauth]
+Oct  2 00:25:23 sample-host sshd[7164]: Invalid user test from 127.0.0.1 port 50532
+Oct  2 00:25:25 sample-host sshd[7164]: Failed password for invalid user test from 127.0.0.1 port 50532 ssh2
+Oct  2 00:25:27 sample-host sshd[7164]: Connection closed by invalid user test 127.0.0.1 port 50532 [preauth]
+Oct  2 00:25:27 sample-host su[7166]: (to labuser) root on none
+Oct  2 00:25:27 sample-host su[7169]: (to labadmin) root on none
+Oct  2 00:25:27 sample-host backupd: job nightly-24 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:25:27 sample-host backupd: job nightly-24: 2 files changed during read, retrying
+Oct  2 00:25:27 sample-host webapp: GET /api/v1/orders/24 200 41ms user=labuser
+Oct  2 00:25:27 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=24
+Oct  2 00:25:27 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:25:27 sample-host sshd[7183]: Accepted publickey for labuser from 127.0.0.1 port 37702 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:25:27 sample-host sshd[7194]: Received disconnect from 127.0.0.1 port 37702:11: disconnected by user
+Oct  2 00:25:27 sample-host sshd[7194]: Disconnected from user labuser 127.0.0.1 port 37702
+Oct  2 00:25:28 sample-host sshd[7201]: Accepted password for labadmin from 127.0.0.1 port 37712 ssh2
+Oct  2 00:25:28 sample-host sshd[7212]: Received disconnect from 127.0.0.1 port 37712:11: disconnected by user
+Oct  2 00:25:28 sample-host sshd[7212]: Disconnected from user labadmin 127.0.0.1 port 37712
+Oct  2 00:25:30 sample-host sshd[7221]: Failed password for labuser from 127.0.0.1 port 37718 ssh2
+Oct  2 00:25:32 sample-host sshd[7221]: Connection closed by authenticating user labuser 127.0.0.1 port 37718 [preauth]
+Oct  2 00:25:32 sample-host sshd[7225]: Invalid user admin from 127.0.0.1 port 37730
+Oct  2 00:25:34 sample-host sshd[7225]: Failed password for invalid user admin from 127.0.0.1 port 37730 ssh2
+Oct  2 00:25:35 sample-host sshd[7225]: Connection closed by invalid user admin 127.0.0.1 port 37730 [preauth]
+Oct  2 00:25:35 sample-host su[7227]: (to labuser) root on none
+Oct  2 00:25:35 sample-host su[7230]: (to labadmin) root on none
+Oct  2 00:25:35 sample-host backupd: job nightly-25 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:25:35 sample-host backupd: job nightly-25: 2 files changed during read, retrying
+Oct  2 00:25:35 sample-host webapp: GET /api/v1/orders/25 200 41ms user=labuser
+Oct  2 00:25:35 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=25
+Oct  2 00:25:35 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:25:36 sample-host sshd[7245]: Accepted publickey for labuser from 127.0.0.1 port 37744 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:25:36 sample-host sshd[7256]: Received disconnect from 127.0.0.1 port 37744:11: disconnected by user
+Oct  2 00:25:36 sample-host sshd[7256]: Disconnected from user labuser 127.0.0.1 port 37744
+Oct  2 00:25:36 sample-host sshd[7263]: Accepted password for labadmin from 127.0.0.1 port 37760 ssh2
+Oct  2 00:25:36 sample-host sshd[7274]: Received disconnect from 127.0.0.1 port 37760:11: disconnected by user
+Oct  2 00:25:36 sample-host sshd[7274]: Disconnected from user labadmin 127.0.0.1 port 37760
+Oct  2 00:25:38 sample-host sshd[7283]: Failed password for labuser from 127.0.0.1 port 37768 ssh2
+Oct  2 00:25:40 sample-host sshd[7283]: Connection closed by authenticating user labuser 127.0.0.1 port 37768 [preauth]
+Oct  2 00:25:40 sample-host sshd[7287]: Invalid user oracle from 127.0.0.1 port 57570
+Oct  2 00:25:43 sample-host sshd[7287]: Failed password for invalid user oracle from 127.0.0.1 port 57570 ssh2
+Oct  2 00:25:44 sample-host sshd[7287]: Connection closed by invalid user oracle 127.0.0.1 port 57570 [preauth]
+Oct  2 00:25:47 sample-host sshd[7295]: Failed password for ubuntu from 127.0.0.1 port 57580 ssh2
+Oct  2 00:25:48 sample-host sshd[7295]: Connection closed by authenticating user ubuntu 127.0.0.1 port 57580 [preauth]
+Oct  2 00:25:48 sample-host su[7297]: (to labuser) root on none
+Oct  2 00:25:48 sample-host su[7300]: (to labadmin) root on none
+Oct  2 00:25:48 sample-host backupd: job nightly-26 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:25:48 sample-host backupd: job nightly-26: 2 files changed during read, retrying
+Oct  2 00:25:48 sample-host webapp: GET /api/v1/orders/26 200 41ms user=labuser
+Oct  2 00:25:48 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=26
+Oct  2 00:25:48 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:25:48 sample-host sshd[7314]: Accepted publickey for labuser from 127.0.0.1 port 47248 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:25:48 sample-host sshd[7325]: Received disconnect from 127.0.0.1 port 47248:11: disconnected by user
+Oct  2 00:25:48 sample-host sshd[7325]: Disconnected from user labuser 127.0.0.1 port 47248
+Oct  2 00:25:48 sample-host sshd[7332]: Accepted password for labadmin from 127.0.0.1 port 47250 ssh2
+Oct  2 00:25:48 sample-host sshd[7343]: Received disconnect from 127.0.0.1 port 47250:11: disconnected by user
+Oct  2 00:25:48 sample-host sshd[7343]: Disconnected from user labadmin 127.0.0.1 port 47250
+Oct  2 00:25:51 sample-host sshd[7352]: Failed password for labuser from 127.0.0.1 port 47252 ssh2
+Oct  2 00:25:53 sample-host sshd[7352]: Connection closed by authenticating user labuser 127.0.0.1 port 47252 [preauth]
+Oct  2 00:25:53 sample-host su[7354]: (to labuser) root on none
+Oct  2 00:25:53 sample-host su[7357]: (to labadmin) root on none
+Oct  2 00:25:53 sample-host backupd: job nightly-27 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:25:53 sample-host backupd: job nightly-27: 2 files changed during read, retrying
+Oct  2 00:25:53 sample-host webapp: GET /api/v1/orders/27 200 41ms user=labuser
+Oct  2 00:25:53 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=27
+Oct  2 00:25:53 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:25:53 sample-host sshd[7372]: Accepted publickey for labuser from 127.0.0.1 port 47268 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:25:53 sample-host sshd[7383]: Received disconnect from 127.0.0.1 port 47268:11: disconnected by user
+Oct  2 00:25:53 sample-host sshd[7383]: Disconnected from user labuser 127.0.0.1 port 47268
+Oct  2 00:25:53 sample-host sshd[7390]: Accepted password for labadmin from 127.0.0.1 port 47272 ssh2
+Oct  2 00:25:53 sample-host sshd[7401]: Received disconnect from 127.0.0.1 port 47272:11: disconnected by user
+Oct  2 00:25:53 sample-host sshd[7401]: Disconnected from user labadmin 127.0.0.1 port 47272
+Oct  2 00:25:56 sample-host sshd[7410]: Failed password for labuser from 127.0.0.1 port 47286 ssh2
+Oct  2 00:25:58 sample-host sshd[7410]: Connection closed by authenticating user labuser 127.0.0.1 port 47286 [preauth]
+Oct  2 00:25:58 sample-host sshd[7414]: Invalid user test from 127.0.0.1 port 51636
+Oct  2 00:26:00 sample-host sshd[7414]: Failed password for invalid user test from 127.0.0.1 port 51636 ssh2
+Oct  2 00:26:02 sample-host sshd[7414]: Connection closed by invalid user test 127.0.0.1 port 51636 [preauth]
+Oct  2 00:26:02 sample-host su[7416]: (to labuser) root on none
+Oct  2 00:26:02 sample-host su[7419]: (to labadmin) root on none
+Oct  2 00:26:02 sample-host backupd: job nightly-28 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:26:02 sample-host backupd: job nightly-28: 2 files changed during read, retrying
+Oct  2 00:26:02 sample-host webapp: GET /api/v1/orders/28 200 41ms user=labuser
+Oct  2 00:26:02 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=28
+Oct  2 00:26:02 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:26:02 sample-host ntpd: time step of 0.412 s exceeds panic threshold
+Oct  2 00:26:02 sample-host sshd[7434]: Accepted publickey for labuser from 127.0.0.1 port 51646 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:26:02 sample-host sshd[7445]: Received disconnect from 127.0.0.1 port 51646:11: disconnected by user
+Oct  2 00:26:02 sample-host sshd[7445]: Disconnected from user labuser 127.0.0.1 port 51646
+Oct  2 00:26:02 sample-host sshd[7452]: Accepted password for labadmin from 127.0.0.1 port 51656 ssh2
+Oct  2 00:26:03 sample-host sshd[7463]: Received disconnect from 127.0.0.1 port 51656:11: disconnected by user
+Oct  2 00:26:03 sample-host sshd[7463]: Disconnected from user labadmin 127.0.0.1 port 51656
+Oct  2 00:26:05 sample-host sshd[7472]: Failed password for labuser from 127.0.0.1 port 51668 ssh2
+Oct  2 00:26:07 sample-host sshd[7472]: Connection closed by authenticating user labuser 127.0.0.1 port 51668 [preauth]
+Oct  2 00:26:07 sample-host sshd[7476]: Invalid user admin from 127.0.0.1 port 45664
+Oct  2 00:26:09 sample-host sshd[7476]: Failed password for invalid user admin from 127.0.0.1 port 45664 ssh2
+Oct  2 00:26:10 sample-host sshd[7476]: Connection closed by invalid user admin 127.0.0.1 port 45664 [preauth]
+Oct  2 00:26:10 sample-host su[7478]: (to labuser) root on none
+Oct  2 00:26:10 sample-host su[7481]: (to labadmin) root on none
+Oct  2 00:26:10 sample-host backupd: job nightly-29 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:26:10 sample-host backupd: job nightly-29: 2 files changed during read, retrying
+Oct  2 00:26:10 sample-host webapp: GET /api/v1/orders/29 200 41ms user=labuser
+Oct  2 00:26:10 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=29
+Oct  2 00:26:10 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:26:10 sample-host sshd[7495]: Accepted publickey for labuser from 127.0.0.1 port 45672 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:26:10 sample-host sshd[7506]: Received disconnect from 127.0.0.1 port 45672:11: disconnected by user
+Oct  2 00:26:10 sample-host sshd[7506]: Disconnected from user labuser 127.0.0.1 port 45672
+Oct  2 00:26:11 sample-host sshd[7513]: Accepted password for labadmin from 127.0.0.1 port 45684 ssh2
+Oct  2 00:26:11 sample-host sshd[7524]: Received disconnect from 127.0.0.1 port 45684:11: disconnected by user
+Oct  2 00:26:11 sample-host sshd[7524]: Disconnected from user labadmin 127.0.0.1 port 45684
+Oct  2 00:26:14 sample-host sshd[7533]: Failed password for labuser from 127.0.0.1 port 45698 ssh2
+Oct  2 00:26:15 sample-host sshd[7533]: Connection closed by authenticating user labuser 127.0.0.1 port 45698 [preauth]
+Oct  2 00:26:15 sample-host sshd[7542]: Invalid user oracle from 127.0.0.1 port 45706
+Oct  2 00:26:17 sample-host sshd[7542]: Failed password for invalid user oracle from 127.0.0.1 port 45706 ssh2
+Oct  2 00:26:19 sample-host sshd[7542]: Connection closed by invalid user oracle 127.0.0.1 port 45706 [preauth]
+Oct  2 00:26:21 sample-host sshd[7546]: Failed password for ubuntu from 127.0.0.1 port 47916 ssh2
+Oct  2 00:26:22 sample-host sshd[7546]: Connection closed by authenticating user ubuntu 127.0.0.1 port 47916 [preauth]
+Oct  2 00:26:22 sample-host su[7548]: (to labuser) root on none
+Oct  2 00:26:22 sample-host su[7551]: (to labadmin) root on none
+Oct  2 00:26:22 sample-host backupd: job nightly-30 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:26:22 sample-host backupd: job nightly-30: 2 files changed during read, retrying
+Oct  2 00:26:22 sample-host webapp: GET /api/v1/orders/30 200 41ms user=labuser
+Oct  2 00:26:22 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=30
+Oct  2 00:26:22 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:26:23 sample-host sshd[7566]: Accepted publickey for labuser from 127.0.0.1 port 47926 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:26:23 sample-host sshd[7577]: Received disconnect from 127.0.0.1 port 47926:11: disconnected by user
+Oct  2 00:26:23 sample-host sshd[7577]: Disconnected from user labuser 127.0.0.1 port 47926
+Oct  2 00:26:23 sample-host sshd[7584]: Accepted password for labadmin from 127.0.0.1 port 47942 ssh2
+Oct  2 00:26:23 sample-host sshd[7595]: Received disconnect from 127.0.0.1 port 47942:11: disconnected by user
+Oct  2 00:26:23 sample-host sshd[7595]: Disconnected from user labadmin 127.0.0.1 port 47942
+Oct  2 00:26:26 sample-host sshd[7604]: Failed password for labuser from 127.0.0.1 port 47954 ssh2
+Oct  2 00:26:27 sample-host sshd[7604]: Connection closed by authenticating user labuser 127.0.0.1 port 47954 [preauth]
+Oct  2 00:26:27 sample-host su[7606]: (to labuser) root on none
+Oct  2 00:26:27 sample-host su[7609]: (to labadmin) root on none
+Oct  2 00:26:28 sample-host backupd: job nightly-31 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:26:28 sample-host backupd: job nightly-31: 2 files changed during read, retrying
+Oct  2 00:26:28 sample-host webapp: GET /api/v1/orders/31 200 41ms user=labuser
+Oct  2 00:26:28 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=31
+Oct  2 00:26:28 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:26:28 sample-host sshd[7650]: Accepted publickey for labuser from 127.0.0.1 port 51232 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:26:28 sample-host sshd[7661]: Received disconnect from 127.0.0.1 port 51232:11: disconnected by user
+Oct  2 00:26:28 sample-host sshd[7661]: Disconnected from user labuser 127.0.0.1 port 51232
+Oct  2 00:26:28 sample-host sshd[7668]: Accepted password for labadmin from 127.0.0.1 port 51244 ssh2
+Oct  2 00:26:28 sample-host sshd[7679]: Received disconnect from 127.0.0.1 port 51244:11: disconnected by user
+Oct  2 00:26:28 sample-host sshd[7679]: Disconnected from user labadmin 127.0.0.1 port 51244
+Oct  2 00:26:31 sample-host sshd[7688]: Failed password for labuser from 127.0.0.1 port 51258 ssh2
+Oct  2 00:26:33 sample-host sshd[7688]: Connection closed by authenticating user labuser 127.0.0.1 port 51258 [preauth]
+Oct  2 00:26:33 sample-host sshd[7692]: Invalid user test from 127.0.0.1 port 51272
+Oct  2 00:26:35 sample-host sshd[7692]: Failed password for invalid user test from 127.0.0.1 port 51272 ssh2
+Oct  2 00:26:37 sample-host sshd[7692]: Connection closed by invalid user test 127.0.0.1 port 51272 [preauth]
+Oct  2 00:26:37 sample-host su[7694]: (to labuser) root on none
+Oct  2 00:26:37 sample-host su[7697]: (to labadmin) root on none
+Oct  2 00:26:37 sample-host backupd: job nightly-32 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:26:37 sample-host backupd: job nightly-32: 2 files changed during read, retrying
+Oct  2 00:26:37 sample-host webapp: GET /api/v1/orders/32 200 41ms user=labuser
+Oct  2 00:26:37 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=32
+Oct  2 00:26:37 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:26:37 sample-host sshd[7715]: Accepted publickey for labuser from 127.0.0.1 port 59332 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:26:37 sample-host sshd[7726]: Received disconnect from 127.0.0.1 port 59332:11: disconnected by user
+Oct  2 00:26:37 sample-host sshd[7726]: Disconnected from user labuser 127.0.0.1 port 59332
+Oct  2 00:26:37 sample-host sshd[7733]: Accepted password for labadmin from 127.0.0.1 port 59338 ssh2
+Oct  2 00:26:37 sample-host sshd[7744]: Received disconnect from 127.0.0.1 port 59338:11: disconnected by user
+Oct  2 00:26:37 sample-host sshd[7744]: Disconnected from user labadmin 127.0.0.1 port 59338
+Oct  2 00:26:40 sample-host sshd[7753]: Failed password for labuser from 127.0.0.1 port 59354 ssh2
+Oct  2 00:26:42 sample-host sshd[7753]: Connection closed by authenticating user labuser 127.0.0.1 port 59354 [preauth]
+Oct  2 00:26:42 sample-host sshd[7758]: Invalid user admin from 127.0.0.1 port 59368
+Oct  2 00:26:43 sample-host sshd[7758]: Failed password for invalid user admin from 127.0.0.1 port 59368 ssh2
+Oct  2 00:26:45 sample-host sshd[7758]: Connection closed by invalid user admin 127.0.0.1 port 59368 [preauth]
+Oct  2 00:26:45 sample-host su[7763]: (to labuser) root on none
+Oct  2 00:26:45 sample-host su[7766]: (to labadmin) root on none
+Oct  2 00:26:45 sample-host backupd: job nightly-33 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:26:45 sample-host backupd: job nightly-33: 2 files changed during read, retrying
+Oct  2 00:26:45 sample-host webapp: GET /api/v1/orders/33 200 41ms user=labuser
+Oct  2 00:26:45 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=33
+Oct  2 00:26:45 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:26:45 sample-host sshd[7780]: Accepted publickey for labuser from 127.0.0.1 port 59382 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:26:45 sample-host sshd[7791]: Received disconnect from 127.0.0.1 port 59382:11: disconnected by user
+Oct  2 00:26:45 sample-host sshd[7791]: Disconnected from user labuser 127.0.0.1 port 59382
+Oct  2 00:26:46 sample-host sshd[7798]: Accepted password for labadmin from 127.0.0.1 port 59386 ssh2
+Oct  2 00:26:46 sample-host sshd[7809]: Received disconnect from 127.0.0.1 port 59386:11: disconnected by user
+Oct  2 00:26:46 sample-host sshd[7809]: Disconnected from user labadmin 127.0.0.1 port 59386
+Oct  2 00:26:48 sample-host sshd[7818]: Failed password for labuser from 127.0.0.1 port 59390 ssh2
+Oct  2 00:26:50 sample-host sshd[7818]: Connection closed by authenticating user labuser 127.0.0.1 port 59390 [preauth]
+Oct  2 00:26:50 sample-host sshd[7822]: Invalid user oracle from 127.0.0.1 port 36250
+Oct  2 00:26:52 sample-host sshd[7822]: Failed password for invalid user oracle from 127.0.0.1 port 36250 ssh2
+Oct  2 00:26:54 sample-host sshd[7822]: Connection closed by invalid user oracle 127.0.0.1 port 36250 [preauth]
+Oct  2 00:26:55 sample-host sshd[7826]: Failed password for ubuntu from 127.0.0.1 port 36258 ssh2
+Oct  2 00:26:56 sample-host sshd[7826]: Connection closed by authenticating user ubuntu 127.0.0.1 port 36258 [preauth]
+Oct  2 00:26:56 sample-host su[7828]: (to labuser) root on none
+Oct  2 00:26:56 sample-host su[7831]: (to labadmin) root on none
+Oct  2 00:26:56 sample-host backupd: job nightly-34 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:26:56 sample-host backupd: job nightly-34: 2 files changed during read, retrying
+Oct  2 00:26:56 sample-host webapp: GET /api/v1/orders/34 200 41ms user=labuser
+Oct  2 00:26:56 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=34
+Oct  2 00:26:56 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:26:56 sample-host sshd[7845]: Accepted publickey for labuser from 127.0.0.1 port 36264 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:26:56 sample-host sshd[7856]: Received disconnect from 127.0.0.1 port 36264:11: disconnected by user
+Oct  2 00:26:56 sample-host sshd[7856]: Disconnected from user labuser 127.0.0.1 port 36264
+Oct  2 00:26:56 sample-host sshd[7863]: Accepted password for labadmin from 127.0.0.1 port 36272 ssh2
+Oct  2 00:26:57 sample-host sshd[7874]: Received disconnect from 127.0.0.1 port 36272:11: disconnected by user
+Oct  2 00:26:57 sample-host sshd[7874]: Disconnected from user labadmin 127.0.0.1 port 36272
+Oct  2 00:26:59 sample-host sshd[7883]: Failed password for labuser from 127.0.0.1 port 47164 ssh2
+Oct  2 00:27:01 sample-host sshd[7883]: Connection closed by authenticating user labuser 127.0.0.1 port 47164 [preauth]
+Oct  2 00:27:01 sample-host su[7885]: (to labuser) root on none
+Oct  2 00:27:01 sample-host su[7888]: (to labadmin) root on none
+Oct  2 00:27:01 sample-host backupd: job nightly-35 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:27:01 sample-host backupd: job nightly-35: 2 files changed during read, retrying
+Oct  2 00:27:01 sample-host webapp: GET /api/v1/orders/35 200 41ms user=labuser
+Oct  2 00:27:01 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=35
+Oct  2 00:27:01 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:27:01 sample-host ntpd: time step of 0.412 s exceeds panic threshold
+Oct  2 00:27:01 sample-host sshd[7905]: Accepted publickey for labuser from 127.0.0.1 port 47174 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:27:01 sample-host sshd[7916]: Received disconnect from 127.0.0.1 port 47174:11: disconnected by user
+Oct  2 00:27:01 sample-host sshd[7916]: Disconnected from user labuser 127.0.0.1 port 47174
+Oct  2 00:27:01 sample-host sshd[7923]: Accepted password for labadmin from 127.0.0.1 port 47184 ssh2
+Oct  2 00:27:02 sample-host sshd[7934]: Received disconnect from 127.0.0.1 port 47184:11: disconnected by user
+Oct  2 00:27:02 sample-host sshd[7934]: Disconnected from user labadmin 127.0.0.1 port 47184
+Oct  2 00:27:04 sample-host sshd[7943]: Failed password for labuser from 127.0.0.1 port 47190 ssh2
+Oct  2 00:27:06 sample-host sshd[7943]: Connection closed by authenticating user labuser 127.0.0.1 port 47190 [preauth]
+Oct  2 00:27:06 sample-host sshd[7947]: Invalid user test from 127.0.0.1 port 47206
+Oct  2 00:27:07 sample-host sshd[7947]: Failed password for invalid user test from 127.0.0.1 port 47206 ssh2
+Oct  2 00:27:08 sample-host sshd[7947]: Connection closed by invalid user test 127.0.0.1 port 47206 [preauth]
+Oct  2 00:27:08 sample-host su[7949]: (to labuser) root on none
+Oct  2 00:27:08 sample-host su[7952]: (to labadmin) root on none
+Oct  2 00:27:08 sample-host backupd: job nightly-36 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:27:08 sample-host backupd: job nightly-36: 2 files changed during read, retrying
+Oct  2 00:27:08 sample-host webapp: GET /api/v1/orders/36 200 41ms user=labuser
+Oct  2 00:27:08 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=36
+Oct  2 00:27:08 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:27:08 sample-host sshd[7966]: Accepted publickey for labuser from 127.0.0.1 port 54154 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:27:08 sample-host sshd[7977]: Received disconnect from 127.0.0.1 port 54154:11: disconnected by user
+Oct  2 00:27:08 sample-host sshd[7977]: Disconnected from user labuser 127.0.0.1 port 54154
+Oct  2 00:27:09 sample-host sshd[7984]: Accepted password for labadmin from 127.0.0.1 port 54160 ssh2
+Oct  2 00:27:09 sample-host sshd[7995]: Received disconnect from 127.0.0.1 port 54160:11: disconnected by user
+Oct  2 00:27:09 sample-host sshd[7995]: Disconnected from user labadmin 127.0.0.1 port 54160
+Oct  2 00:27:11 sample-host sshd[8004]: Failed password for labuser from 127.0.0.1 port 54164 ssh2
+Oct  2 00:27:13 sample-host sshd[8004]: Connection closed by authenticating user labuser 127.0.0.1 port 54164 [preauth]
+Oct  2 00:27:13 sample-host sshd[8011]: Invalid user admin from 127.0.0.1 port 54178
+Oct  2 00:27:15 sample-host sshd[8011]: Failed password for invalid user admin from 127.0.0.1 port 54178 ssh2
+Oct  2 00:27:16 sample-host sshd[8011]: Connection closed by invalid user admin 127.0.0.1 port 54178 [preauth]
+Oct  2 00:27:16 sample-host su[8013]: (to labuser) root on none
+Oct  2 00:27:16 sample-host su[8016]: (to labadmin) root on none
+Oct  2 00:27:16 sample-host backupd: job nightly-37 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:27:16 sample-host backupd: job nightly-37: 2 files changed during read, retrying
+Oct  2 00:27:16 sample-host webapp: GET /api/v1/orders/37 200 41ms user=labuser
+Oct  2 00:27:16 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=37
+Oct  2 00:27:16 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:27:17 sample-host sshd[8030]: Accepted publickey for labuser from 127.0.0.1 port 57286 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:27:17 sample-host sshd[8041]: Received disconnect from 127.0.0.1 port 57286:11: disconnected by user
+Oct  2 00:27:17 sample-host sshd[8041]: Disconnected from user labuser 127.0.0.1 port 57286
+Oct  2 00:27:17 sample-host sshd[8048]: Accepted password for labadmin from 127.0.0.1 port 57296 ssh2
+Oct  2 00:27:17 sample-host sshd[8059]: Received disconnect from 127.0.0.1 port 57296:11: disconnected by user
+Oct  2 00:27:17 sample-host sshd[8059]: Disconnected from user labadmin 127.0.0.1 port 57296
+Oct  2 00:27:19 sample-host sshd[8068]: Failed password for labuser from 127.0.0.1 port 57298 ssh2
+Oct  2 00:27:21 sample-host sshd[8068]: Connection closed by authenticating user labuser 127.0.0.1 port 57298 [preauth]
+Oct  2 00:27:21 sample-host sshd[8072]: Invalid user oracle from 127.0.0.1 port 57306
+Oct  2 00:27:24 sample-host sshd[8072]: Failed password for invalid user oracle from 127.0.0.1 port 57306 ssh2
+Oct  2 00:27:25 sample-host sshd[8072]: Connection closed by invalid user oracle 127.0.0.1 port 57306 [preauth]
+Oct  2 00:27:27 sample-host sshd[8076]: Failed password for ubuntu from 127.0.0.1 port 57312 ssh2
+Oct  2 00:27:29 sample-host sshd[8076]: Connection closed by authenticating user ubuntu 127.0.0.1 port 57312 [preauth]
+Oct  2 00:27:29 sample-host su[8078]: (to labuser) root on none
+Oct  2 00:27:29 sample-host su[8081]: (to labadmin) root on none
+Oct  2 00:27:29 sample-host backupd: job nightly-38 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:27:29 sample-host backupd: job nightly-38: 2 files changed during read, retrying
+Oct  2 00:27:29 sample-host webapp: GET /api/v1/orders/38 200 41ms user=labuser
+Oct  2 00:27:29 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=38
+Oct  2 00:27:29 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:27:29 sample-host sshd[8095]: Accepted publickey for labuser from 127.0.0.1 port 35632 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:27:29 sample-host sshd[8106]: Received disconnect from 127.0.0.1 port 35632:11: disconnected by user
+Oct  2 00:27:29 sample-host sshd[8106]: Disconnected from user labuser 127.0.0.1 port 35632
+Oct  2 00:27:29 sample-host sshd[8113]: Accepted password for labadmin from 127.0.0.1 port 35646 ssh2
+Oct  2 00:27:29 sample-host sshd[8124]: Received disconnect from 127.0.0.1 port 35646:11: disconnected by user
+Oct  2 00:27:29 sample-host sshd[8124]: Disconnected from user labadmin 127.0.0.1 port 35646
+Oct  2 00:27:31 sample-host sshd[8133]: Failed password for labuser from 127.0.0.1 port 35658 ssh2
+Oct  2 00:27:32 sample-host sshd[8133]: Connection closed by authenticating user labuser 127.0.0.1 port 35658 [preauth]
+Oct  2 00:27:32 sample-host su[8135]: (to labuser) root on none
+Oct  2 00:27:32 sample-host su[8138]: (to labadmin) root on none
+Oct  2 00:27:32 sample-host backupd: job nightly-39 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:27:32 sample-host backupd: job nightly-39: 2 files changed during read, retrying
+Oct  2 00:27:32 sample-host webapp: GET /api/v1/orders/39 200 41ms user=labuser
+Oct  2 00:27:32 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=39
+Oct  2 00:27:32 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:27:32 sample-host sshd[8152]: Accepted publickey for labuser from 127.0.0.1 port 35662 ssh2: ED25519 SHA256:kiwkZKt7POt10lBxR55ZLyeZzgFeIxVhONcwlFKDOq4
+Oct  2 00:27:32 sample-host sshd[8163]: Received disconnect from 127.0.0.1 port 35662:11: disconnected by user
+Oct  2 00:27:32 sample-host sshd[8163]: Disconnected from user labuser 127.0.0.1 port 35662
+Oct  2 00:27:32 sample-host sshd[8170]: Accepted password for labadmin from 127.0.0.1 port 35664 ssh2
+Oct  2 00:27:32 sample-host sshd[8181]: Received disconnect from 127.0.0.1 port 35664:11: disconnected by user
+Oct  2 00:27:32 sample-host sshd[8181]: Disconnected from user labadmin 127.0.0.1 port 35664
+Oct  2 00:27:35 sample-host sshd[8190]: Failed password for labuser from 127.0.0.1 port 35676 ssh2
+Oct  2 00:27:37 sample-host sshd[8190]: Connection closed by authenticating user labuser 127.0.0.1 port 35676 [preauth]
+Oct  2 00:27:37 sample-host sshd[8194]: Invalid user test from 127.0.0.1 port 58704
+Oct  2 00:27:38 sample-host sshd[8194]: Failed password for invalid user test from 127.0.0.1 port 58704 ssh2
+Oct  2 00:27:39 sample-host sshd[8194]: Connection closed by invalid user test 127.0.0.1 port 58704 [preauth]
+Oct  2 00:27:39 sample-host su[8196]: (to labuser) root on none
+Oct  2 00:27:39 sample-host su[8199]: (to labadmin) root on none
+Oct  2 00:27:39 sample-host backupd: job nightly-40 finished: 1,284 files, 3.2 GiB, 0 errors
+Oct  2 00:27:39 sample-host backupd: job nightly-40: 2 files changed during read, retrying
+Oct  2 00:27:39 sample-host webapp: GET /api/v1/orders/40 200 41ms user=labuser
+Oct  2 00:27:39 sample-host webapp: POST /api/v1/payments 502 upstream timeout after 30000ms req=40
+Oct  2 00:27:39 sample-host cron-wrapper: logrotate completed (rc=0)
+Oct  2 00:27:41 sample-host sshd[5590]: Received signal 15; terminating.
+Oct  2 00:27:41 sample-host auditd[5534]: The audit daemon is exiting.

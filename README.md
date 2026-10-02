@@ -63,17 +63,20 @@ Start with [docs/architecture.md](docs/architecture.md).
 | `deploy/receiver/` | Capture NIC script, tcpdump archive, receiver unit, example SIEM configs (Splunk) |
 | `docs/` | Architecture, wire format, deployment guides, operations runbook, accreditation notes |
 | `lab/` | Whole path simulated with Linux network namespaces |
+| `samples/` | Real `messages`, `secure` and `audit.log` sample logs, and the script that generated them |
 | `tests/` | Unit, fuzz and end-to-end tests |
 
 ## Try it
 
 ```bash
-pip install pytest && python3 -m pytest          # 90 tests, no root needed
+pip install pytest && python3 -m pytest          # 97 tests, no root needed
 
 sudo lab/run-lab.sh                               # full path in network namespaces
 sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly
 sudo lab/run-lab.sh --receiver-outage             # receiver stopped mid-run, archive replay fills it
 sudo lab/run-lab.sh --receiver-crash              # receiver killed mid-run: nothing lost
+sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
+                                                  # real logs: rebuilt files must hash the same
 ```
 
 The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `python3`.
