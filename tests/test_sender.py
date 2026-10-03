@@ -233,3 +233,18 @@ def test_drain_gives_up_on_a_connection_that_never_goes_quiet(server):
     assert time.monotonic() - t0 < 3
     assert snd.counters["shutdown_unread_bytes"] > 0
     c.close()
+
+
+def test_source_seq_numbers_each_file_separately():
+    snd, sock = sender(source_seq=True)
+    for src in ["/var/log/a", "/var/log/b", "/var/log/a", "/var/log/a", "/var/log/b"]:
+        snd.send_event({"_raw": "x", "host": "h1", "source": src})
+    snd.send_event({"_raw": "x", "host": "h2", "source": "/var/log/a"})
+    got = [wire.parse_event(f.payload)["fields"]["wd2l_src_seq"] for f in decode_all(sock)]
+    assert got == [1, 1, 2, 3, 2, 1]
+
+
+def test_source_seq_is_off_by_default():
+    snd, sock = sender()
+    snd.send_event({"_raw": "x", "host": "h", "source": "/s"})
+    assert "fields" not in wire.parse_event(decode_all(sock)[0].payload)

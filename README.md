@@ -69,7 +69,7 @@ Start with [docs/architecture.md](docs/architecture.md).
 ## Try it
 
 ```bash
-pip install pytest && python3 -m pytest          # 97 tests, no root needed
+pip install pytest && python3 -m pytest          # 105 tests, no root needed
 
 sudo lab/run-lab.sh                               # full path in network namespaces
 sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly
@@ -77,6 +77,8 @@ sudo lab/run-lab.sh --receiver-outage             # receiver stopped mid-run, ar
 sudo lab/run-lab.sh --receiver-crash              # receiver killed mid-run: nothing lost
 sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
                                                   # real logs: rebuilt files must hash the same
+sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log
+                                                  # same, interleaved as if written at the same time
 ```
 
 The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `python3`.
@@ -99,3 +101,6 @@ behavior, and a real log aggregator and SIEM. The deployment guides list the che
 
 Next: audit records (NIST SP 800-53 Rev 5, Moderate) and a fault-location health dashboard.
 Proposal for review: [docs/audit-and-health-plan.md](docs/audit-and-health-plan.md).
+
+How several live log files are tracked and rebuilt from one stream:
+[docs/multiple-files.md](docs/multiple-files.md).

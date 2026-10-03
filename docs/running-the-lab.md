@@ -57,7 +57,7 @@ If the repository is private, git will ask you to sign in to GitHub.
 python3 -m pytest
 ```
 
-These run without root and take about 25 seconds. You should see `97 passed`.
+These run without root and take about 25 seconds. You should see `105 passed`.
 
 ## 5. Run the lab
 
@@ -164,6 +164,20 @@ Each file should print `OK`.
 
 With `--loss 1` added before `--files`, some lines are lost on the "cable". The affected files are
 then reported as `INCOMPLETE`, with the number of missing lines, never as a false `MATCH`.
+
+### As if the files were being written at the same time
+
+In production a forwarder tails several logs at once, so their lines arrive interleaved. Add
+`--interleave` to merge the files by each line's timestamp before sending:
+
+```bash
+sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log
+```
+
+The sender then numbers lines per file (`--source-seq`), and Enclave 2 separates the stream back
+into three files and hashes them. With `--loss 1` added, each damaged file is listed with its
+missing line numbers. How the tracking works, and what the real pipeline needs for byte-for-byte
+files, is explained in [multiple-files.md](multiple-files.md).
 
 ### With your own computer's logs
 
