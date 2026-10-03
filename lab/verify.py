@@ -42,9 +42,12 @@ def main():
     p.add_argument("--expect-gaps", action="store_true", help="loss was injected on purpose")
     p.add_argument("--allow-duplicates", action="store_true",
                    help="identical copies of an event are fine (after a receiver crash)")
+    p.add_argument("--extra-field", action="append", default=[],
+                   help="extra field the sender was told to carry (same as wd2l-sender)")
     a = p.parse_args()
 
-    fitter = Sender(("127.0.0.1", 9), sock=_NoSock(), max_event=a.max_event, rate_pps=0)
+    fitter = Sender(("127.0.0.1", 9), sock=_NoSock(), max_event=a.max_event, rate_pps=0,
+                    extra_fields=a.extra_field)
     sent = load(a.sent)
     expected = {i + 1: wire.parse_event(fitter._fit(e)) for i, e in enumerate(sent)}
 

@@ -1,0 +1,1325 @@
+Oct  2 00:22:36 sample-host useradd[5558]: new group: name=labuser, GID=1002
+Oct  2 00:22:36 sample-host useradd[5558]: new user: name=labuser, UID=1001, GID=1002, home=/home/labuser, shell=/bin/bash, from=none
+Oct  2 00:22:36 sample-host useradd[5567]: new group: name=labadmin, GID=1003
+Oct  2 00:22:36 sample-host useradd[5567]: new user: name=labadmin, UID=1002, GID=1003, home=/home/labadmin, shell=/bin/bash, from=none
+Oct  2 00:22:36 sample-host chpasswd[5576]: pam_unix(chpasswd:chauthtok): password changed for labuser
+Oct  2 00:22:36 sample-host chpasswd[5580]: pam_unix(chpasswd:chauthtok): password changed for labadmin
+Oct  2 00:22:37 sample-host sshd[5595]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:22:37 sample-host sshd[5595]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:37 sample-host sshd[5595]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:37 sample-host sshd[5595]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:22:37 sample-host sshd[5613]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:22:37 sample-host sshd[5613]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:37 sample-host sshd[5613]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:37 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:22:37 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:22:37 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:22:37 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:22:37 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:22:37 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:22:37 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:22:37 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:22:37 sample-host sshd[5613]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:22:38 sample-host sshd[5633]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:22:40 sample-host sshd[5640]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:22:40 sample-host sshd[5640]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:22:43 sample-host su[5642]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:43 sample-host su[5642]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:22:43 sample-host su[5642]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:43 sample-host su[5642]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:22:43 sample-host su[5645]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:43 sample-host su[5645]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:22:43 sample-host su[5645]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:43 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:22:43 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:22:43 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:22:43 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:22:43 sample-host su[5645]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:22:43 sample-host useradd[5649]: new group: name=tempuser, GID=1004
+Oct  2 00:22:43 sample-host useradd[5649]: new user: name=tempuser, UID=1003, GID=1004, home=/home/tempuser, shell=/bin/bash, from=none
+Oct  2 00:22:43 sample-host chpasswd[5658]: pam_unix(chpasswd:chauthtok): password changed for tempuser
+Oct  2 00:22:43 sample-host usermod[5661]: add 'tempuser' to group 'adm'
+Oct  2 00:22:43 sample-host usermod[5661]: add 'tempuser' to shadow group 'adm'
+Oct  2 00:22:43 sample-host userdel[5668]: delete user 'tempuser'
+Oct  2 00:22:43 sample-host userdel[5668]: delete 'tempuser' from group 'adm'
+Oct  2 00:22:43 sample-host userdel[5668]: removed group 'tempuser' owned by 'tempuser'
+Oct  2 00:22:43 sample-host userdel[5668]: removed shadow group 'tempuser' owned by 'tempuser'
+Oct  2 00:22:43 sample-host userdel[5668]: delete 'tempuser' from shadow group 'adm'
+Oct  2 00:22:43 sample-host pam_check: account check for labadmin ok (round 1)
+Oct  2 00:22:43 sample-host sshd[5686]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:22:43 sample-host sshd[5686]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:43 sample-host sshd[5686]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:43 sample-host sshd[5686]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:22:44 sample-host sshd[5704]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:22:44 sample-host sshd[5704]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:44 sample-host sshd[5704]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:44 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:22:44 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:22:44 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:22:44 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:22:44 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:22:44 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:22:44 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:22:44 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:22:44 sample-host sshd[5704]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:22:44 sample-host sshd[5724]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:22:46 sample-host sshd[5728]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:22:46 sample-host sshd[5728]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:22:50 sample-host sshd[5732]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=ubuntu
+Oct  2 00:22:53 sample-host su[5734]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:53 sample-host su[5734]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:22:53 sample-host su[5734]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:53 sample-host su[5734]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:22:53 sample-host su[5737]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:53 sample-host su[5737]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:22:53 sample-host su[5737]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:53 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:22:53 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:22:53 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:22:53 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:22:53 sample-host su[5737]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:22:53 sample-host chpasswd[5742]: pam_unix(chpasswd:chauthtok): password changed for labuser
+Oct  2 00:22:53 sample-host pam_check: account check for labadmin ok (round 2)
+Oct  2 00:22:54 sample-host sshd[5755]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:22:54 sample-host sshd[5755]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:54 sample-host sshd[5755]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:54 sample-host sshd[5755]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:22:54 sample-host sshd[5773]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:22:54 sample-host sshd[5773]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:54 sample-host sshd[5773]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:54 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:22:54 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:22:54 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:22:54 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:22:54 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:22:54 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:22:54 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:22:54 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:22:54 sample-host sshd[5773]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:22:54 sample-host sshd[5793]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:22:56 sample-host su[5795]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:56 sample-host su[5795]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:22:56 sample-host su[5795]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:56 sample-host su[5795]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:22:56 sample-host su[5798]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:56 sample-host su[5798]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:22:56 sample-host su[5798]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:56 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:22:56 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:22:56 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:22:56 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:22:56 sample-host su[5798]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:22:56 sample-host pam_check: account check for labadmin ok (round 3)
+Oct  2 00:22:57 sample-host sshd[5813]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:22:57 sample-host sshd[5813]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:57 sample-host sshd[5813]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:57 sample-host sshd[5813]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:22:57 sample-host sshd[5831]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:22:57 sample-host sshd[5831]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:22:57 sample-host sshd[5831]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:22:57 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:22:57 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:22:57 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:22:57 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:22:57 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:22:57 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:22:57 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:22:57 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:22:57 sample-host sshd[5831]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:22:57 sample-host sshd[5851]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:23:00 sample-host sshd[5855]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:23:00 sample-host sshd[5855]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:23:02 sample-host su[5857]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:02 sample-host su[5857]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:23:02 sample-host su[5857]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:02 sample-host su[5857]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:23:02 sample-host su[5860]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:02 sample-host su[5860]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:23:02 sample-host su[5860]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:02 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:02 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:02 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:23:02 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:02 sample-host su[5860]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:23:02 sample-host pam_check: account check for labadmin ok (round 4)
+Oct  2 00:23:02 sample-host sshd[5874]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:23:02 sample-host sshd[5874]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:02 sample-host sshd[5874]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:02 sample-host sshd[5874]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:23:02 sample-host sshd[5892]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:23:02 sample-host sshd[5892]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:02 sample-host sshd[5892]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:02 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:02 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:02 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:02 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:02 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:23:02 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:02 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:02 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:02 sample-host sshd[5892]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:23:03 sample-host sshd[5912]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:23:07 sample-host sshd[5916]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:23:07 sample-host sshd[5916]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:23:10 sample-host su[5919]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:10 sample-host su[5919]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:23:10 sample-host su[5919]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:10 sample-host su[5919]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:23:10 sample-host su[5922]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:10 sample-host su[5922]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:23:10 sample-host su[5922]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:10 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:10 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:10 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:23:10 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:10 sample-host su[5922]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:23:10 sample-host pam_check: account check for labadmin ok (round 5)
+Oct  2 00:23:10 sample-host sshd[5937]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:23:10 sample-host sshd[5937]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:10 sample-host sshd[5937]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:10 sample-host sshd[5937]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:23:11 sample-host sshd[5955]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:23:11 sample-host sshd[5955]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:11 sample-host sshd[5955]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:11 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:11 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:11 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:11 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:11 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:23:11 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:11 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:11 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:11 sample-host sshd[5955]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:23:11 sample-host sshd[5975]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:23:15 sample-host sshd[5982]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:23:15 sample-host sshd[5982]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:23:17 sample-host sshd[5986]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=ubuntu
+Oct  2 00:23:20 sample-host su[5988]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:20 sample-host su[5988]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:23:20 sample-host su[5988]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:20 sample-host su[5988]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:23:20 sample-host su[5991]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:20 sample-host su[5991]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:23:20 sample-host su[5991]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:20 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:20 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:20 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:23:20 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:20 sample-host su[5991]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:23:20 sample-host pam_check: account check for labadmin ok (round 6)
+Oct  2 00:23:21 sample-host sshd[6005]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:23:21 sample-host sshd[6005]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:21 sample-host sshd[6005]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:21 sample-host sshd[6005]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:23:21 sample-host sshd[6023]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:23:21 sample-host sshd[6023]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:21 sample-host sshd[6023]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:21 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:21 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:21 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:21 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:21 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:23:21 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:21 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:21 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:21 sample-host sshd[6023]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:23:22 sample-host sshd[6043]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:23:26 sample-host su[6045]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:26 sample-host su[6045]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:23:26 sample-host su[6045]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:26 sample-host su[6045]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:23:26 sample-host su[6048]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:26 sample-host su[6048]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:23:26 sample-host su[6048]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:26 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:26 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:26 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:23:26 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:26 sample-host su[6048]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:23:26 sample-host pam_check: account check for labadmin ok (round 7)
+Oct  2 00:23:26 sample-host sshd[6063]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:23:26 sample-host sshd[6063]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:26 sample-host sshd[6063]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:26 sample-host sshd[6063]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:23:26 sample-host sshd[6081]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:23:26 sample-host sshd[6081]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:26 sample-host sshd[6081]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:26 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:26 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:26 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:26 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:26 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:23:26 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:26 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:26 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:26 sample-host sshd[6081]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:23:27 sample-host sshd[6101]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:23:31 sample-host sshd[6105]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:23:31 sample-host sshd[6105]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:23:33 sample-host su[6107]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:33 sample-host su[6107]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:23:33 sample-host su[6107]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:33 sample-host su[6107]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:23:33 sample-host su[6110]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:33 sample-host su[6110]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:23:33 sample-host su[6110]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:33 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:33 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:33 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:23:33 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:33 sample-host su[6110]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:23:33 sample-host pam_check: account check for labadmin ok (round 8)
+Oct  2 00:23:33 sample-host sshd[6124]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:23:33 sample-host sshd[6124]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:33 sample-host sshd[6124]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:33 sample-host sshd[6124]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:23:33 sample-host sshd[6142]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:23:33 sample-host sshd[6142]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:33 sample-host sshd[6142]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:33 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:33 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:33 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:33 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:33 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:23:33 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:33 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:33 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:33 sample-host sshd[6142]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:23:34 sample-host sshd[6162]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:23:38 sample-host sshd[6166]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:23:38 sample-host sshd[6166]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:23:41 sample-host su[6172]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:41 sample-host su[6172]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:23:41 sample-host su[6172]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:41 sample-host su[6172]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:23:41 sample-host su[6175]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:41 sample-host su[6175]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:23:41 sample-host su[6175]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:41 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:41 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:41 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:23:41 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:41 sample-host su[6175]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:23:41 sample-host pam_check: account check for labadmin ok (round 9)
+Oct  2 00:23:41 sample-host sshd[6189]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:23:41 sample-host sshd[6189]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:41 sample-host sshd[6189]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:41 sample-host sshd[6189]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:23:42 sample-host sshd[6207]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:23:42 sample-host sshd[6207]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:42 sample-host sshd[6207]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:42 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:42 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:42 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:42 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:42 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:23:42 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:42 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:42 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:42 sample-host sshd[6207]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:23:42 sample-host sshd[6227]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:23:44 sample-host sshd[6231]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:23:44 sample-host sshd[6231]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:23:46 sample-host sshd[6235]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=ubuntu
+Oct  2 00:23:49 sample-host su[6237]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:49 sample-host su[6237]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:23:49 sample-host su[6237]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:49 sample-host su[6237]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:23:49 sample-host su[6240]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:49 sample-host su[6240]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:23:49 sample-host su[6240]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:49 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:49 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:49 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:23:49 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:49 sample-host su[6240]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:23:49 sample-host pam_check: account check for labadmin ok (round 10)
+Oct  2 00:23:50 sample-host sshd[6255]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:23:50 sample-host sshd[6255]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:50 sample-host sshd[6255]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:50 sample-host sshd[6255]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:23:50 sample-host sshd[6273]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:23:50 sample-host sshd[6273]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:50 sample-host sshd[6273]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:50 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:50 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:50 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:50 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:50 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:23:50 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:50 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:50 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:50 sample-host sshd[6273]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:23:50 sample-host sshd[6293]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:23:52 sample-host su[6295]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:52 sample-host su[6295]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:23:52 sample-host su[6295]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:52 sample-host su[6295]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:23:52 sample-host su[6298]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:52 sample-host su[6298]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:23:52 sample-host su[6298]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:52 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:52 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:52 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:23:52 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:52 sample-host su[6298]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:23:52 sample-host useradd[6302]: new group: name=tempuser, GID=1004
+Oct  2 00:23:52 sample-host useradd[6302]: new user: name=tempuser, UID=1003, GID=1004, home=/home/tempuser, shell=/bin/bash, from=none
+Oct  2 00:23:52 sample-host chpasswd[6311]: pam_unix(chpasswd:chauthtok): password changed for tempuser
+Oct  2 00:23:52 sample-host usermod[6314]: add 'tempuser' to group 'adm'
+Oct  2 00:23:52 sample-host usermod[6314]: add 'tempuser' to shadow group 'adm'
+Oct  2 00:23:52 sample-host userdel[6321]: delete user 'tempuser'
+Oct  2 00:23:52 sample-host userdel[6321]: delete 'tempuser' from group 'adm'
+Oct  2 00:23:52 sample-host userdel[6321]: removed group 'tempuser' owned by 'tempuser'
+Oct  2 00:23:52 sample-host userdel[6321]: removed shadow group 'tempuser' owned by 'tempuser'
+Oct  2 00:23:52 sample-host userdel[6321]: delete 'tempuser' from shadow group 'adm'
+Oct  2 00:23:53 sample-host pam_check: account check for labadmin ok (round 11)
+Oct  2 00:23:53 sample-host sshd[6340]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:23:53 sample-host sshd[6340]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:53 sample-host sshd[6340]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:53 sample-host sshd[6340]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:23:53 sample-host sshd[6358]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:23:53 sample-host sshd[6358]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:23:53 sample-host sshd[6358]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:23:53 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:23:53 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:53 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:53 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:53 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:23:53 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:23:53 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:23:53 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:23:53 sample-host sshd[6358]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:23:54 sample-host sshd[6378]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:23:58 sample-host sshd[6382]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:23:58 sample-host sshd[6382]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:24:02 sample-host su[6384]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:02 sample-host su[6384]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:24:02 sample-host su[6384]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:02 sample-host su[6384]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:24:02 sample-host su[6387]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:02 sample-host su[6387]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:24:02 sample-host su[6387]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:02 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:02 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:02 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:24:02 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:02 sample-host su[6387]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:24:02 sample-host pam_check: account check for labadmin ok (round 12)
+Oct  2 00:24:02 sample-host sshd[6401]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:24:02 sample-host sshd[6401]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:02 sample-host sshd[6401]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:02 sample-host sshd[6401]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:24:02 sample-host sshd[6419]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:24:02 sample-host sshd[6419]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:02 sample-host sshd[6419]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:02 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:02 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:02 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:02 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:02 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:24:02 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:02 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:02 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:02 sample-host sshd[6419]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:24:03 sample-host sshd[6439]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:24:07 sample-host sshd[6443]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:24:07 sample-host sshd[6443]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:24:08 sample-host su[6445]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:08 sample-host su[6445]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:24:08 sample-host su[6445]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:08 sample-host su[6445]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:24:08 sample-host su[6448]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:08 sample-host su[6448]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:24:08 sample-host su[6448]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:08 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:08 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:08 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:24:08 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:08 sample-host su[6448]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:24:08 sample-host pam_check: account check for labadmin ok (round 13)
+Oct  2 00:24:09 sample-host sshd[6462]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:24:09 sample-host sshd[6462]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:09 sample-host sshd[6462]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:09 sample-host sshd[6462]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:24:09 sample-host sshd[6480]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:24:09 sample-host sshd[6480]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:09 sample-host sshd[6480]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:09 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:09 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:09 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:09 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:09 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:24:09 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:09 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:09 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:09 sample-host sshd[6480]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:24:09 sample-host sshd[6500]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:24:12 sample-host sshd[6505]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:24:12 sample-host sshd[6505]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:24:14 sample-host sshd[6512]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=ubuntu
+Oct  2 00:24:17 sample-host su[6514]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:17 sample-host su[6514]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:24:17 sample-host su[6514]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:17 sample-host su[6514]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:24:17 sample-host su[6517]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:17 sample-host su[6517]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:24:17 sample-host su[6517]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:17 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:17 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:17 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:24:17 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:17 sample-host su[6517]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:24:17 sample-host pam_check: account check for labadmin ok (round 14)
+Oct  2 00:24:17 sample-host sshd[6532]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:24:17 sample-host sshd[6532]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:17 sample-host sshd[6532]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:17 sample-host sshd[6532]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:24:18 sample-host sshd[6550]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:24:18 sample-host sshd[6550]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:18 sample-host sshd[6550]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:18 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:18 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:18 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:18 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:18 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:24:18 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:18 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:18 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:18 sample-host sshd[6550]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:24:18 sample-host sshd[6570]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:24:20 sample-host su[6573]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:20 sample-host su[6573]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:24:20 sample-host su[6573]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:20 sample-host su[6573]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:24:20 sample-host su[6576]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:20 sample-host su[6576]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:24:20 sample-host su[6576]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:20 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:20 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:20 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:24:20 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:20 sample-host su[6576]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:24:20 sample-host pam_check: account check for labadmin ok (round 15)
+Oct  2 00:24:20 sample-host sshd[6591]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:24:20 sample-host sshd[6591]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:20 sample-host sshd[6591]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:20 sample-host sshd[6591]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:24:21 sample-host sshd[6609]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:24:21 sample-host sshd[6609]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:21 sample-host sshd[6609]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:21 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:21 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:21 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:21 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:21 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:24:21 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:21 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:21 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:21 sample-host sshd[6609]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:24:21 sample-host sshd[6629]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:24:23 sample-host sshd[6633]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:24:23 sample-host sshd[6633]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:24:27 sample-host su[6635]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:27 sample-host su[6635]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:24:27 sample-host su[6635]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:27 sample-host su[6635]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:24:27 sample-host su[6638]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:27 sample-host su[6638]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:24:27 sample-host su[6638]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:27 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:27 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:27 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:24:27 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:27 sample-host su[6638]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:24:27 sample-host pam_check: account check for labadmin ok (round 16)
+Oct  2 00:24:27 sample-host sshd[6652]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:24:27 sample-host sshd[6652]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:27 sample-host sshd[6652]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:27 sample-host sshd[6652]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:24:28 sample-host sshd[6670]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:24:28 sample-host sshd[6670]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:28 sample-host sshd[6670]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:28 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:28 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:28 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:28 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:28 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:24:28 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:28 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:28 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:28 sample-host sshd[6670]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:24:28 sample-host sshd[6690]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:24:30 sample-host sshd[6694]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:24:30 sample-host sshd[6694]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:24:33 sample-host su[6696]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:33 sample-host su[6696]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:24:33 sample-host su[6696]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:33 sample-host su[6696]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:24:33 sample-host su[6699]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:33 sample-host su[6699]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:24:33 sample-host su[6699]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:33 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:33 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:33 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:24:33 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:33 sample-host su[6699]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:24:33 sample-host chpasswd[6704]: pam_unix(chpasswd:chauthtok): password changed for labuser
+Oct  2 00:24:33 sample-host pam_check: account check for labadmin ok (round 17)
+Oct  2 00:24:34 sample-host sshd[6717]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:24:34 sample-host sshd[6717]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:34 sample-host sshd[6717]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:34 sample-host sshd[6717]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:24:34 sample-host sshd[6735]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:24:34 sample-host sshd[6735]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:34 sample-host sshd[6735]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:34 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:34 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:34 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:34 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:34 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:24:34 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:34 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:34 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:34 sample-host sshd[6735]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:24:34 sample-host sshd[6755]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:24:38 sample-host sshd[6759]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:24:38 sample-host sshd[6759]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:24:41 sample-host sshd[6763]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=ubuntu
+Oct  2 00:24:44 sample-host su[6769]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:44 sample-host su[6769]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:24:44 sample-host su[6769]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:44 sample-host su[6769]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:24:44 sample-host su[6772]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:44 sample-host su[6772]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:24:44 sample-host su[6772]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:44 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:44 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:44 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:24:44 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:44 sample-host su[6772]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:24:44 sample-host pam_check: account check for labadmin ok (round 18)
+Oct  2 00:24:44 sample-host sshd[6786]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:24:44 sample-host sshd[6786]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:44 sample-host sshd[6786]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:44 sample-host sshd[6786]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:24:44 sample-host sshd[6804]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:24:44 sample-host sshd[6804]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:45 sample-host sshd[6804]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:45 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:45 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:45 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:45 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:45 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:24:45 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:45 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:45 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:45 sample-host sshd[6804]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:24:45 sample-host sshd[6824]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:24:47 sample-host su[6826]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:47 sample-host su[6826]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:24:47 sample-host su[6826]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:47 sample-host su[6826]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:24:47 sample-host su[6829]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:47 sample-host su[6829]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:24:47 sample-host su[6829]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:47 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:47 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:47 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:24:47 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:47 sample-host su[6829]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:24:47 sample-host pam_check: account check for labadmin ok (round 19)
+Oct  2 00:24:47 sample-host sshd[6844]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:24:47 sample-host sshd[6844]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:47 sample-host sshd[6844]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:47 sample-host sshd[6844]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:24:48 sample-host sshd[6862]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:24:48 sample-host sshd[6862]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:48 sample-host sshd[6862]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:48 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:48 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:48 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:48 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:48 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:24:48 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:48 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:48 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:48 sample-host sshd[6862]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:24:48 sample-host sshd[6882]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:24:50 sample-host sshd[6886]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:24:50 sample-host sshd[6886]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:24:52 sample-host su[6888]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:52 sample-host su[6888]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:24:52 sample-host su[6888]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:52 sample-host su[6888]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:24:52 sample-host su[6891]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:52 sample-host su[6891]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:24:52 sample-host su[6891]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:52 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:52 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:52 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:24:52 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:52 sample-host su[6891]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:24:52 sample-host pam_check: account check for labadmin ok (round 20)
+Oct  2 00:24:52 sample-host sshd[6906]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:24:52 sample-host sshd[6906]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:52 sample-host sshd[6906]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:52 sample-host sshd[6906]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:24:53 sample-host sshd[6924]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:24:53 sample-host sshd[6924]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:24:53 sample-host sshd[6924]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:24:53 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:24:53 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:53 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:53 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:53 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:24:53 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:24:53 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:24:53 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:24:53 sample-host sshd[6924]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:24:53 sample-host sshd[6944]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:24:57 sample-host sshd[6948]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:24:57 sample-host sshd[6948]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:25:00 sample-host su[6950]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:00 sample-host su[6950]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:25:00 sample-host su[6950]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:00 sample-host su[6950]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:25:00 sample-host su[6953]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:00 sample-host su[6953]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:25:00 sample-host su[6953]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:00 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:00 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:00 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:25:00 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:00 sample-host su[6953]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:25:00 sample-host useradd[6957]: new group: name=tempuser, GID=1004
+Oct  2 00:25:00 sample-host useradd[6957]: new user: name=tempuser, UID=1003, GID=1004, home=/home/tempuser, shell=/bin/bash, from=none
+Oct  2 00:25:00 sample-host chpasswd[6966]: pam_unix(chpasswd:chauthtok): password changed for tempuser
+Oct  2 00:25:00 sample-host usermod[6969]: add 'tempuser' to group 'adm'
+Oct  2 00:25:00 sample-host usermod[6969]: add 'tempuser' to shadow group 'adm'
+Oct  2 00:25:00 sample-host userdel[6976]: delete user 'tempuser'
+Oct  2 00:25:00 sample-host userdel[6976]: delete 'tempuser' from group 'adm'
+Oct  2 00:25:00 sample-host userdel[6976]: removed group 'tempuser' owned by 'tempuser'
+Oct  2 00:25:00 sample-host userdel[6976]: removed shadow group 'tempuser' owned by 'tempuser'
+Oct  2 00:25:00 sample-host userdel[6976]: delete 'tempuser' from shadow group 'adm'
+Oct  2 00:25:00 sample-host pam_check: account check for labadmin ok (round 21)
+Oct  2 00:25:01 sample-host sshd[6995]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:25:01 sample-host sshd[6995]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:01 sample-host sshd[6995]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:01 sample-host sshd[6995]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:25:01 sample-host sshd[7013]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:25:01 sample-host sshd[7013]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:01 sample-host sshd[7013]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:01 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:01 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:01 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:01 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:01 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:25:01 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:01 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:01 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:01 sample-host sshd[7013]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:25:01 sample-host sshd[7033]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:25:05 sample-host sshd[7037]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:25:05 sample-host sshd[7037]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:25:10 sample-host sshd[7041]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=ubuntu
+Oct  2 00:25:13 sample-host su[7047]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:13 sample-host su[7047]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:25:13 sample-host su[7047]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:13 sample-host su[7047]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:25:13 sample-host su[7050]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:13 sample-host su[7050]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:25:13 sample-host su[7050]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:13 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:13 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:13 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:25:13 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:13 sample-host su[7050]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:25:13 sample-host pam_check: account check for labadmin ok (round 22)
+Oct  2 00:25:13 sample-host sshd[7064]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:25:13 sample-host sshd[7064]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:13 sample-host sshd[7064]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:13 sample-host sshd[7064]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:25:13 sample-host sshd[7082]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:25:13 sample-host sshd[7082]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:13 sample-host sshd[7082]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:13 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:13 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:13 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:13 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:13 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:25:13 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:13 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:13 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:14 sample-host sshd[7082]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:25:14 sample-host sshd[7102]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:25:18 sample-host su[7105]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:18 sample-host su[7105]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:25:18 sample-host su[7105]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:18 sample-host su[7105]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:25:18 sample-host su[7108]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:18 sample-host su[7108]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:25:18 sample-host su[7108]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:18 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:18 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:18 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:25:18 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:18 sample-host su[7108]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:25:18 sample-host pam_check: account check for labadmin ok (round 23)
+Oct  2 00:25:18 sample-host sshd[7122]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:25:18 sample-host sshd[7122]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:18 sample-host sshd[7122]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:18 sample-host sshd[7122]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:25:19 sample-host sshd[7140]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:25:19 sample-host sshd[7140]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:19 sample-host sshd[7140]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:19 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:19 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:19 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:19 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:19 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:25:19 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:19 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:19 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:19 sample-host sshd[7140]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:25:19 sample-host sshd[7160]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:25:23 sample-host sshd[7164]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:25:23 sample-host sshd[7164]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:25:27 sample-host su[7166]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:27 sample-host su[7166]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:25:27 sample-host su[7166]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:27 sample-host su[7166]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:25:27 sample-host su[7169]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:27 sample-host su[7169]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:25:27 sample-host su[7169]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:27 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:27 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:27 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:25:27 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:27 sample-host su[7169]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:25:27 sample-host pam_check: account check for labadmin ok (round 24)
+Oct  2 00:25:27 sample-host sshd[7183]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:25:27 sample-host sshd[7183]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:27 sample-host sshd[7183]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:27 sample-host sshd[7183]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:25:28 sample-host sshd[7201]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:25:28 sample-host sshd[7201]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:28 sample-host sshd[7201]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:28 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:28 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:28 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:28 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:28 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:25:28 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:28 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:28 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:28 sample-host sshd[7201]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:25:28 sample-host sshd[7221]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:25:32 sample-host sshd[7225]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:25:32 sample-host sshd[7225]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:25:35 sample-host su[7227]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:35 sample-host su[7227]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:25:35 sample-host su[7227]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:35 sample-host su[7227]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:25:35 sample-host su[7230]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:35 sample-host su[7230]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:25:35 sample-host su[7230]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:35 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:35 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:35 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:25:35 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:35 sample-host su[7230]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:25:35 sample-host pam_check: account check for labadmin ok (round 25)
+Oct  2 00:25:36 sample-host sshd[7245]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:25:36 sample-host sshd[7245]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:36 sample-host sshd[7245]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:36 sample-host sshd[7245]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:25:36 sample-host sshd[7263]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:25:36 sample-host sshd[7263]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:36 sample-host sshd[7263]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:36 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:36 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:36 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:36 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:36 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:25:36 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:36 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:36 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:36 sample-host sshd[7263]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:25:36 sample-host sshd[7283]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:25:40 sample-host sshd[7287]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:25:40 sample-host sshd[7287]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:25:45 sample-host sshd[7295]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=ubuntu
+Oct  2 00:25:48 sample-host su[7297]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:48 sample-host su[7297]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:25:48 sample-host su[7297]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:48 sample-host su[7297]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:25:48 sample-host su[7300]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:48 sample-host su[7300]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:25:48 sample-host su[7300]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:48 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:48 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:48 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:25:48 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:48 sample-host su[7300]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:25:48 sample-host pam_check: account check for labadmin ok (round 26)
+Oct  2 00:25:48 sample-host sshd[7314]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:25:48 sample-host sshd[7314]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:48 sample-host sshd[7314]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:48 sample-host sshd[7314]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:25:48 sample-host sshd[7332]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:25:48 sample-host sshd[7332]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:48 sample-host sshd[7332]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:48 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:48 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:48 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:48 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:48 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:25:48 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:48 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:48 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:48 sample-host sshd[7332]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:25:49 sample-host sshd[7352]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:25:53 sample-host su[7354]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:53 sample-host su[7354]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:25:53 sample-host su[7354]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:53 sample-host su[7354]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:25:53 sample-host su[7357]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:53 sample-host su[7357]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:25:53 sample-host su[7357]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:53 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:53 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:53 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:25:53 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:53 sample-host su[7357]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:25:53 sample-host pam_check: account check for labadmin ok (round 27)
+Oct  2 00:25:53 sample-host sshd[7372]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:25:53 sample-host sshd[7372]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:53 sample-host sshd[7372]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:53 sample-host sshd[7372]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:25:53 sample-host sshd[7390]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:25:53 sample-host sshd[7390]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:25:53 sample-host sshd[7390]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:25:53 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:25:53 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:53 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:53 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:53 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:25:53 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:25:53 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:25:53 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:25:53 sample-host sshd[7390]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:25:54 sample-host sshd[7410]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:25:58 sample-host sshd[7414]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:25:58 sample-host sshd[7414]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:26:02 sample-host su[7416]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:02 sample-host su[7416]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:26:02 sample-host su[7416]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:02 sample-host su[7416]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:26:02 sample-host su[7419]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:02 sample-host su[7419]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:26:02 sample-host su[7419]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:02 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:02 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:02 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:26:02 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:02 sample-host su[7419]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:26:02 sample-host pam_check: account check for labadmin ok (round 28)
+Oct  2 00:26:02 sample-host sshd[7434]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:26:02 sample-host sshd[7434]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:02 sample-host sshd[7434]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:02 sample-host sshd[7434]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:26:02 sample-host sshd[7452]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:26:02 sample-host sshd[7452]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:02 sample-host sshd[7452]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:03 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:03 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:03 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:03 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:03 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:26:03 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:03 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:03 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:03 sample-host sshd[7452]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:26:03 sample-host sshd[7472]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:26:07 sample-host sshd[7476]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:26:07 sample-host sshd[7476]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:26:10 sample-host su[7478]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:10 sample-host su[7478]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:26:10 sample-host su[7478]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:10 sample-host su[7478]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:26:10 sample-host su[7481]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:10 sample-host su[7481]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:26:10 sample-host su[7481]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:10 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:10 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:10 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:26:10 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:10 sample-host su[7481]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:26:10 sample-host pam_check: account check for labadmin ok (round 29)
+Oct  2 00:26:10 sample-host sshd[7495]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:26:10 sample-host sshd[7495]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:10 sample-host sshd[7495]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:10 sample-host sshd[7495]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:26:11 sample-host sshd[7513]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:26:11 sample-host sshd[7513]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:11 sample-host sshd[7513]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:11 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:11 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:11 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:11 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:11 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:26:11 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:11 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:11 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:11 sample-host sshd[7513]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:26:11 sample-host sshd[7533]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:26:15 sample-host sshd[7542]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:26:15 sample-host sshd[7542]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:26:19 sample-host sshd[7546]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=ubuntu
+Oct  2 00:26:22 sample-host su[7548]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:22 sample-host su[7548]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:26:22 sample-host su[7548]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:22 sample-host su[7548]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:26:22 sample-host su[7551]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:22 sample-host su[7551]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:26:22 sample-host su[7551]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:22 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:22 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:22 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:26:22 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:22 sample-host su[7551]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:26:22 sample-host pam_check: account check for labadmin ok (round 30)
+Oct  2 00:26:23 sample-host sshd[7566]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:26:23 sample-host sshd[7566]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:23 sample-host sshd[7566]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:23 sample-host sshd[7566]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:26:23 sample-host sshd[7584]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:26:23 sample-host sshd[7584]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:23 sample-host sshd[7584]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:23 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:23 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:23 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:23 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:23 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:26:23 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:23 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:23 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:23 sample-host sshd[7584]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:26:23 sample-host sshd[7604]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:26:27 sample-host su[7606]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:27 sample-host su[7606]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:26:27 sample-host su[7606]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:27 sample-host su[7606]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:26:27 sample-host su[7609]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:27 sample-host su[7609]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:26:27 sample-host su[7609]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:27 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:27 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:27 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:26:27 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:27 sample-host su[7609]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:26:27 sample-host useradd[7613]: new group: name=tempuser, GID=1004
+Oct  2 00:26:27 sample-host useradd[7613]: new user: name=tempuser, UID=1003, GID=1004, home=/home/tempuser, shell=/bin/bash, from=none
+Oct  2 00:26:28 sample-host chpasswd[7622]: pam_unix(chpasswd:chauthtok): password changed for tempuser
+Oct  2 00:26:28 sample-host usermod[7625]: add 'tempuser' to group 'adm'
+Oct  2 00:26:28 sample-host usermod[7625]: add 'tempuser' to shadow group 'adm'
+Oct  2 00:26:28 sample-host userdel[7632]: delete user 'tempuser'
+Oct  2 00:26:28 sample-host userdel[7632]: delete 'tempuser' from group 'adm'
+Oct  2 00:26:28 sample-host userdel[7632]: removed group 'tempuser' owned by 'tempuser'
+Oct  2 00:26:28 sample-host userdel[7632]: removed shadow group 'tempuser' owned by 'tempuser'
+Oct  2 00:26:28 sample-host userdel[7632]: delete 'tempuser' from shadow group 'adm'
+Oct  2 00:26:28 sample-host pam_check: account check for labadmin ok (round 31)
+Oct  2 00:26:28 sample-host sshd[7650]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:26:28 sample-host sshd[7650]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:28 sample-host sshd[7650]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:28 sample-host sshd[7650]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:26:28 sample-host sshd[7668]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:26:28 sample-host sshd[7668]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:28 sample-host sshd[7668]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:28 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:28 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:28 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:28 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:28 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:26:28 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:28 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:28 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:28 sample-host sshd[7668]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:26:29 sample-host sshd[7688]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:26:33 sample-host sshd[7692]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:26:33 sample-host sshd[7692]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:26:37 sample-host su[7694]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:37 sample-host su[7694]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:26:37 sample-host su[7694]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:37 sample-host su[7694]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:26:37 sample-host su[7697]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:37 sample-host su[7697]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:26:37 sample-host su[7697]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:37 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:37 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:37 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:26:37 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:37 sample-host su[7697]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:26:37 sample-host chpasswd[7702]: pam_unix(chpasswd:chauthtok): password changed for labuser
+Oct  2 00:26:37 sample-host pam_check: account check for labadmin ok (round 32)
+Oct  2 00:26:37 sample-host sshd[7715]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:26:37 sample-host sshd[7715]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:37 sample-host sshd[7715]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:37 sample-host sshd[7715]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:26:37 sample-host sshd[7733]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:26:37 sample-host sshd[7733]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:37 sample-host sshd[7733]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:37 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:37 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:37 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:37 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:37 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:26:37 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:37 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:37 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:37 sample-host sshd[7733]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:26:38 sample-host sshd[7753]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:26:42 sample-host sshd[7758]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:26:42 sample-host sshd[7758]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:26:45 sample-host su[7763]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:45 sample-host su[7763]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:26:45 sample-host su[7763]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:45 sample-host su[7763]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:26:45 sample-host su[7766]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:45 sample-host su[7766]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:26:45 sample-host su[7766]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:45 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:45 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:45 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:26:45 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:45 sample-host su[7766]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:26:45 sample-host pam_check: account check for labadmin ok (round 33)
+Oct  2 00:26:45 sample-host sshd[7780]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:26:45 sample-host sshd[7780]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:45 sample-host sshd[7780]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:45 sample-host sshd[7780]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:26:46 sample-host sshd[7798]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:26:46 sample-host sshd[7798]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:46 sample-host sshd[7798]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:46 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:46 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:46 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:46 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:46 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:26:46 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:46 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:46 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:46 sample-host sshd[7798]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:26:46 sample-host sshd[7818]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:26:50 sample-host sshd[7822]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:26:50 sample-host sshd[7822]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:26:54 sample-host sshd[7826]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=ubuntu
+Oct  2 00:26:56 sample-host su[7828]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:56 sample-host su[7828]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:26:56 sample-host su[7828]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:56 sample-host su[7828]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:26:56 sample-host su[7831]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:56 sample-host su[7831]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:26:56 sample-host su[7831]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:56 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:56 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:56 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:26:56 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:56 sample-host su[7831]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:26:56 sample-host pam_check: account check for labadmin ok (round 34)
+Oct  2 00:26:56 sample-host sshd[7845]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:26:56 sample-host sshd[7845]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:56 sample-host sshd[7845]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:56 sample-host sshd[7845]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:26:56 sample-host sshd[7863]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:26:56 sample-host sshd[7863]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:26:56 sample-host sshd[7863]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:26:57 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:26:57 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:57 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:57 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:57 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:26:57 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:26:57 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:26:57 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:26:57 sample-host sshd[7863]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:26:57 sample-host sshd[7883]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:27:01 sample-host su[7885]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:01 sample-host su[7885]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:27:01 sample-host su[7885]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:01 sample-host su[7885]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:27:01 sample-host su[7888]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:01 sample-host su[7888]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:27:01 sample-host su[7888]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:01 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:27:01 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:01 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:27:01 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:01 sample-host su[7888]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:27:01 sample-host pam_check: account check for labadmin ok (round 35)
+Oct  2 00:27:01 sample-host sshd[7905]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:27:01 sample-host sshd[7905]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:01 sample-host sshd[7905]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:01 sample-host sshd[7905]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:27:01 sample-host sshd[7923]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:27:01 sample-host sshd[7923]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:01 sample-host sshd[7923]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:02 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:27:02 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:02 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:27:02 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:02 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:27:02 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:02 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:27:02 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:02 sample-host sshd[7923]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:27:02 sample-host sshd[7943]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:27:06 sample-host sshd[7947]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:27:06 sample-host sshd[7947]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:27:08 sample-host su[7949]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:08 sample-host su[7949]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:27:08 sample-host su[7949]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:08 sample-host su[7949]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:27:08 sample-host su[7952]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:08 sample-host su[7952]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:27:08 sample-host su[7952]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:08 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:27:08 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:08 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:27:08 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:08 sample-host su[7952]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:27:08 sample-host pam_check: account check for labadmin ok (round 36)
+Oct  2 00:27:08 sample-host sshd[7966]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:27:08 sample-host sshd[7966]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:08 sample-host sshd[7966]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:08 sample-host sshd[7966]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:27:09 sample-host sshd[7984]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:27:09 sample-host sshd[7984]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:09 sample-host sshd[7984]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:09 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:27:09 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:09 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:27:09 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:09 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:27:09 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:09 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:27:09 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:09 sample-host sshd[7984]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:27:09 sample-host sshd[8004]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:27:13 sample-host sshd[8011]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:27:13 sample-host sshd[8011]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:27:16 sample-host su[8013]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:16 sample-host su[8013]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:27:16 sample-host su[8013]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:16 sample-host su[8013]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:27:16 sample-host su[8016]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:16 sample-host su[8016]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:27:16 sample-host su[8016]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:16 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:27:16 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:16 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:27:16 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:16 sample-host su[8016]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:27:16 sample-host pam_check: account check for labadmin ok (round 37)
+Oct  2 00:27:17 sample-host sshd[8030]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:27:17 sample-host sshd[8030]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:17 sample-host sshd[8030]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:17 sample-host sshd[8030]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:27:17 sample-host sshd[8048]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:27:17 sample-host sshd[8048]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:17 sample-host sshd[8048]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:17 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:27:17 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:17 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:27:17 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:17 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:27:17 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:17 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:27:17 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:17 sample-host sshd[8048]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:27:17 sample-host sshd[8068]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:27:21 sample-host sshd[8072]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:27:21 sample-host sshd[8072]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:27:25 sample-host sshd[8076]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=ubuntu
+Oct  2 00:27:29 sample-host su[8078]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:29 sample-host su[8078]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:27:29 sample-host su[8078]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:29 sample-host su[8078]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:27:29 sample-host su[8081]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:29 sample-host su[8081]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:27:29 sample-host su[8081]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:29 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:27:29 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:29 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:27:29 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:29 sample-host su[8081]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:27:29 sample-host pam_check: account check for labadmin ok (round 38)
+Oct  2 00:27:29 sample-host sshd[8095]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:27:29 sample-host sshd[8095]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:29 sample-host sshd[8095]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:29 sample-host sshd[8095]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:27:29 sample-host sshd[8113]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:27:29 sample-host sshd[8113]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:29 sample-host sshd[8113]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:29 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:27:29 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:29 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:27:29 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:29 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:27:29 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:29 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:27:29 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:29 sample-host sshd[8113]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:27:30 sample-host sshd[8133]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:27:32 sample-host su[8135]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:32 sample-host su[8135]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:27:32 sample-host su[8135]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:32 sample-host su[8135]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:27:32 sample-host su[8138]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:32 sample-host su[8138]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:27:32 sample-host su[8138]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:32 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:27:32 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:32 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:27:32 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:32 sample-host su[8138]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:27:32 sample-host pam_check: account check for labadmin ok (round 39)
+Oct  2 00:27:32 sample-host sshd[8152]: pam_unix(sshd:session): session opened for user labuser(uid=1001) by labuser(uid=0)
+Oct  2 00:27:32 sample-host sshd[8152]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:32 sample-host sshd[8152]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:32 sample-host sshd[8152]: pam_unix(sshd:session): session closed for user labuser
+Oct  2 00:27:32 sample-host sshd[8170]: pam_unix(sshd:session): session opened for user labadmin(uid=1002) by labadmin(uid=0)
+Oct  2 00:27:32 sample-host sshd[8170]: pam_systemd(sshd:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:32 sample-host sshd[8170]: pam_limits(sshd:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:32 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:27:32 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:32 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:27:32 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:32 sample-host sudo: labadmin : PWD=/home/labadmin ; USER=root ; COMMAND=/usr/bin/cat /etc/hosts
+Oct  2 00:27:32 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:32 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by labadmin(uid=1002)
+Oct  2 00:27:32 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:32 sample-host sshd[8170]: pam_unix(sshd:session): session closed for user labadmin
+Oct  2 00:27:33 sample-host sshd[8190]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1  user=labuser
+Oct  2 00:27:37 sample-host sshd[8194]: pam_unix(sshd:auth): check pass; user unknown
+Oct  2 00:27:37 sample-host sshd[8194]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=127.0.0.1 
+Oct  2 00:27:39 sample-host su[8196]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:39 sample-host su[8196]: pam_unix(su:session): session opened for user labuser(uid=1001) by (uid=0)
+Oct  2 00:27:39 sample-host su[8196]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:39 sample-host su[8196]: pam_unix(su:session): session closed for user labuser
+Oct  2 00:27:39 sample-host su[8199]: pam_limits(su:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=0,euid=0
+Oct  2 00:27:39 sample-host su[8199]: pam_unix(su:session): session opened for user labadmin(uid=1002) by (uid=0)
+Oct  2 00:27:39 sample-host su[8199]: pam_systemd(su:session): Failed to connect to system bus: No such file or directory
+Oct  2 00:27:39 sample-host sudo: labadmin : PWD=/home/user/architecture-wiredata-to-log ; USER=root ; COMMAND=/usr/bin/id
+Oct  2 00:27:39 sample-host sudo: pam_limits(sudo:session): Could not set limit for 'memlock' to soft=-1, hard=-1: Operation not permitted; uid=1002,euid=0
+Oct  2 00:27:39 sample-host sudo: pam_unix(sudo:session): session opened for user root(uid=0) by (uid=1002)
+Oct  2 00:27:39 sample-host sudo: pam_unix(sudo:session): session closed for user root
+Oct  2 00:27:39 sample-host su[8199]: pam_unix(su:session): session closed for user labadmin
+Oct  2 00:27:39 sample-host pam_check: account check for labadmin ok (round 40)
+Oct  2 00:27:41 sample-host userdel[8218]: delete user 'labuser'
+Oct  2 00:27:41 sample-host userdel[8218]: removed group 'labuser' owned by 'labuser'
+Oct  2 00:27:41 sample-host userdel[8218]: removed shadow group 'labuser' owned by 'labuser'
+Oct  2 00:27:41 sample-host userdel[8226]: delete user 'labadmin'
+Oct  2 00:27:41 sample-host userdel[8226]: removed group 'labadmin' owned by 'labadmin'
+Oct  2 00:27:41 sample-host userdel[8226]: removed shadow group 'labadmin' owned by 'labadmin'
