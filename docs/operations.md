@@ -54,8 +54,8 @@ All receiver output about itself is in the SIEM: `index=wd2l sourcetype=wd2l:hea
 3. **Kernel drops?** `kernel_drops` rising means the host can't keep up. Check CPU and the NIC
    ring size. Replay may still recover them, because tcpdump has its own buffer.
 4. **Heartbeat stale at the same time?** Then the link (cable, network tap, fiber) or Enclave 1
-   was down. The packets never arrived and replay won't help. Ask the Enclave 1 team to re-send that
-   time window (below).
+   was down. The packets never arrived and archive replay won't help. Ask the Enclave 1 team to
+   replay that time window from the log retention server (below).
 5. **Isolated single-event gaps with a live heartbeat** = packet loss on the path. Check optics
    and interface error counters on the log server NIC, tap ports and receiver NIC.
 
@@ -87,10 +87,21 @@ memory are reported as `reason=receiver_restart` gaps at startup, and the replay
 
 ## Re-sending from Enclave 1
 
-Events that never reached Enclave 2 (link down, receiver host down) have to be sent again from
-Enclave 1. The gap record gives the time (`_time` of the gap record) and the stream. In Enclave 1,
-pull that time window from the log aggregator's persistent queue/archive or the source systems,
-and push it through the aggregator again. It arrives as normal new events with new sequence numbers.
+Events that never reached Enclave 2 (link down, receiver host down, loss on the wire, a sender
+run that never arrived) have to be sent again from Enclave 1. The log retention server keeps a
+1-year copy of everything the aggregator collected for this.
+
+1. **Find the time window.** The gap record gives the stream and the sequence range; its `_time`
+   is when the gap was declared. For tighter bounds, look up the events on either side of the gap:
+   `index=enclave1 wd2l_stream=<stream> (wd2l_seq=<first_seq-1> OR wd2l_seq=<last_seq+1>)`.
+   Add a margin: events are numbered in the order the aggregator delivered them, which is close
+   to time order but not exact.
+2. **Replay it in Enclave 1.** The aggregator reads that window back from the log retention
+   server and routes it to `wd2l-sender` only, not back to the retention server. See
+   [deployment/retention-server.md](deployment/retention-server.md).
+3. **Check in Enclave 2.** The replayed events arrive as normal new events with new sequence
+   numbers. Events in the window that had already arrived land a second time, with a different
+   `wd2l_seq`. Remove them in searches with `| dedup host source _time _raw`.
 
 ## Routine
 
@@ -103,7 +114,9 @@ and push it through the aggregator again. It arrives as normal new events with n
   without it the receiver reports everything before the first event it sees in the current stream
   as missing.
 * **Disk**: watch `/var/lib/wd2l/pcap` (hourly files, 7-day prune) and `/var/lib/wd2l/spool`
-  (only grows while the SIEM is unreachable; capped at 10 GB).
+  (only grows while the SIEM is unreachable; capped at 10 GB). In Enclave 1, watch the log
+  retention server's disk against its 1-year estimate, and the aggregator's queue for it. A full
+  queue means a window with no copy to replay from.
 * **Rejected HEC events** (`hec_rejected_events` > 0): look in `/var/lib/wd2l/spool/rejected/`.
   When the SIEM refuses a batch, the receiver re-sends it one event at a time, so these files
   hold only the events the SIEM refused. Usually an index that doesn't exist in Enclave 2. Fix

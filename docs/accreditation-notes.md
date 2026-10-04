@@ -7,6 +7,8 @@ the risks that remain. This is an engineering write-up, not a formal assessment.
 
 * **Direction:** Enclave 1 → Enclave 2 only. Content: log events (text) and heartbeat counters.
 * **Enclave 1:** central log server (log aggregator + `wd2l-sender`), black-hole switch port, network tap.
+  Also in Enclave 1, but off the transfer path: the log retention server, which keeps a 1-year
+  copy of everything the aggregator collects and is the source for replaying lost events.
 * **Enclave 2:** receiver host (tcpdump + `wd2l-receiver`), SIEM.
 * **Link between them:** one fiber strand from the network tap's monitor port TX to the receiver NIC's
   RX. The other strand is not connected.
@@ -59,7 +61,8 @@ Nothing that arrives on the wire. The receiver:
 Every event the sender numbers is either delivered or reported as lost. It's never silently
 missing. Shown in the lab with 1% injected loss: every lost event was reported by exact sequence
 number, with no false reports. Loss isn't recovered automatically (nothing can come back). The
-operator re-sends from Enclave 1 (`docs/operations.md`).
+operator replays the lost time window from the Enclave 1 log retention server
+(`docs/operations.md`).
 
 This holds across a receiver crash: an event counts as delivered only once the SIEM accepted it
 or it is on disk, so anything in memory at a crash is reported (`reason=receiver_restart`) and
@@ -75,7 +78,8 @@ numbered yet when it stopped. On a clean stop the sender first reads what is alr
 (up to 2 seconds) and reports anything left as `shutdown_unread_bytes`. On a crash, up to one TCP
 receive buffer (256 KB by default) can be lost without a report. The aggregator's persistent
 queue reduces this but can't fully close it, because TCP acknowledges data before the sender
-reads it.
+reads it. Those events are still on the log retention server, which gets its own copy from the
+aggregator, but no gap record points to them.
 
 ## Residual risks
 
@@ -83,7 +87,8 @@ reads it.
 |---|---|
 | Malicious content inside log text (e.g. strings aimed at analyst tools, log injection) | Same as any log ingest. The SIEM stores it as data. Keep the Enclave 2 SIEM patched. Content filtering is out of scope |
 | Enclave 1 compromise injects fake events | Enclave 1 controls today. Optional HMAC (above) |
-| Loss is detected but not recovered | By design (requirement was detect and report). Operator re-send procedure |
+| Loss is detected but not recovered | By design (requirement was detect and report). The operator replays the window from the log retention server |
+| Log retention server down, full or lost | Not on the transfer path, so the transfer continues. A window missing there can't be replayed later. Its own persistent queue in the aggregator; Enclave 1 monitoring and backups |
 | Misconfigured tap filter forwards other Enclave 1 traffic | Enclave 2 still only accepts the log flow and counts everything else (`other_packets` alert). The switch-port isolation means little else is on that cable to begin with |
 | Receiver host compromise | It has no path back to Enclave 1. Treat it like any other Enclave 2 server |
 | Parser bugs | Small code base, standard library only, fuzz tests. Runs unprivileged and sandboxed |

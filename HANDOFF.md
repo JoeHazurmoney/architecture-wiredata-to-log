@@ -8,6 +8,9 @@ Summary to start a new conversation. Read this first, then the docs it points to
   black-hole IP with static ARP) → inline **network tap** → **one fiber strand, TX only** →
   Enclave 2 capture NIC → `wd2l-receiver` (rebuild, verify, report gaps) → SIEM (Splunk in
   practice, HEC format) + tcpdump pcap archive for replay.
+- The aggregator also copies every event to an Enclave 1 **log retention server** (1 year,
+  AU-11). It is the replay source for lost windows (dashed arrow back to the aggregator) and the
+  proposed 1-year home of wd2l's Enclave 1 audit files. Docs only; the lab doesn't simulate it.
 - Python stdlib only, ≥3.9. Lab = Linux network namespaces (`lab/run-lab.sh`).
 
 ## User and environment facts (decisions already made)
@@ -19,7 +22,7 @@ Summary to start a new conversation. Read this first, then the docs it points to
 - Cross-domain: the one-strand TX-only fiber method is already accredited in another enclave.
 - Compliance: **NIST SP 800-53 Rev 5, Moderate** baseline; audit retention **1 year**.
 - Time: GPS SAASM receiver in each enclave → switch at stratum 2 → hosts via chrony (stratum 3).
-- **No SIEM in Enclave 1** (only a central log server); Splunk in Enclave 2.
+- **No SIEM in Enclave 1** (central log server + log retention server); Splunk in Enclave 2.
 - Volume < 1,000 events/s. Loss handling: detect and report (no retransmission).
 - Real pipeline: Splunk UF tails continuously written logs → Cribl Stream → wd2l-sender.
 
@@ -42,7 +45,7 @@ Summary to start a new conversation. Read this first, then the docs it points to
   `sample-host`, loopback only, throwaway users) + `SHA256SUMS` + `samples/generate-sample-logs.sh`.
 
 ## Key docs
-`docs/architecture.md`, `wire-format.md`, `deployment/{network,log-server,receiver}.md`,
+`docs/architecture.md`, `wire-format.md`, `deployment/{network,log-server,retention-server,receiver}.md`,
 `operations.md`, `accreditation-notes.md`, `running-the-lab.md` (§8 real files, interleaved),
 `audit-and-health-plan.md` (proposal), `multiple-files.md` (on the branch).
 
