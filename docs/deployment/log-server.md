@@ -13,7 +13,7 @@ Addresses used throughout (any unused /30 works; keep them consistent everywhere
 | Log server egress IP | `10.255.255.1/30` |
 | Black-hole IP | `10.255.255.2` |
 | Black-hole MAC (made up) | `02:00:00:00:00:02` |
-| UDP port | `5514` |
+| UDP port | `5514` (source and destination) |
 
 ## 1. Install wd2l
 
@@ -51,7 +51,7 @@ ip neigh show dev ens224         # 10.255.255.2 lladdr 02:00:00:00:00:02 PERMANE
 Load `deploy/log-server/nftables-wd2l.nft` (edit the interface name at the top). It:
 
 * drops everything arriving on the egress NIC,
-* lets only processes running as `wd2l` send UDP from `10.255.255.1` to `10.255.255.2:5514`,
+* lets only processes running as `wd2l` send UDP from `10.255.255.1:5514` to `10.255.255.2:5514`,
 * blocks ARP in and out on that NIC,
 * on kernel 5.16+, also drops any other frame at the NIC (LLDP, IPv6, ...). Delete that last table
   if your kernel rejects it.
@@ -70,13 +70,19 @@ sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-sender
 journalctl -u wd2l-sender -f
 ```
 
+**Upgrading an install from before the fixed source port:** the new sender unit and the new
+nftables file go together (the firewall now only passes source port 5514). Copy both, reload
+nftables, then restart the sender the clean way ([planned-downtime.md](../planned-downtime.md)).
+Only after that, add `--src-port 5514` to the receiver unit in Enclave 2. In the other order the
+receiver counts every packet as `other_packets` until the sender is changed.
+
 Every minute it logs its stream id, last sequence number and counters. Options
 (`python3 -m wd2l.sender --help`):
 
 | Option | Default | Notes |
 |---|---|---|
 | `--listen` | `127.0.0.1:10070` | Where the log aggregator connects. Keep it on localhost |
-| `--bind` | none | Egress NIC's IP |
+| `--bind` | none | Egress NIC's IP, optionally with a fixed UDP source port. The unit uses `10.255.255.1:5514`, so the flow is the same after every restart (firewall, tap filter, ICD). Without a port the kernel picks a new one at each start |
 | `--dst` | `10.255.255.2:5514` | Black-hole IP:port |
 | `--max-datagram` | `1472` | `8972` if MTU 9000 end to end |
 | `--max-event` | `262144` | Bigger events are truncated and flagged |
@@ -166,7 +172,7 @@ documentation; check them against your version.
 ```bash
 # events flowing into the sender:
 journalctl -u wd2l-sender --since -5min | grep last_seq
-# packets leaving on the egress NIC (only UDP to .2:5514 should appear, nothing else):
+# packets leaving on the egress NIC (only UDP .1:5514 > .2:5514 should appear, nothing else):
 sudo tcpdump -i ens224 -nn -c 20
 # nftables drop counters on that NIC should stay at 0 unless something is misbehaving:
 sudo nft list table inet wd2l

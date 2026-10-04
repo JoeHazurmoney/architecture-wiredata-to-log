@@ -322,7 +322,8 @@ class Receiver:
                  reasm_timeout: float = 5.0, gap_window: float = 2.0, hb_timeout: float = 5.0,
                  health_interval: float = 60.0, stream_lost_after: float = 60.0,
                  stream_retention: float = 7 * 86400.0,
-                 record_clock: Optional[Callable[[], float]] = None, rx_time: bool = True):
+                 record_clock: Optional[Callable[[], float]] = None, rx_time: bool = True,
+                 src_port: int = 0):
         """`now` passed to handle_frame/tick drives every timer. Live capture passes a steady
         clock (immune to clock steps); pcap replay passes packet timestamps. `record_clock`,
         if given, supplies the wall-clock `time` written into health records, each event's
@@ -332,6 +333,7 @@ class Receiver:
         self.dst_ip = dst_ip
         self.dst_port = dst_port
         self.src_ip = src_ip
+        self.src_port = src_port  # 0 = any
         self.state_path = state_path
         self.reasm = Reassembler(max_event, max_buffer, reasm_timeout)
         self.gap_window = gap_window
@@ -385,6 +387,10 @@ class Receiver:
                 or (self.src_ip and udp.src_ip != self.src_ip)):
             self.counters["other_packets"] += 1
             self._bump(self.other_reasons, "udp %s:%d" % (udp.dst_ip, udp.dst_port))
+            return
+        if self.src_port and udp.src_port != self.src_port:
+            self.counters["other_packets"] += 1
+            self._bump(self.other_reasons, "udp from %s:%d" % (udp.src_ip, udp.src_port))
             return
         self.handle_datagram(udp.payload, now)
 
@@ -763,6 +769,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--dst-ip", default="10.255.255.2", help="black-hole IP ('' = any)")
     p.add_argument("--dst-port", type=int, default=5514)
     p.add_argument("--src-ip", default="", help="only accept this sender IP ('' = any)")
+    p.add_argument("--src-port", type=int, default=0,
+                   help="only accept this sender UDP source port (0 = any; the unit uses 5514)")
     p.add_argument("--state", help="state file (gap tracking survives restarts)")
     p.add_argument("--out-dir", help="write events.jsonl / health.jsonl here")
     p.add_argument("--hec-url", help="SIEM HTTP event collector base URL (HEC format), e.g. https://siem:8088")
@@ -799,7 +807,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
               state_path=a.state, max_event=a.max_event, max_buffer=a.max_buffer,
               reasm_timeout=a.reasm_timeout, gap_window=a.gap_window, hb_timeout=a.hb_timeout,
               health_interval=a.health_interval, stream_lost_after=a.stream_lost_after,
-              stream_retention=a.stream_retention, rx_time=a.rx_time)
+              stream_retention=a.stream_retention, rx_time=a.rx_time, src_port=a.src_port)
     try:
         if a.pcap:
             rx = Receiver(out, **kw)

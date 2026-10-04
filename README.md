@@ -68,7 +68,7 @@ Start with [docs/architecture.md](docs/architecture.md).
 | `deploy/log-server/` | Egress NIC script, nftables, systemd units |
 | `deploy/switch/` | Black-hole port config (example for one switch platform) |
 | `deploy/receiver/` | Capture NIC script, tcpdump archive, receiver unit, example SIEM configs (Splunk) |
-| `docs/` | Architecture, wire format, deployment guides, operations runbook, accreditation notes, decision records (`docs/decisions/`) |
+| `docs/` | Architecture, wire format, interface description (ICD input), deployment guides, operations and planned-downtime runbooks, accreditation notes, decision records (`docs/decisions/`) |
 | `lab/` | Whole path simulated with Linux network namespaces |
 | `samples/` | Real `messages`, `secure` and `audit.log` sample logs, and the script that generated them |
 | `tests/` | Unit, fuzz and end-to-end tests |
@@ -76,12 +76,13 @@ Start with [docs/architecture.md](docs/architecture.md).
 ## Try it
 
 ```bash
-pip install pytest && python3 -m pytest          # 138 tests, no root needed
+pip install pytest && python3 -m pytest          # 141 tests, no root needed
 
 sudo lab/run-lab.sh                               # full path in network namespaces
 sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly
 sudo lab/run-lab.sh --receiver-outage             # receiver stopped mid-run, archive replay fills it
 sudo lab/run-lab.sh --receiver-crash              # receiver killed mid-run: nothing lost
+sudo lab/run-lab.sh --maintenance                 # planned downtime: stop and start both sides, nothing lost
 sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
                                                   # real logs: rebuilt files must hash the same
 sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log
@@ -101,6 +102,11 @@ The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `pyt
    source, wd2l audit files
 4. [Receiver](docs/deployment/receiver.md): capture NIC, archive, `wd2l-receiver`, SIEM
 5. [Operations](docs/operations.md): health records, alerts, replay, re-send
+6. [Planned downtime](docs/planned-downtime.md): stopping and starting the sender and receiver
+   cleanly for patching, reboots and link work
+
+What crosses between the enclaves, packet by packet, for the interface control document (ICD):
+[docs/interface-description.md](docs/interface-description.md).
 
 ## Status
 

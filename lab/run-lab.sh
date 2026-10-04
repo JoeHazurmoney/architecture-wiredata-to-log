@@ -11,12 +11,17 @@
 # Needs: root, iproute2, nftables (kernel >= 5.16 for the netdev egress hook), tcpdump, python3.
 #
 # Usage: sudo lab/run-lab.sh [--events N] [--eps N] [--loss PCT] [--receiver-outage]
-#                            [--receiver-crash] [--keep] [--interleave] [--files FILE...]
+#                            [--receiver-crash] [--maintenance] [--keep] [--interleave]
+#                            [--files FILE...]
 #   --loss PCT          drop PCT% of packets on the cable (before the tap): gaps must be reported
 #   --receiver-outage   stop the receiver mid-run, restart it, then replay the pcap archive:
 #                       everything must end up delivered with no duplicates
 #   --receiver-crash    same, but the receiver is killed (SIGKILL) instead of stopped: nothing
 #                       may be lost; a few duplicates are allowed (dedup on wd2l_stream/wd2l_seq)
+#   --maintenance       planned downtime, in the order docs/planned-downtime.md gives: half the
+#                       events, then hold the aggregator, stop the sender, stop the receiver and
+#                       the capture (receiver host down), start the capture and receiver, start
+#                       the sender, send the rest. Two linked sender runs, nothing lost, no replay
 #   --keep              leave namespaces up afterwards (lab/teardown.sh removes them)
 #   --interleave        with --files: merge the files by each line's timestamp, as if they were
 #                       being written at the same time and tailed by a forwarder. The sender
@@ -38,6 +43,7 @@ KEEP=0
 MAX_EVENT=262144
 FILES=()
 INTERLEAVE=0
+MAINT=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -46,6 +52,7 @@ while [ $# -gt 0 ]; do
     --loss) LOSS="$2"; shift 2 ;;
     --receiver-outage) OUTAGE=1; shift ;;
     --receiver-crash) OUTAGE=1; KILLSIG=KILL; shift ;;
+    --maintenance) MAINT=1; shift ;;
     --keep) KEEP=1; shift ;;
     --interleave) INTERLEAVE=1; shift ;;
     --files) shift; FILES=("$@"); [ ${#FILES[@]} -gt 0 ] || { echo "--files needs files" >&2; exit 2; }; break ;;
@@ -53,6 +60,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ "$MAINT" = 1 ] && { [ "$OUTAGE" = 1 ] || [ -n "$LOSS" ] || [ ${#FILES[@]} -gt 0 ]; }; then
+  echo "--maintenance runs on its own (with --events / --eps)" >&2; exit 2
+fi
 [ "$(id -u)" = 0 ] || { echo "run as root (needs network namespaces)" >&2; exit 1; }
 for c in ip tc nft tcpdump python3; do
   command -v "$c" >/dev/null || { echo "missing $c (apt install iproute2 nftables tcpdump)" >&2; exit 1; }
@@ -152,12 +162,13 @@ else
   python3 "$HERE/gen_events.py" -n "$EVENTS" "$OUT/sent.jsonl"
 fi
 
-echo "== starting Enclave 2: capture archive + receiver"
-$ENC2 tcpdump -i cap0 -U -Z root -G 3600 -w "$OUT/pcap/cap-%Y%m%d%H%M%S.pcap" \
-  2>"$OUT/tcpdump.log" &
-PIDS+=($!)
-
-RX_ARGS=(--live cap0 --dst-ip 10.255.255.2 --dst-port 5514 --src-ip 10.255.255.1
+start_capture() {
+  $ENC2 tcpdump -i cap0 -U -Z root -G 3600 -w "$OUT/pcap/cap-%Y%m%d%H%M%S.pcap" \
+    2>>"$OUT/tcpdump.log" &
+  CAP_PID=$!
+  PIDS+=($CAP_PID)
+}
+RX_ARGS=(--live cap0 --dst-ip 10.255.255.2 --dst-port 5514 --src-ip 10.255.255.1 --src-port 5514
          --out-dir "$OUT/received" --state "$OUT/state.json"
          --gap-window 2 --health-interval 5 --max-event "$MAX_EVENT")
 start_receiver() {
@@ -165,19 +176,55 @@ start_receiver() {
   RX_PID=$!
   PIDS+=($RX_PID)
 }
+start_sender() {
+  $ENC1 python3 -m wd2l.sender --listen 127.0.0.1:10070 --dst 10.255.255.2:5514 \
+    --bind 10.255.255.1:5514 --max-event "$MAX_EVENT" --stats-interval 5 \
+    --state "$OUT/sender.json" "${SENDER_EXTRA[@]}" >>"$OUT/sender.log" 2>&1 &
+  TX_PID=$!
+  PIDS+=($TX_PID)
+}
+
+echo "== starting Enclave 2: capture archive + receiver"
+start_capture
 start_receiver
 sleep 1
 
 echo "== starting Enclave 1: wd2l-sender + stand-in log aggregator"
-$ENC1 python3 -m wd2l.sender --listen 127.0.0.1:10070 --dst 10.255.255.2:5514 \
-  --bind 10.255.255.1 --max-event "$MAX_EVENT" --stats-interval 5 --state "$OUT/sender.json" \
-  "${SENDER_EXTRA[@]}" >"$OUT/sender.log" 2>&1 &
-TX_PID=$!
-PIDS+=($TX_PID)
+start_sender
 sleep 1
 
-$ENC1 python3 "$HERE/fake_cribl.py" --eps "$EPS" "$OUT/sent.jsonl" &
-AGG_PID=$!
+if [ "$MAINT" = 1 ]; then
+  HALF=$(( $(wc -l < "$OUT/sent.jsonl") / 2 ))
+  head -n "$HALF" "$OUT/sent.jsonl" > "$OUT/sent-part1.jsonl"
+  tail -n +"$((HALF + 1))" "$OUT/sent.jsonl" > "$OUT/sent-part2.jsonl"
+  $ENC1 python3 "$HERE/fake_cribl.py" --eps "$EPS" "$OUT/sent-part1.jsonl"
+  # The steps of docs/planned-downtime.md. The stand-in aggregator has sent its part and
+  # disconnected: that is "hold the aggregator's output", so the sender's input is quiet.
+  echo "== planned downtime: aggregator held, stopping wd2l-sender"
+  sleep 1
+  kill -TERM "$TX_PID"; wait "$TX_PID" 2>/dev/null || true
+  echo "== waiting for Enclave 2 to record the clean end (stream_end)"
+  for _ in $(seq 50); do
+    grep -q '"type": "stream_end"' "$OUT/received/health.jsonl" 2>/dev/null && break
+    sleep 0.2
+  done
+  echo "== stopping wd2l-receiver and the capture (receiver host down)"
+  kill -TERM "$RX_PID"; wait "$RX_PID" 2>/dev/null || true
+  kill -TERM "$CAP_PID"; wait "$CAP_PID" 2>/dev/null || true
+  sleep 3
+  echo "== starting Enclave 2 first: capture, then wd2l-receiver"
+  start_capture
+  start_receiver
+  sleep 1
+  echo "== starting wd2l-sender, then releasing the aggregator"
+  start_sender
+  sleep 1
+  $ENC1 python3 "$HERE/fake_cribl.py" --eps "$EPS" "$OUT/sent-part2.jsonl" &
+  AGG_PID=$!
+else
+  $ENC1 python3 "$HERE/fake_cribl.py" --eps "$EPS" "$OUT/sent.jsonl" &
+  AGG_PID=$!
+fi
 
 if [ "$OUTAGE" = 1 ]; then
   sleep 1.5
@@ -198,6 +245,7 @@ sleep 0.5
 if [ "$OUTAGE" = 1 ]; then
   echo "== replaying the capture archive to fill the outage"
   python3 -m wd2l.receiver --pcap "$OUT"/pcap/*.pcap --dst-ip 10.255.255.2 --dst-port 5514 \
+    --src-ip 10.255.255.1 --src-port 5514 \
     --out-dir "$OUT/received" --state "$OUT/state.json" --max-event "$MAX_EVENT" \
     >"$OUT/replay.log" 2>&1
 fi
@@ -211,6 +259,7 @@ VERIFY_ARGS=("$OUT/sent.jsonl" "$OUT/received" --max-event "$MAX_EVENT" "${SENDE
 if [ -n "$LOSS" ]; then VERIFY_ARGS+=(--expect-gaps); fi
 if [ "$OUTAGE" = 1 ]; then VERIFY_ARGS+=(--state "$OUT/state.json"); fi
 if [ "$KILLSIG" = KILL ]; then VERIFY_ARGS+=(--allow-duplicates); fi
+if [ "$MAINT" = 1 ]; then VERIFY_ARGS+=(--sender-runs 2); fi
 set +e
 python3 "$HERE/verify.py" "${VERIFY_ARGS[@]}"
 RC=$?

@@ -26,7 +26,7 @@ flowchart LR
     C -->|copy of every event| RS[Log retention server<br/>1-year copy]
     RS -.->|replay<br/>if needed| C
     C -->|TCP, JSON lines<br/>127.0.0.1:10070| S[wd2l-sender]
-    S -->|UDP 10.255.255.1 → 10.255.255.2:5514| G{{Network tap}}
+    S -->|UDP 10.255.255.1:5514 → 10.255.255.2:5514| G{{Network tap}}
     G --> B[Black-hole switch port<br/>own VLAN, drops everything]
   end
   G ==>|TX strand only| N
@@ -118,8 +118,10 @@ flowchart LR
   with `--extra-field`, which become indexed fields in the SIEM), the sender's send time
   (indexed field `wd2l_tx_time`), and, only on events with an opaque blob, `wd2l_opaque` and
   `wd2l_opaque_bytes`. Other aggregator fields are dropped.
-* **Sender → wire**: see [wire-format.md](wire-format.md). 68 bytes of overhead per packet; 1,404
-  bytes of event per packet at MTU 1500; 8,904 at MTU 9000.
+* **Sender → wire**: see [wire-format.md](wire-format.md), and
+  [interface-description.md](interface-description.md) for the full packet as the interface
+  control document needs it. 68 bytes of overhead per packet; 1,404 bytes of event per packet at
+  MTU 1500; 8,904 at MTU 9000.
 * **Big events**: capped at 256 KB (`--max-event`). Bigger events are cut to fit and flagged with
   indexed field `wd2l_truncated=<original size>`, the same idea as a SIEM's own line-length limit.
 * **Receiver → SIEM**: an HTTP event collector interface (the proof of concept speaks Splunk's HEC
@@ -187,6 +189,9 @@ In the network-namespace lab (`lab/run-lab.sh`), which builds the full path in s
   missing events with no duplicates.
 * With the receiver killed (SIGKILL) mid-run, nothing was lost: the replay filled every gap and
   a few hundred events arrived twice, as designed.
+* Planned downtime, done in the order of [planned-downtime.md](planned-downtime.md): sender,
+  receiver and capture stopped, then started again. Two linked sender runs, no input left
+  unread, no gaps, nothing to replay.
 * Zero non-log packets reached Enclave 2, and zero frames came back from it.
 * 5,000 events/s with no drops.
 

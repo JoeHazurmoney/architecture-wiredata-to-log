@@ -56,7 +56,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | Option | Default | Notes |
 |---|---|---|
 | `--live IFACE` / `--pcap FILES` | | Live capture, or read pcap files (replay) |
-| `--dst-ip`, `--dst-port`, `--src-ip` | `10.255.255.2`, `5514`, any | Which packets are the log flow. Everything else is counted as `other_packets` |
+| `--dst-ip`, `--dst-port`, `--src-ip`, `--src-port` | `10.255.255.2`, `5514`, any, any | Which packets are the log flow. The unit sets all four (source `10.255.255.1:5514`). Everything else is counted as `other_packets` |
 | `--state` | none | Gap tracking that survives restarts, including which events the SIEM has not confirmed yet. Always set it in production |
 | `--hec-url`, `--hec-token-file`, `--hec-ca` | | SIEM HTTP event collector. `--hec-insecure` is for labs only |
 | `--spool-dir` | `/var/lib/wd2l/spool` | Where batches wait while the SIEM is unreachable |

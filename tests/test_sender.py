@@ -9,7 +9,7 @@ import time
 import pytest
 
 from wd2l import wire
-from wd2l.sender import InputServer, Sender
+from wd2l.sender import InputServer, Sender, _bind_addr
 
 from helpers import FakeSock, strip_times
 
@@ -322,3 +322,24 @@ def test_opaque_check_can_be_turned_off():
     snd, sock = sender(opaque_check=False)
     snd.send_event({"_raw": BLOB})
     assert "wd2l_opaque" not in fields_of(sock)
+
+
+def test_bind_takes_an_ip_and_an_optional_port():
+    assert _bind_addr(None) == (None, 0)
+    assert _bind_addr("10.255.255.1") == ("10.255.255.1", 0)
+    assert _bind_addr("10.255.255.1:5514") == ("10.255.255.1", 5514)
+
+
+def test_fixed_source_port_is_used_and_held():
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+    snd = Sender(("127.0.0.1", 9), "127.0.0.1", rate_pps=0, bind_port=port)
+    try:
+        assert snd.sock.getsockname() == ("127.0.0.1", port)
+        # A second sender can't take the same source port: it fails at start, not silently.
+        with pytest.raises(OSError):
+            Sender(("127.0.0.1", 9), "127.0.0.1", rate_pps=0, bind_port=port)
+    finally:
+        snd.sock.close()

@@ -47,7 +47,8 @@ class Sender:
                  max_event: int = wire.DEFAULT_MAX_EVENT,
                  rate_pps: float = 20000.0, extra_fields: Sequence[str] = (),
                  sock: Optional[socket.socket] = None, state_path: Optional[str] = None,
-                 source_seq: bool = False, tx_time: bool = True, opaque_check: bool = True):
+                 source_seq: bool = False, tx_time: bool = True, opaque_check: bool = True,
+                 bind_port: int = 0):
         if max_event < 1024:
             raise ValueError("max_event must be at least 1024")
         self.dst = dst
@@ -92,8 +93,10 @@ class Sender:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.setsockopt(socket.IPPROTO_IP, IP_MTU_DISCOVER, IP_PMTUDISC_DO)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4 * 1024 * 1024)
-            if bind_ip:
-                sock.bind((bind_ip, 0))
+            # A fixed source port (the unit uses 5514) keeps the flow the same across restarts
+            # for the firewall, the tap filter and the ICD. 0 lets the kernel pick one.
+            if bind_ip or bind_port:
+                sock.bind((bind_ip or "", bind_port))
         self.sock = sock
 
     # -- restart chain
@@ -456,12 +459,21 @@ def _hostport(s: str) -> Tuple[str, int]:
     return host, int(port)
 
 
+def _bind_addr(s: Optional[str]) -> Tuple[Optional[str], int]:
+    """--bind value: "IP" (kernel picks the source port) or "IP:PORT"."""
+    if not s:
+        return None, 0
+    return _hostport(s) if ":" in s else (s, 0)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     p = argparse.ArgumentParser(prog="wd2l-sender", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--listen", default="127.0.0.1:10070", help="TCP JSON listen address")
     p.add_argument("--dst", default="10.255.255.2:5514", help="black-hole IP:port")
-    p.add_argument("--bind", help="source IP (the egress NIC's address)")
+    p.add_argument("--bind", metavar="IP[:PORT]",
+                   help="source address: the egress NIC's IP, and optionally a fixed UDP "
+                        "source port (the unit uses 10.255.255.1:5514)")
     p.add_argument("--max-datagram", type=int, default=wire.DEFAULT_MAX_DATAGRAM,
                    help="UDP payload bytes per packet (1472 for 1500 MTU, 8972 for 9000)")
     p.add_argument("--max-event", type=int, default=wire.DEFAULT_MAX_EVENT,
@@ -495,9 +507,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if a.auth_token_file:
         with open(a.auth_token_file) as f:
             token = f.read().strip()
-    sender = Sender(_hostport(a.dst), a.bind, a.max_datagram, a.max_event, a.rate_pps,
+    bind_ip, bind_port = _bind_addr(a.bind)
+    sender = Sender(_hostport(a.dst), bind_ip, a.max_datagram, a.max_event, a.rate_pps,
                     a.extra_field, state_path=a.state, source_seq=a.source_seq,
-                    tx_time=a.tx_time, opaque_check=a.opaque_check)
+                    tx_time=a.tx_time, opaque_check=a.opaque_check, bind_port=bind_port)
     server = InputServer(_hostport(a.listen), sender, token, a.input_rcvbuf, a.drain_timeout)
     stop = threading.Event()
     hb = threading.Thread(target=_heartbeat_loop,

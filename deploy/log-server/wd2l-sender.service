@@ -10,7 +10,7 @@ Group=wd2l
 Environment=PYTHONPATH=/opt/wd2l
 ExecStart=/usr/bin/python3 -m wd2l.sender \
     --listen 127.0.0.1:10070 \
-    --bind 10.255.255.1 \
+    --bind 10.255.255.1:5514 \
     --dst 10.255.255.2:5514 \
     --max-datagram 1472 \
     --auth-token-file /etc/wd2l/aggregator.token \
