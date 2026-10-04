@@ -36,7 +36,7 @@ Enclave 2 only inside heartbeats.
 | G3 | Operator actions (archive replay, state-file reset) aren't attributed | AU-3 identity; AU-6 review |
 | G4 | Completeness is checked by counts; content isn't reconciled end to end | SI-7 integrity; proof the SIEM holds exactly what Enclave 1 sent |
 | G5 | Health records aren't tamper-evident and share the data's index and token | AU-9, AU-9(4) |
-| G6 | No time-quality data (chrony stratum/offset, sender-vs-receiver skew) | AU-8; troubleshooting misordered events |
+| G6 | No time-quality data (chrony stratum/offset). *Partly addressed:* sender-vs-receiver offset (`clock_offset_s`) and per-event send/arrival times (`wd2l_tx_time` / `wd2l_rx_time`) are built | AU-8; troubleshooting misordered events |
 | G7 | Health signals don't cover the NIC/link layer or the aggregator → sender hand-off | Can't say *where* a fault is |
 | G8 | Packet archive kept 7 days; no retention plan for audit records | AU-11 (1 year) |
 
@@ -123,8 +123,8 @@ Enclave 2 sees Enclave 1's state within about a second while the link is up.
 | `e1-sender` | Enclave 1 | heartbeats, send errors, drops, restarts (`boot`), **process CPU/memory, egress NIC tx packets/errors, chrony stratum/offset** |
 | `boundary` (tap, fiber) | seen from Enclave 2 | **capture NIC carrier, carrier-change count, rx CRC/frame errors** (`/sys/class/net/*/statistics`, `ethtool -S`) |
 | `e2-capture` | Enclave 2 | **NIC rx packets/bytes**, kernel drops, **tcpdump running, newest archive file age/size**, non-wd2l packets |
-| `e2-receiver` | Enclave 2 | gaps by reason, reassembly expiry, **lag from sender time to delivery**, **chrony stratum/offset**, process CPU/memory |
-| `e2-siem` | Enclave 2 | spool files/bytes, HEC errors and rejections, **SIEM ingest delay** (index time − event time) |
+| `e2-receiver` | Enclave 2 | gaps by reason, reassembly expiry, lag from sender time to delivery (built: `wd2l_rx_time − wd2l_tx_time`), **chrony stratum/offset**, process CPU/memory |
+| `e2-siem` | Enclave 2 | spool files/bytes, HEC errors and rejections, SIEM ingest delay (built: index time − `wd2l_rx_time`) |
 
 ## 9. Reconciliation (completeness and accuracy)
 
@@ -167,7 +167,9 @@ Enclave 2 sees Enclave 1's state within about a second while the link is up.
 * Alert when unsynced, stratum > 3, or |offset| > 100 ms (threshold to confirm).
 * The receiver records **sender-vs-receiver clock skew** from the heartbeat's `sender_time`, minus
   the one-way network delay (well under 1 ms on a direct fiber). With both sides GPS-disciplined,
-  skew over ~50 ms points to a time-sync fault, not the network.
+  skew over ~50 ms points to a time-sync fault, not the network. *Built:* `clock_offset_s` in
+  every health summary (see [operations.md](operations.md#measuring-delays)); the alert is still
+  to do (section 13).
 
 ## 12. The "where is the fault" dashboard
 

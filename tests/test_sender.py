@@ -9,7 +9,7 @@ import pytest
 from wd2l import wire
 from wd2l.sender import InputServer, Sender
 
-from helpers import FakeSock
+from helpers import FakeSock, strip_times
 
 
 def sender(**kw):
@@ -111,7 +111,7 @@ def test_cribl_tcp_json_with_header(server):
     assert wait_for(lambda: snd.counters["events_sent"] == 2)
     assert wait_for(lambda: snd.counters["bad_input"] == 2)
     evts = [wire.parse_event(f.payload) for f in decode_all(sock)]
-    assert evts[0] == {"_raw": "one", "host": "h1", "index": "fw"}
+    assert strip_times(evts[0]) == {"_raw": "one", "host": "h1", "index": "fw"}
     assert evts[1]["index"] == "other"
 
 
@@ -247,4 +247,39 @@ def test_source_seq_numbers_each_file_separately():
 def test_source_seq_is_off_by_default():
     snd, sock = sender()
     snd.send_event({"_raw": "x", "host": "h", "source": "/s"})
+    assert "wd2l_src_seq" not in wire.parse_event(decode_all(sock)[0].payload).get("fields", {})
+
+
+# ---------------------------------------------------------------- send time
+
+
+def tx_times(sock):
+    return [wire.parse_event(f.payload)["fields"]["wd2l_tx_time"] for f in decode_all(sock)]
+
+
+def test_every_event_carries_its_send_time():
+    snd, sock = sender()
+    before = time.time()
+    snd.send_event({"_raw": "a"})
+    snd.send_event({"_raw": "b"})
+    got = tx_times(sock)
+    assert before - 0.001 <= got[0] <= got[1] <= time.time() + 0.001
+
+
+def test_send_time_replaces_one_from_the_aggregator():
+    snd, sock = sender()
+    snd.send_event({"_raw": "a", "wd2l_tx_time": 1.0})
+    assert tx_times(sock)[0] > 1.0
+
+
+def test_send_time_can_be_turned_off():
+    snd, sock = sender(tx_time=False)
+    snd.send_event({"_raw": "a"})
     assert "fields" not in wire.parse_event(decode_all(sock)[0].payload)
+
+
+def test_send_time_and_line_number_are_stamped_together():
+    snd, sock = sender(source_seq=True)
+    snd.send_event({"_raw": "a", "host": "h", "source": "/s"})
+    fields = wire.parse_event(decode_all(sock)[0].payload)["fields"]
+    assert fields["wd2l_src_seq"] == 1 and "wd2l_tx_time" in fields

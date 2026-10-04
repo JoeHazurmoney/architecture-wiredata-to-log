@@ -5,6 +5,10 @@ Sequence number N is the Nth line of the events file (fake_cribl.py, the stand-i
 aggregator, sends in order over one connection). Every sent event must be either received
 exactly once, byte-for-byte equal to what the sender put on the wire, or listed in a reported
 gap. Nothing else may show up.
+
+Each received event must also carry its send time (wd2l_tx_time, part of what the sender put on
+the wire) and its arrival time (wd2l_rx_time, added in Enclave 2). The difference is reported as
+the link delay.
 """
 
 import argparse
@@ -59,7 +63,12 @@ def main():
             key = (e.get("host"), e.get("source"))
             counters[key] = counters.get(key, 0) + 1
             e["wd2l_src_seq"] = counters[key]
-    expected = {i + 1: wire.parse_event(fitter._fit(e)) for i, e in enumerate(sent)}
+    sent_by_seq = {i + 1: e for i, e in enumerate(sent)}
+
+    def expected(seq, tx):
+        """What the sender put on the wire for this event, given the send time it stamped
+        (the stamp counts toward the size limit, so it changes where big events are cut)."""
+        return wire.parse_event(fitter._fit(dict(sent_by_seq[seq], wd2l_tx_time=tx)))
 
     got = load(os.path.join(a.received_dir, "events.jsonl"))
     health = load(os.path.join(a.received_dir, "health.jsonl"))
@@ -70,17 +79,27 @@ def main():
         problems.append("expected one sender stream, saw %d" % len(streams))
     seen = {}
     dups = 0
+    delays = []
     for g in got:
         seq = g.pop("wd2l_seq")
         g.pop("wd2l_stream")
+        # The arrival time is added in Enclave 2, so it is checked apart from the wire content.
+        fields = g.get("fields", {})
+        rx, tx = fields.pop("wd2l_rx_time", None), fields.get("wd2l_tx_time")
+        if not fields:
+            g.pop("fields", None)
+        if tx is None or rx is None:
+            problems.append("seq %d has no send or arrival time" % seq)
+        else:
+            delays.append(rx - tx)
         if seq in seen:
             dups += 1
             if not a.allow_duplicates or seen[seq] != g:
                 problems.append("duplicate seq %d" % seq)
         seen[seq] = g
-        if seq not in expected:
+        if seq not in sent_by_seq:
             problems.append("unexpected seq %d" % seq)
-        elif g != expected[seq]:
+        elif g != expected(seq, tx):
             problems.append("seq %d content differs" % seq)
 
     if a.state:
@@ -96,7 +115,7 @@ def main():
             if h["type"] == "gap":
                 open_gaps |= set(range(h["first_seq"], h["last_seq"] + 1))
 
-    missing = set(expected) - set(seen)
+    missing = set(sent_by_seq) - set(seen)
     if missing - open_gaps:
         problems.append("%d events missing and NOT reported as gaps: %s"
                         % (len(missing - open_gaps), sorted(missing - open_gaps)[:20]))
@@ -114,13 +133,21 @@ def main():
             problems.append("%s = %s" % (k, last[k]))
     truncated = [s for s, e in seen.items() if "wd2l_truncated" in e.get("fields", {})]
 
-    print("sent:            %d" % len(expected))
+    print("sent:            %d" % len(sent_by_seq))
     print("received:        %d" % len(seen))
     print("duplicates:      %d" % dups)
     print("gaps (reported): %d" % len(open_gaps))
     print("truncated:       %d (seq %s)" % (len(truncated), truncated))
     print("other packets on the tapped cable: %s" % last.get("other_packets"))
     print("kernel drops:    %s" % last.get("kernel_drops"))
+    if delays:
+        delays.sort()
+
+        def ms(q):
+            return "%.1f" % (delays[int(q * (len(delays) - 1))] * 1000)
+        print("link delay (wd2l_rx_time - wd2l_tx_time): median %s ms, p99 %s ms, max %s ms"
+              % (ms(0.5), ms(0.99), ms(1.0)))
+    print("clock offset (last heartbeat): %s s" % last.get("clock_offset_s"))
     if problems:
         print("\nFAIL")
         for pr in problems[:50]:

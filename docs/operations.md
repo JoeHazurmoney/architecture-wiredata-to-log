@@ -29,6 +29,7 @@ All receiver output about itself is in the SIEM: `index=wd2l sourcetype=wd2l:hea
 | `late_fills` | Gaps filled later (archive replay) | — |
 | `duplicates` | Copies ignored | any (normal during replay) |
 | `heartbeats`, `heartbeat_age_s`, `heartbeat_stale` | Sender liveness | age ≤ ~1 s |
+| `clock_offset_s` | Receiver clock minus sender clock at the last heartbeat, plus the one-way delay (under 1 ms on the fiber). Also per stream in `streams` | within a few ms of 0 |
 | `other_packets`, `other_reasons` | Frames on the tap that aren't the log flow | 0 |
 | `bad_frames`, `bad_events`, `digest_mismatch`, `bad_reasons` | Corrupt or malformed input | 0 |
 | `kernel_drops` | Packets the kernel dropped before the receiver read them | 0 |
@@ -102,6 +103,39 @@ run that never arrived) have to be sent again from Enclave 1. The log retention 
 3. **Check in Enclave 2.** The replayed events arrive as normal new events with new sequence
    numbers. Events in the window that had already arrived land a second time, with a different
    `wd2l_seq`. Remove them in searches with `| dedup host source _time _raw`.
+
+## Measuring delays
+
+Every event carries three times: `_time` (when the source wrote it, as set by the aggregator),
+`wd2l_tx_time` (when `wd2l-sender` sent it, Enclave 1 clock) and `wd2l_rx_time` (when
+`wd2l-receiver` got it, Enclave 2 clock). With the SIEM's index time, they split the delay by
+segment:
+
+| Segment | Delay | Healthy |
+|---|---|---|
+| Enclave 1: source → forwarder → aggregator → sender | `wd2l_tx_time − _time` | a few seconds |
+| Link and receiver | `wd2l_rx_time − wd2l_tx_time` | a few milliseconds |
+| SIEM ingest | `_indextime − wd2l_rx_time` | a few seconds |
+
+```
+index=enclave1 earliest=-1h
+| eval e1_s=wd2l_tx_time-_time, link_ms=(wd2l_rx_time-wd2l_tx_time)*1000, siem_s=_indextime-wd2l_rx_time
+| stats median(e1_s) perc95(e1_s) median(link_ms) max(link_ms) median(siem_s) perc95(siem_s) by host
+```
+
+Reading the numbers:
+
+* **Check `clock_offset_s` first** (latest `type=health` record). Each enclave takes its time from
+  its own GPS receiver, so the offset should be within a few milliseconds of 0. If it isn't, the
+  link delay is wrong by the same amount: fix time sync before trusting delays.
+* **Link delay high, clock offset fine:** the receiver is falling behind. Check `kernel_drops`
+  and CPU. Replayed events keep the time the archive captured them, so a replay doesn't inflate
+  it.
+* **Enclave 1 delay odd or negative:** `_time` comes from the log text (often whole seconds) and
+  the source's own clock. Large or negative values usually mean that source's clock, or the
+  aggregator's time parsing, is wrong, not a slow pipeline.
+* **SIEM delay rising:** `_indextime` is whole seconds. Together with `hec_spool_files` > 0, the
+  SIEM was unreachable and the spool is draining.
 
 ## Routine
 

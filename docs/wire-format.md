@@ -32,12 +32,17 @@ The pieces joined together are UTF-8 JSON, exactly one object:
 ```json
 {"_time":1727265600.123,"host":"fw01","source":"udp:514","sourcetype":"pan:traffic",
  "index":"enclave1","_raw":"<14>Sep 25 12:00:00 fw01 1,2026/09/25 ...",
- "fields":{"wd2l_truncated":300000}}
+ "fields":{"wd2l_truncated":300000,"wd2l_tx_time":1727265600.912}}
 ```
 
 `_raw` (string) is required. `_time` (number), `host`/`source`/`sourcetype`/`index` (strings ≤ 1024
 characters) are optional. `fields` is optional: a flat object of string or number values, sent to
 the SIEM as indexed fields. The receiver ignores anything else.
+
+The sender stamps `wd2l_tx_time` (its clock when it sent the event, epoch seconds, rounded to the
+millisecond) in `fields` unless started with `--no-tx-time`. It counts toward `--max-event`. The
+receiver adds `wd2l_rx_time` (its own clock when the event arrived) before sending the event on,
+replacing any `wd2l_rx_time` that came over the wire. Neither changes the frame format.
 
 ## HEARTBEAT body
 
@@ -55,6 +60,11 @@ only on the shutdown heartbeat, and is always the last frame of a stream.
 
 `shutdown_unread_bytes` is input the log aggregator had already handed over (TCP acknowledged)
 that the sender could not read before it stopped. It is normally 0.
+
+`sender_time` is the sender's clock when it sent the heartbeat. The receiver subtracts it from its
+own clock at arrival and reports the result as `clock_offset_s` in its health records: the clock
+difference between the two enclaves plus the one-way delay, which is well under 1 ms on a direct
+fiber.
 
 `boot`, `prev_stream` and `prev_last_seq` are present only when the sender runs with `--state`:
 

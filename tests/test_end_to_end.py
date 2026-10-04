@@ -6,7 +6,7 @@ import random
 from wd2l import packets, receiver, wire
 from wd2l.sender import Sender
 
-from helpers import FakeSock, eth, make_events
+from helpers import FakeSock, eth, make_events, strip_times
 
 
 def run_sender(events, max_dg=wire.DEFAULT_MAX_DATAGRAM):
@@ -48,7 +48,8 @@ def test_lossless_path_is_exact(tmp_path):
     assert [g["wd2l_seq"] for g in got] == list(range(1, 401))
     for g, e in zip(got, events):
         g.pop("wd2l_seq"), g.pop("wd2l_stream")
-        assert g == expected(e)
+        assert "wd2l_tx_time" in g["fields"] and "wd2l_rx_time" in g["fields"]
+        assert strip_times(g) == expected(e)
     health = read_jsonl(tmp_path / "out" / "health.jsonl")
     assert [h for h in health if h["type"] == "gap"] == []
     assert health[-1]["other_packets"] == 0 and health[-1]["bad_frames"] == 0

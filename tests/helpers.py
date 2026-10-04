@@ -14,6 +14,18 @@ def eth(datagram: bytes, ident: int = 0) -> bytes:
     return packets.build_udp_frame(SRC_MAC, DST_MAC, SRC_IP, DST_IP, 40000, PORT, datagram, ident)
 
 
+TIME_FIELDS = ("wd2l_tx_time", "wd2l_rx_time")
+
+
+def strip_times(evt):
+    """Copy of an event without the send/receive time stamps, for exact-content comparisons."""
+    out = dict(evt)
+    fields = {k: v for k, v in out.pop("fields", {}).items() if k not in TIME_FIELDS}
+    if fields:
+        out["fields"] = fields
+    return out
+
+
 class FakeSock:
     def __init__(self):
         self.sent = []

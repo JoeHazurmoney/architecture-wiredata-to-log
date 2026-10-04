@@ -109,21 +109,28 @@ flowchart LR
   and routes it to the sender only. The replayed events cross as new events with new sequence
   numbers. See [deployment/retention-server.md](deployment/retention-server.md).
 * **What crosses**: per event `_time, host, source, sourcetype, index, _raw` (plus any fields named
-  with `--extra-field`, which become indexed fields in the SIEM). Other aggregator fields are
-  dropped.
+  with `--extra-field`, which become indexed fields in the SIEM), and the sender's send time,
+  indexed field `wd2l_tx_time`. Other aggregator fields are dropped.
 * **Sender → wire**: see [wire-format.md](wire-format.md). 68 bytes of overhead per packet; 1,404
   bytes of event per packet at MTU 1500; 8,904 at MTU 9000.
 * **Big events**: capped at 256 KB (`--max-event`). Bigger events are cut to fit and flagged with
   indexed field `wd2l_truncated=<original size>`, the same idea as a SIEM's own line-length limit.
 * **Receiver → SIEM**: an HTTP event collector interface (the proof of concept speaks Splunk's HEC
   format, `/services/collector/event`). Each event keeps its original metadata and gets indexed
-  fields `wd2l_stream` and `wd2l_seq`. If the SIEM is unreachable, batches go to an on-disk spool
-  and are resent automatically. A message queue (Kafka or similar) between the receiver and the
-  SIEM was considered and deferred: see
+  fields `wd2l_stream`, `wd2l_seq` and `wd2l_rx_time` (its arrival time in Enclave 2; for
+  replayed events, the time the archive captured it). If the SIEM is unreachable, batches go to
+  an on-disk spool and are resent automatically. A message queue (Kafka or similar) between the
+  receiver and the SIEM was considered and deferred: see
   [ADR-0001](decisions/0001-enclave-2-message-queue.md).
+* **Timing**: three times on every event split the delay by segment. Enclave 1 (sources,
+  forwarders, aggregator): `wd2l_tx_time − _time`. The link and receiver:
+  `wd2l_rx_time − wd2l_tx_time`. The SIEM: index time − `wd2l_rx_time`. The receiver also reports
+  `clock_offset_s` from each heartbeat (receiver clock minus sender clock, plus the sub-millisecond
+  fiber delay), so a clock problem can be told apart from a real delay. See
+  [operations.md](operations.md#measuring-delays).
 * **Health**: the receiver writes `sourcetype=wd2l:health` records: an immediate record for every
-  gap, stale heartbeat, stream start/end/loss, plus a summary every 60 s. See
-  [operations.md](operations.md).
+  gap, stale heartbeat, stream start/end/loss, plus a summary every 60 s that includes the clock
+  offset. See [operations.md](operations.md).
 
 ## What happens when something breaks
 

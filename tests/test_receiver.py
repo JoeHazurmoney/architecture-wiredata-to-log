@@ -432,3 +432,39 @@ def test_steady_clock_ignores_wall_clock_steps(monkeypatch):
     mono[0] += 5
     wall[0] -= 3600                                  # clock stepped back an hour
     assert clock() == 1005.0
+
+
+# ---------------------------------------------------------------- arrival time and clock offset
+
+
+def test_events_carry_their_arrival_time_from_the_wall_clock():
+    r, out = rx(record_clock=lambda: 1790000000.1234)
+    feed(r, ev(1), 5.0)
+    assert out.events[0][2]["fields"]["wd2l_rx_time"] == 1790000000.123
+
+
+def test_replay_stamps_the_capture_time():
+    r, out = rx()                      # no record_clock: archive replay, packet times drive it
+    feed(r, ev(1), 1790000123.4567)
+    assert out.events[0][2]["fields"]["wd2l_rx_time"] == 1790000123.457
+
+
+def test_arrival_time_replaces_one_from_the_wire():
+    r, out = rx()
+    data = json.dumps({"_raw": "x", "fields": {"wd2l_rx_time": 1.0, "site": "a"}}).encode()
+    feed(r, wire.encode_event(SID, 1, data), 50.0)
+    assert out.events[0][2]["fields"] == {"wd2l_rx_time": 50.0, "site": "a"}
+
+
+def test_arrival_time_can_be_turned_off():
+    r, out = rx(rx_time=False)
+    feed(r, ev(1), 5.0)
+    assert "fields" not in out.events[0][2]
+
+
+def test_heartbeat_gives_the_clock_offset():
+    r, out = rx(record_clock=lambda: 1000.25)
+    feed(r, [hb(0, sender_time=1000.0)], 0)
+    rec = r.emit_health(0)
+    assert rec["clock_offset_s"] == 0.25
+    assert rec["streams"]["%016x" % SID]["clock_offset_s"] == 0.25
