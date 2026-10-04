@@ -81,11 +81,34 @@ queue reduces this but can't fully close it, because TCP acknowledges data befor
 reads it. Those events are still on the log retention server, which gets its own copy from the
 aggregator, but no gap record points to them.
 
+## Encrypted or opaque content
+
+Both enclaves are at the same sensitivity level, so encrypted content in a log is mainly a
+visibility question. [ADR-0002](decisions/0002-opaque-content.md) has the full reasoning.
+
+* **What is detected:** `wd2l-sender` flags events whose text carries a long blob that can't be
+  inspected. Blobs are base64, base64url or hex of 256 decoded bytes or more, or a PGP or age
+  armor block. Each flagged event is classed by marker or randomness as `encrypted`,
+  `compressed` or `high-entropy`.
+* **What happens:** flagged events cross unchanged with indexed fields `wd2l_opaque` and
+  `wd2l_opaque_bytes`, are counted in heartbeats and health records, and raise a SIEM alert.
+  Nothing is dropped.
+* **What is not detected:** short random strings (hashes, GUIDs and tokens are normal in logs),
+  other encodings (base32, base85), and data hidden in ordinary-looking text (word choice,
+  spacing, splitting across events, timing). It's a tripwire for blobs, not proof that nothing
+  is hidden.
+* **Evidence:** no flags across 17,624 real log lines. All three planted blobs are flagged in the
+  lab.
+* **Controls:** a content filter in the sense of AC-4(8), with detection for AC-4(15).
+  AC-4(4) (Flow Control of Encrypted Information) is High-baseline. If the ISSO tailors it in,
+  the ADR's path is to redact the blob or hold the event in Enclave 1.
+
 ## Residual risks
 
 | Risk | Notes / mitigation |
 |---|---|
-| Malicious content inside log text (e.g. strings aimed at analyst tools, log injection) | Same as any log ingest. The SIEM stores it as data. Keep the Enclave 2 SIEM patched. Content filtering is out of scope |
+| Malicious content inside log text (e.g. strings aimed at analyst tools, log injection) | Same as any log ingest. The SIEM stores it as data. Keep the Enclave 2 SIEM patched. Content filtering beyond the opaque-content flag is out of scope |
+| Data hidden inside log text (encrypted, compressed or encoded) | Long blobs are flagged (`wd2l_opaque`) and alerted on, but still cross. Data hidden in normal-looking text isn't detected. Enclave 1 controls on who can write logs, plus per-source volume monitoring |
 | Enclave 1 compromise injects fake events | Enclave 1 controls today. Optional HMAC (above) |
 | Loss is detected but not recovered | By design (requirement was detect and report). The operator replays the window from the log retention server |
 | Log retention server down, full or lost | Not on the transfer path, so the transfer continues. A window missing there can't be replayed later. Its own persistent queue in the aggregator; Enclave 1 monitoring and backups |

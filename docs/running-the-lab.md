@@ -57,7 +57,7 @@ If the repository is private, git will ask you to sign in to GitHub.
 python3 -m pytest
 ```
 
-These run without root and take about 25 seconds. You should see `115 passed`.
+These run without root and take about 25 seconds. You should see `138 passed`.
 
 ## 5. Run the lab
 
@@ -77,6 +77,8 @@ A successful run ends like this:
 sent:            5001
 received:        5001
 gaps (reported): 0
+truncated:       1 (seq [5001])
+opaque content:  3 (seq [1002, 2003, 3004])
 ...
 link delay (wd2l_rx_time - wd2l_tx_time): median 0.0 ms, p99 4.0 ms, max 11.0 ms
 clock offset (last heartbeat): 0.0 s
@@ -85,12 +87,14 @@ PASS: every event arrived intact or is accounted for in a reported gap
 
 The link delay compares each event's send time (sender's clock) with its arrival time
 (receiver's clock). Both namespaces share one clock in the lab, so the clock offset is about 0.
+The three opaque-content events are blobs planted on purpose (random, gzip, PGP): the sender
+must flag each one ([ADR-0002](decisions/0002-opaque-content.md)).
 
 What each run proves:
 
 | Run | What should happen |
 |---|---|
-| Clean | Every log arrives byte-for-byte identical. One 300 KB log arrives cut down and flagged. |
+| Clean | Every log arrives byte-for-byte identical. One 300 KB log arrives cut down and flagged. Three logs with planted encrypted or compressed blobs arrive flagged `wd2l_opaque`. |
 | `--loss 1` | Some logs are lost, and every one is reported by number. PASS means nothing went missing unreported and nothing was falsely reported as missing. |
 | `--receiver-outage` | The receiver misses about 2 seconds of logs, then replay from the packet archive fills them in with no duplicates. |
 | `--receiver-crash` | Same, but the receiver is killed with no chance to clean up. Nothing is lost; some logs arrive twice (the `duplicates` line), which is allowed here because they are identical and carry the same sequence number. |

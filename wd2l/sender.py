@@ -27,7 +27,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from . import wire
+from . import opaque, wire
 
 log = logging.getLogger("wd2l.sender")
 
@@ -35,6 +35,8 @@ IP_MTU_DISCOVER = getattr(socket, "IP_MTU_DISCOVER", 10)
 IP_PMTUDISC_DO = getattr(socket, "IP_PMTUDISC_DO", 2)
 SRC_SEQ_FIELD = "wd2l_src_seq"
 TX_TIME_FIELD = "wd2l_tx_time"
+OPAQUE_FIELD = "wd2l_opaque"
+OPAQUE_BYTES_FIELD = "wd2l_opaque_bytes"
 MAX_LINE = 16 * 1024 * 1024
 ERROR_LOG_EVERY = 10.0
 
@@ -45,7 +47,7 @@ class Sender:
                  max_event: int = wire.DEFAULT_MAX_EVENT,
                  rate_pps: float = 20000.0, extra_fields: Sequence[str] = (),
                  sock: Optional[socket.socket] = None, state_path: Optional[str] = None,
-                 source_seq: bool = False, tx_time: bool = True):
+                 source_seq: bool = False, tx_time: bool = True, opaque_check: bool = True):
         if max_event < 1024:
             raise ValueError("max_event must be at least 1024")
         self.dst = dst
@@ -64,12 +66,18 @@ class Sender:
         self.tx_time = tx_time
         if tx_time and TX_TIME_FIELD not in self.extra_fields:
             self.extra_fields += (TX_TIME_FIELD,)
+        # Flag long encrypted, compressed or random-looking blobs in _raw (wd2l/opaque.py).
+        # Flagged events still cross unchanged; the flag is what Enclave 2 alerts on.
+        self.opaque_check = opaque_check
+        if opaque_check:
+            self.extra_fields += tuple(f for f in (OPAQUE_FIELD, OPAQUE_BYTES_FIELD)
+                                       if f not in self.extra_fields)
         self.stream_id = int.from_bytes(os.urandom(8), "big") or 1
         self.seq = 0
         self.started = time.time()
         self.counters = {"events_sent": 0, "datagrams_sent": 0, "sender_drops": 0,
                          "truncated": 0, "bad_input": 0, "send_errors": 0,
-                         "shutdown_unread_bytes": 0}
+                         "shutdown_unread_bytes": 0, "opaque_events": 0}
         self.lock = threading.Lock()
         self.closed = False
         self.rate = float(rate_pps)
@@ -201,9 +209,20 @@ class Sender:
                     event.get("host"), event.get("source"), len(raw_bytes))
         return data
 
+    def opaque_fields(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """The opaque-content fields for this event. Both keys are always set when the check is
+        on (None when nothing is found, which drops them), so an upstream value can't stand."""
+        if not self.opaque_check:
+            return {}
+        raw = event.get("_raw")
+        found = opaque.inspect(raw) if isinstance(raw, str) else None
+        return {OPAQUE_FIELD: found.kind if found else None,
+                OPAQUE_BYTES_FIELD: found.nbytes if found else None}
+
     def send_event(self, event: Dict[str, Any]) -> int:
         """Send one event. Returns its sequence number (0 if the sender has already closed)."""
-        stamped = self.source_seq or self.tx_time
+        found = self.opaque_fields(event)   # depends only on the event: outside the lock
+        stamped = self.source_seq or self.tx_time or self.opaque_check
         if not stamped:
             data = self._fit(event)
         with self.lock:
@@ -211,7 +230,9 @@ class Sender:
                 return 0
             if stamped:
                 # Stamped under the lock, together with seq, so all orders agree.
-                stamps: Dict[str, Any] = {}
+                stamps: Dict[str, Any] = dict(found)
+                if found.get(OPAQUE_FIELD):
+                    self.counters["opaque_events"] += 1
                 if self.source_seq:
                     key = (event.get("host"), event.get("source"))
                     n = self.src_counters.get(key, 0) + 1
@@ -456,6 +477,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         "Enclave 2 can rebuild interleaved files and locate lost lines")
     p.add_argument("--no-tx-time", dest="tx_time", action="store_false",
                    help="don't stamp each event's send time in indexed field wd2l_tx_time")
+    p.add_argument("--no-opaque-check", dest="opaque_check", action="store_false",
+                   help="don't flag long encrypted, compressed or random-looking blobs "
+                        "(indexed fields wd2l_opaque, wd2l_opaque_bytes)")
     p.add_argument("--state", help="state file for the restart count and previous stream "
                                    "(lets the receiver link runs together)")
     p.add_argument("--drain-timeout", type=float, default=2.0,
@@ -473,7 +497,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             token = f.read().strip()
     sender = Sender(_hostport(a.dst), a.bind, a.max_datagram, a.max_event, a.rate_pps,
                     a.extra_field, state_path=a.state, source_seq=a.source_seq,
-                    tx_time=a.tx_time)
+                    tx_time=a.tx_time, opaque_check=a.opaque_check)
     server = InputServer(_hostport(a.listen), sender, token, a.input_rcvbuf, a.drain_timeout)
     stop = threading.Event()
     hb = threading.Thread(target=_heartbeat_loop,

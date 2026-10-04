@@ -45,7 +45,7 @@ flowchart LR
 | Log forwarding agents / syslog | every Enclave 1 host | Send logs to the log aggregator, as today. |
 | Log aggregator (e.g. Cribl Stream) | central log server | Collect, parse into events, set host, source, source type and index, hand every event to the sender and a copy to the log retention server. Replay a time window from the retention server when asked. |
 | Log retention server | Enclave 1, its own host | Keep a copy of every event the aggregator collects for 1 year. The source for replaying lost events, and (proposed) the 1-year home of wd2l's Enclave 1 audit files once those are built. Not on the transfer path. |
-| `wd2l-sender` | central log server | Number each event, split big ones into packet-sized pieces, add checksums, send UDP to the black hole, send a heartbeat every second. |
+| `wd2l-sender` | central log server | Number each event, flag content that can't be inspected (long encrypted, compressed or random-looking blobs), split big events into packet-sized pieces, add checksums, send UDP to the black hole, send a heartbeat every second. |
 | Egress NIC | central log server | Dedicated NIC. One /30 address, static ARP for the black hole, IPv6 off, firewall allows one flow. |
 | Black-hole switch port | Enclave 1 switch | Keeps the log server's link up and throws every frame away. |
 | Network tap | inline on that cable | Copies the log server → switch direction, filtered to the log flow, out a monitor port. |
@@ -94,6 +94,12 @@ flowchart LR
     again across a one-way link. The log retention server keeps every event for a year, so a lost
     time window can be replayed through the aggregator. Its output in the aggregator has its own
     persistent queue, so a retention-server outage never holds up the transfer.
+12. **Flag content that can't be inspected; don't drop it.** The sender looks for long encrypted,
+    compressed or random-looking blobs in each event and tags them (`wd2l_opaque`). Tagged events
+    cross unchanged and the SIEM alerts on them. Both enclaves are at the same level, so
+    visibility is the goal, and dropping would break "detect and report". It's a tripwire for
+    blobs, not proof that nothing is hidden. See
+    [ADR-0002](decisions/0002-opaque-content.md).
 
 ## Data path details
 
@@ -109,8 +115,9 @@ flowchart LR
   and routes it to the sender only. The replayed events cross as new events with new sequence
   numbers. See [deployment/retention-server.md](deployment/retention-server.md).
 * **What crosses**: per event `_time, host, source, sourcetype, index, _raw` (plus any fields named
-  with `--extra-field`, which become indexed fields in the SIEM), and the sender's send time,
-  indexed field `wd2l_tx_time`. Other aggregator fields are dropped.
+  with `--extra-field`, which become indexed fields in the SIEM), the sender's send time
+  (indexed field `wd2l_tx_time`), and, only on events with an opaque blob, `wd2l_opaque` and
+  `wd2l_opaque_bytes`. Other aggregator fields are dropped.
 * **Sender → wire**: see [wire-format.md](wire-format.md). 68 bytes of overhead per packet; 1,404
   bytes of event per packet at MTU 1500; 8,904 at MTU 9000.
 * **Big events**: capped at 256 KB (`--max-event`). Bigger events are cut to fit and flagged with
@@ -172,6 +179,8 @@ In the network-namespace lab (`lab/run-lab.sh`), which builds the full path in s
 * 5,001 events (short syslog, multi-KB Windows XML, non-ASCII, multi-line, one 300 KB event)
   arrive byte-for-byte identical to what the sender put on the wire. The 300 KB event arrives
   truncated and flagged.
+* The three events carrying a random blob, a gzip blob and a PGP message arrive flagged
+  `wd2l_opaque`. The 17,624 real sample log lines produce no flags.
 * With 1% random packet loss on the cable, every lost event was reported as a gap with its exact
   sequence number. There were no false gaps and no unreported losses.
 * With the receiver stopped for 2 seconds mid-run, the archive replay delivered exactly the

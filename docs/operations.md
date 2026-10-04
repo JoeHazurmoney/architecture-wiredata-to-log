@@ -35,6 +35,7 @@ All receiver output about itself is in the SIEM: `index=wd2l sourcetype=wd2l:hea
 | `kernel_drops` | Packets the kernel dropped before the receiver read them | 0 |
 | `reasm_expired`, `reasm_evicted`, `event_too_big` | Split events that never completed | 0 |
 | `sender_drops`, `sender_truncated`, `sender_bad_input`, `sender_unread_bytes` | From the sender's heartbeat | 0 (truncated: expected if you have huge events) |
+| `sender_opaque_events` | Events the sender flagged for an opaque blob (`wd2l_opaque`), this sender run | 0, or the level known for your sources |
 | `hec_events_sent`, `hec_spool_files`, `hec_posts_failed`, `hec_rejected_events`, `hec_queue_overflow_events` | SIEM delivery | spool 0, rejected 0, overflow 0 |
 | `streams`, `retired_streams` | Per sender run: `next_seq`, `known_seq`, `open_gap_events`, `boot`, `sender` counters. Finished runs with nothing open are retired after `--stream-retention` (7 days) | |
 
@@ -59,6 +60,26 @@ All receiver output about itself is in the SIEM: `index=wd2l sourcetype=wd2l:hea
    replay that time window from the log retention server (below).
 5. **Isolated single-event gaps with a live heartbeat** = packet loss on the path. Check optics
    and interface error counters on the log server NIC, tap ports and receiver NIC.
+
+## Alert: opaque content (`wd2l_opaque`)
+
+The sender found a long blob it can't inspect: `encrypted` (a marker says so), `compressed`, or
+`high-entropy` (random-looking, likely encrypted). The events crossed unchanged, so nothing
+needs replaying. The question is whether the content is expected. See
+[ADR-0002](decisions/0002-opaque-content.md).
+
+1. **Look at the events:**
+   ```
+   index=enclave1 wd2l_opaque=* earliest=-24h
+   | table _time host source sourcetype wd2l_opaque wd2l_opaque_bytes _raw
+   ```
+2. **Is this source known to log such data?** For example, a proxy logging encrypted URL
+   parameters, an application dumping compressed state, or certificate logging. If it is, and
+   it's approved, record the source, owner and reason, and exclude that host and source in the
+   alert search.
+3. **New or unexplained:** treat it as a possible security event. Tell the Enclave 1 system
+   owner and follow the incident process. The original is also on the Enclave 1 log retention
+   server.
 
 ## Replay from the capture archive
 
