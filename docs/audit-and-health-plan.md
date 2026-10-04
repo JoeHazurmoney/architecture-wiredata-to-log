@@ -85,6 +85,7 @@ Every health and audit record, on both sides:
 | `auth_failure` | sender | bad or missing aggregator token | client address |
 | `input_rejected` | sender | gzip input, line too long, bad JSON (summarised per minute) | count, reason |
 | `truncated` | sender | event cut to fit | host, source, original size (not content) |
+| `opaque_content` | sender | events flagged `wd2l_opaque` (summarised per minute) | count, kinds, host, source (not content) |
 | `send_failure` | sender | UDP send errors, drops (summarised) | count, errno |
 | `boundary_anomaly` | receiver | non-wd2l packets, corrupt frames, digest mismatch (summarised) | count, reason |
 | `gap` / `gap_filled` | receiver | events declared lost; later recovered | stream, range, count, reason |

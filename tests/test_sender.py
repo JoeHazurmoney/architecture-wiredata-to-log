@@ -1,5 +1,7 @@
+import base64
 import gzip
 import json
+import random
 import socket
 import threading
 import time
@@ -283,3 +285,40 @@ def test_send_time_and_line_number_are_stamped_together():
     snd.send_event({"_raw": "a", "host": "h", "source": "/s"})
     fields = wire.parse_event(decode_all(sock)[0].payload)["fields"]
     assert fields["wd2l_src_seq"] == 1 and "wd2l_tx_time" in fields
+
+
+# ---------------------------------------------------------------- opaque content
+
+
+BLOB = base64.b64encode(random.Random(1).randbytes(600)).decode()
+
+
+def fields_of(sock, i=0):
+    return wire.parse_event(decode_all(sock)[i].payload).get("fields", {})
+
+
+def test_opaque_content_is_flagged_and_counted():
+    snd, sock = sender()
+    snd.send_event({"_raw": "GET /beacon?d=%s HTTP/1.1" % BLOB})
+    snd.send_heartbeat()
+    f = fields_of(sock)
+    assert f["wd2l_opaque"] == "high-entropy" and f["wd2l_opaque_bytes"] == 600
+    assert json.loads(decode_all(sock)[-1].payload)["opaque_events"] == 1
+
+
+def test_clean_event_is_not_flagged():
+    snd, sock = sender()
+    snd.send_event({"_raw": "Accepted publickey for admin from 10.0.0.1"})
+    assert "wd2l_opaque" not in fields_of(sock) and snd.counters["opaque_events"] == 0
+
+
+def test_aggregator_cannot_set_the_opaque_flag():
+    snd, sock = sender()
+    snd.send_event({"_raw": "clean", "wd2l_opaque": "high-entropy", "wd2l_opaque_bytes": 1})
+    assert "wd2l_opaque" not in fields_of(sock) and "wd2l_opaque_bytes" not in fields_of(sock)
+
+
+def test_opaque_check_can_be_turned_off():
+    snd, sock = sender(opaque_check=False)
+    snd.send_event({"_raw": BLOB})
+    assert "wd2l_opaque" not in fields_of(sock)

@@ -468,3 +468,10 @@ def test_heartbeat_gives_the_clock_offset():
     rec = r.emit_health(0)
     assert rec["clock_offset_s"] == 0.25
     assert rec["streams"]["%016x" % SID]["clock_offset_s"] == 0.25
+
+
+def test_health_totals_the_senders_opaque_events():
+    r, out = rx()
+    feed(r, [hb(0, opaque_events=2)], 0)
+    feed(r, [hb(0, sid=0x2222, opaque_events=3)], 0)
+    assert r.emit_health(0)["sender_opaque_events"] == 5
