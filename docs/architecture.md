@@ -118,7 +118,9 @@ flowchart LR
 * **Receiver → SIEM**: an HTTP event collector interface (the proof of concept speaks Splunk's HEC
   format, `/services/collector/event`). Each event keeps its original metadata and gets indexed
   fields `wd2l_stream` and `wd2l_seq`. If the SIEM is unreachable, batches go to an on-disk spool
-  and are resent automatically.
+  and are resent automatically. A message queue (Kafka or similar) between the receiver and the
+  SIEM was considered and deferred: see
+  [ADR-0001](decisions/0001-enclave-2-message-queue.md).
 * **Health**: the receiver writes `sourcetype=wd2l:health` records: an immediate record for every
   gap, stale heartbeat, stream start/end/loss, plus a summary every 60 s. See
   [operations.md](operations.md).

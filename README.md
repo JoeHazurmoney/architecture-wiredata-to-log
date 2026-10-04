@@ -67,7 +67,7 @@ Start with [docs/architecture.md](docs/architecture.md).
 | `deploy/log-server/` | Egress NIC script, nftables, systemd units |
 | `deploy/switch/` | Black-hole port config (example for one switch platform) |
 | `deploy/receiver/` | Capture NIC script, tcpdump archive, receiver unit, example SIEM configs (Splunk) |
-| `docs/` | Architecture, wire format, deployment guides, operations runbook, accreditation notes |
+| `docs/` | Architecture, wire format, deployment guides, operations runbook, accreditation notes, decision records (`docs/decisions/`) |
 | `lab/` | Whole path simulated with Linux network namespaces |
 | `samples/` | Real `messages`, `secure` and `audit.log` sample logs, and the script that generated them |
 | `tests/` | Unit, fuzz and end-to-end tests |
