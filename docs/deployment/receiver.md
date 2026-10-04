@@ -71,6 +71,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--max-event`, `--max-buffer` | 256 KB, 64 MB | Input caps |
 | `--hec-queue` | `100000` | Events held in memory for the SIEM. Overflow is reported as `reason=output_dropped` gaps (replay recovers them) |
 | `--stream-retention` | 7 days | How long finished sender runs with nothing open stay fully tracked. Keep it at least as long as the pcap archive |
+| `--no-rx-time` | stamping on | Stop stamping each event's arrival time (`wd2l_rx_time`). Leave it on: it's how delays are measured ([operations.md](../operations.md#measuring-delays)) |
 
 ## 5. SIEM
 
@@ -86,8 +87,9 @@ file output and the SIEM's own file ingestion. The SIEM needs:
   one event at a time, moves only the refused events to `<spool>/rejected/` and counts
   `hec_rejected_events`. Or run with `--force-index` and put everything in one index.
 * **A token** for the receiver, over TLS.
-* **Indexed (searchable) fields** `wd2l_stream`, `wd2l_seq` and `wd2l_truncated`, sent in each
-  event's `fields` object.
+* **Indexed (searchable) fields**, sent in each event's `fields` object: `wd2l_stream`,
+  `wd2l_seq`, `wd2l_truncated`, `wd2l_src_seq` (with the sender's `--source-seq`), and the send
+  and arrival times `wd2l_tx_time` and `wd2l_rx_time`.
 * **JSON parsing** for the `wd2l:health` records.
 * **Alerts** on lost events, stale heartbeat, silent receiver, and unexpected traffic or damage
   (see [operations.md](../operations.md)).
@@ -101,7 +103,8 @@ them in an app, e.g. `$SPLUNK_HOME/etc/apps/wd2l/local/`:
 
 * `indexes.conf`: `enclave1` and `wd2l`.
 * `inputs.conf`: HEC on 8088 with TLS, and the `wd2l` token.
-* `fields.conf`: marks `wd2l_stream`, `wd2l_seq`, `wd2l_truncated` as indexed fields.
+* `fields.conf`: marks `wd2l_stream`, `wd2l_seq`, `wd2l_truncated`, `wd2l_src_seq`,
+  `wd2l_tx_time` and `wd2l_rx_time` as indexed fields.
 * `props.conf`: JSON field extraction for `wd2l:health`.
 * `savedsearches.conf`: the four alerts. Add your alert actions.
 
@@ -114,7 +117,10 @@ index=enclave1 earliest=-15m | stats count by host, sourcetype
 index=wd2l sourcetype=wd2l:health type=health | head 1
     | table _time events_delivered gap_events open_gap_events heartbeat_age_s other_packets kernel_drops hec_spool_files
 index=wd2l sourcetype=wd2l:health type!=health earliest=-24h | table _time type stream first_seq last_seq count
+index=enclave1 earliest=-15m | eval link_ms=(wd2l_rx_time-wd2l_tx_time)*1000
+    | stats median(link_ms) max(link_ms) by host
 ```
 
 Healthy: events for every expected host, `heartbeat_age_s` ≤ ~1, and `gap_events`,
-`other_packets`, `kernel_drops`, `hec_spool_files` all 0.
+`other_packets`, `kernel_drops`, `hec_spool_files` all 0. Link delay of a few milliseconds, and
+`clock_offset_s` in the health record within a few milliseconds of 0.

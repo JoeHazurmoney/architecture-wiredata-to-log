@@ -205,3 +205,38 @@ def test_interleaved_without_line_numbers_is_refused(tmp_path):
 def test_ranges():
     assert rebuild_files.ranges([7, 1, 2, 3, 9, 10]) == "1-3, 7, 9-10"
     assert rebuild_files.ranges([]) == ""
+
+
+def test_adding_hosts_and_logs_mid_stream_needs_no_change(tmp_path):
+    """5 hosts x 2 logs, then a new host with 3 logs and a new log on host1 start mid-stream,
+    all in one sender run: every file rebuilds, and a lost line is named exactly."""
+    first = [("host%d" % h, p) for h in range(1, 6) for p in ("/var/log/messages", "/var/log/secure")]
+    added = [("host6", p) for p in ("/var/log/messages", "/var/log/secure", "/var/log/audit/audit.log")]
+    added.append(("host1", "/var/log/cron"))
+    lines, events = {}, []
+    for rnd in range(40):
+        for host, path in first + (added if rnd >= 20 else []):
+            line = b"round %d %s %s\n" % (rnd, host.encode(), path.encode())
+            lines.setdefault((host, path), []).append(line)
+            events.append(files_to_events.line_event(line, path, host, "enclave1", 1790000000 + rnd))
+    manifest = [{"path": p, "host": h, "name": h + p.replace("/", "_"), "lines": len(ls),
+                 "sha256": hashlib.sha256(b"".join(ls)).hexdigest()}
+                for (h, p), ls in lines.items()]
+
+    (tmp_path / "a").mkdir()
+    received = transfer(tmp_path / "a", events, source_seq=True)
+    rows = rebuild_files.rebuild(manifest, received, str(tmp_path / "a" / "rebuilt"))
+    assert len(rows) == 14 and {r["status"] for r in rows} == {"MATCH"}
+    for host, path in added:            # a log that starts mid-stream is numbered from 1
+        mine = [e for e in received.values() if (e["host"], e["source"]) == (host, path)]
+        assert min(mine, key=lambda e: e["wd2l_seq"])["fields"]["wd2l_src_seq"] == 1
+
+    # Lose the new host's third log's line 3: exactly that file and line are named.
+    lost = [i for i, e in enumerate(events, 1)
+            if (e["host"], e["source"]) == ("host6", "/var/log/audit/audit.log")][2]
+    (tmp_path / "b").mkdir()
+    received = transfer(tmp_path / "b", events, drop_seq=lost, source_seq=True)
+    rows = {r["name"]: r for r in rebuild_files.rebuild(manifest, received, str(tmp_path / "b" / "rebuilt"))}
+    bad = rows.pop("host6_var_log_audit_audit.log")
+    assert bad["status"] == "INCOMPLETE" and bad["missing"] == [3]
+    assert {r["status"] for r in rows.values()} == {"MATCH"}

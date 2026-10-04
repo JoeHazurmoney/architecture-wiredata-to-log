@@ -31,6 +31,7 @@ MAX_STREAMS = 1000
 MAX_RETIRED = 10000
 MAX_REASONS = 32
 STATE_VERSION = 2
+RX_TIME_FIELD = "wd2l_rx_time"
 
 
 def to_ranges(seqs: Iterable[int]) -> List[List[int]]:
@@ -119,6 +120,7 @@ class StreamTracker:
         self.delivered = 0
         self.boot: Optional[int] = None   # sender restart count, if the sender reports one
         self.linked = False               # its link to the previous stream has been checked
+        self.clock_offset: Optional[float] = None   # receiver minus sender clock, last heartbeat
 
     def needed(self, seq: int) -> bool:
         if seq < self.lo:
@@ -320,10 +322,12 @@ class Receiver:
                  reasm_timeout: float = 5.0, gap_window: float = 2.0, hb_timeout: float = 5.0,
                  health_interval: float = 60.0, stream_lost_after: float = 60.0,
                  stream_retention: float = 7 * 86400.0,
-                 record_clock: Optional[Callable[[], float]] = None):
+                 record_clock: Optional[Callable[[], float]] = None, rx_time: bool = True):
         """`now` passed to handle_frame/tick drives every timer. Live capture passes a steady
         clock (immune to clock steps); pcap replay passes packet timestamps. `record_clock`,
-        if given, supplies the wall-clock `time` written into health records."""
+        if given, supplies the wall-clock `time` written into health records, each event's
+        arrival time (indexed field wd2l_rx_time, unless rx_time is off) and the clock offset.
+        Without it (replay) those use the packet's capture time."""
         self.out = output
         self.dst_ip = dst_ip
         self.dst_port = dst_port
@@ -336,6 +340,8 @@ class Receiver:
         self.stream_lost_after = stream_lost_after
         self.stream_retention = stream_retention
         self.record_clock = record_clock
+        self.rx_time = rx_time
+        self.last_clock_offset: Optional[float] = None
         self.streams: Dict[int, StreamTracker] = {}
         # Streams no longer tracked in full: stream_id -> [known seq, final]. Enough to drop
         # replayed duplicates and to follow a sender's restart chain.
@@ -413,6 +419,8 @@ class Receiver:
             return
         if res == "late":
             self.counters["late_fills"] += 1
+        if self.rx_time:
+            evt["fields"] = dict(evt.get("fields", {}), **{RX_TIME_FIELD: round(self._wall(now), 3)})
         self.out.event(evt, f.stream_id, f.seq)
         self.counters["events_delivered"] += 1
         self.dirty = True
@@ -489,6 +497,10 @@ class Receiver:
         # A 64-bit id is kept out of the stored counters: SIEMs read JSON numbers as floats.
         prev = info.pop("prev_stream", None)
         self.counters["heartbeats"] += 1
+        sent = info.get("sender_time")
+        if isinstance(sent, (int, float)) and not isinstance(sent, bool):
+            # Clock offset plus the one-way delay, which is well under 1 ms on a direct fiber.
+            t.clock_offset = self.last_clock_offset = round(self._wall(now) - sent, 3)
         if not t.linked:
             self._link(t, info, prev, now)
         was_final = t.final
@@ -600,8 +612,12 @@ class Receiver:
                                 first_seq=a, last_seq=b, count=n, reason=reason)
             self.dirty = True
 
+    def _wall(self, now: float) -> float:
+        """Wall-clock time for records: the live clock, or the packet time during replay."""
+        return self.record_clock() if self.record_clock else now
+
     def _health_record(self, kind: str, now: float, **kw: Any) -> None:
-        rec = {"type": kind, "time": round(self.record_clock() if self.record_clock else now, 3)}
+        rec = {"type": kind, "time": round(self._wall(now), 3)}
         rec.update(kw)
         self.out.health(rec)
 
@@ -613,7 +629,7 @@ class Receiver:
             streams["%016x" % t.stream_id] = {
                 "next_seq": t.lo, "known_seq": t.known, "open_gap_events": t.gaps.count(),
                 "final": t.final, "idle_s": round(now - t.last_seen, 1), "boot": t.boot,
-                "sender": t.hb}
+                "clock_offset_s": t.clock_offset, "sender": t.hb}
         ref = self.last_hb if self.last_hb is not None else self.started
         rec = dict(self.counters, **self.reasm.counters, **self.out.stats())
         # Flat totals so SIEM alerts don't have to dig into the per-stream map.
@@ -623,8 +639,9 @@ class Receiver:
                    sender_truncated=sum(int(t.hb.get("truncated", 0)) for t in live),
                    sender_bad_input=sum(int(t.hb.get("bad_input", 0)) for t in live),
                    sender_unread_bytes=sum(int(t.hb.get("shutdown_unread_bytes", 0)) for t in live))
-        rec.update(type="health", time=round(self.record_clock() if self.record_clock else now, 3),
+        rec.update(type="health", time=round(self._wall(now), 3),
                    streams=streams, retired_streams=len(self.retired),
+                   clock_offset_s=self.last_clock_offset,
                    heartbeat_age_s=round(now - ref, 1) if ref is not None else None,
                    heartbeat_stale=self.hb_stale, other_reasons=self.other_reasons,
                    bad_reasons=self.bad_reasons, reasm_buffered=self.reasm.buffered)
@@ -769,6 +786,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--stream-retention", type=float, default=7 * 86400.0,
                    help="seconds to keep full records of finished streams with nothing open; "
                         "keep it at least as long as the pcap archive")
+    p.add_argument("--no-rx-time", dest="rx_time", action="store_false",
+                   help="don't stamp each event's arrival time in indexed field wd2l_rx_time")
     p.add_argument("-v", "--verbose", action="store_true")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
@@ -779,7 +798,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
               state_path=a.state, max_event=a.max_event, max_buffer=a.max_buffer,
               reasm_timeout=a.reasm_timeout, gap_window=a.gap_window, hb_timeout=a.hb_timeout,
               health_interval=a.health_interval, stream_lost_after=a.stream_lost_after,
-              stream_retention=a.stream_retention)
+              stream_retention=a.stream_retention, rx_time=a.rx_time)
     try:
         if a.pcap:
             rx = Receiver(out, **kw)

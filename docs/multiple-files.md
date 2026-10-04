@@ -43,7 +43,8 @@ flowchart LR
 * **Sender runs are linked** through `boot` / `prev_stream`, so a run that never reached Enclave 2
   at all is reported too.
 * Every event keeps its original `host`, `source`, `sourcetype`, `index` and time, plus
-  `wd2l_stream`, `wd2l_seq` and (with `--source-seq`) `wd2l_src_seq`.
+  `wd2l_stream`, `wd2l_seq`, the send and arrival times `wd2l_tx_time` / `wd2l_rx_time`, and
+  (with `--source-seq`) `wd2l_src_seq`.
 
 ## Rebuilding several files from one stream
 
@@ -62,6 +63,36 @@ event belonged to. `lab/rebuild_files.py` refuses to rebuild interleaved files i
 `wd2l_src_seq` starts again at 1 when the sender restarts (new stream). To rebuild a file across
 sender restarts, process each stream in turn, following the `boot` / `prev_stream` chain. The lab
 tool reports `MULTIPLE-RUNS` instead of joining runs.
+
+## Adding hosts and sources
+
+Nothing in wd2l changes when hosts or logs are added. Going from 10 logs on 5 hosts to adding a
+new host with 3 logs, or one more log on an existing host, needs no code change and no wd2l
+setting:
+
+* **Sender:** it keeps one counter per (`host`, `source`) pair and creates it the first time that
+  pair appears. A new log simply starts at `wd2l_src_seq` = 1, in the same sender run.
+* **Receiver:** it doesn't track sources at all. `wd2l_src_seq` goes to the SIEM like any other
+  indexed field.
+* **Rebuild:** files are picked by (`host`, `source`) from the data itself.
+
+What does change is upstream, as for any new log: the forwarder on that host has to collect the
+file, and the aggregator has to set `host` and `source` on its events.
+
+Keep in mind:
+
+* **Names must stay the same.** The counter is keyed on the exact `host` and `source` strings. If
+  a host shows up as `web01` one day and `web01.example.org` the next, wd2l sees two different
+  files, each counted from 1.
+* **Counts are lines sent, not file line numbers.** A log added while its file already has
+  content starts at 1 with the first line the forwarder sends. If the forwarder starts at the end
+  of an existing file, line 1 of the rebuilt copy is that first line sent.
+* **A sender restart starts every count again** (above).
+
+`tests/test_file_roundtrip.py::test_adding_hosts_and_logs_mid_stream_needs_no_change` covers
+this: 5 hosts with 2 logs each, then a new host with 3 logs and a new log on an existing host
+starting mid-stream, all in one sender run. All 14 files rebuild byte for byte, and a line lost
+from one of the new logs is named exactly.
 
 ## Live files: comparing a moving target
 

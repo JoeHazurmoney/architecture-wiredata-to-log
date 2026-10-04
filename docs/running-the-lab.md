@@ -57,7 +57,7 @@ If the repository is private, git will ask you to sign in to GitHub.
 python3 -m pytest
 ```
 
-These run without root and take about 25 seconds. You should see `105 passed`.
+These run without root and take about 25 seconds. You should see `115 passed`.
 
 ## 5. Run the lab
 
@@ -78,8 +78,13 @@ sent:            5001
 received:        5001
 gaps (reported): 0
 ...
+link delay (wd2l_rx_time - wd2l_tx_time): median 0.0 ms, p99 4.0 ms, max 11.0 ms
+clock offset (last heartbeat): 0.0 s
 PASS: every event arrived intact or is accounted for in a reported gap
 ```
+
+The link delay compares each event's send time (sender's clock) with its arrival time
+(receiver's clock). Both namespaces share one clock in the lab, so the clock offset is about 0.
 
 What each run proves:
 
