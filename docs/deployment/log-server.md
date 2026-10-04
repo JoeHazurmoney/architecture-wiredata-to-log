@@ -85,6 +85,7 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | `--extra-field` | none | Extra aggregator field to carry as an indexed field in the SIEM (repeatable) |
 | `--source-seq` | off | Number events per file (`wd2l_src_seq`) so Enclave 2 can rebuild interleaved files and name lost lines. See [multiple-files.md](../multiple-files.md) |
 | `--no-tx-time` | stamping on | Stop stamping each event's send time (`wd2l_tx_time`). Leave it on: Enclave 2 uses it to split delays by segment ([operations.md](../operations.md#measuring-delays)) |
+| `--no-opaque-check` | check on | Stop flagging long encrypted, compressed or random-looking blobs (`wd2l_opaque`). Leave it on: see [ADR-0002](../decisions/0002-opaque-content.md) |
 | `--state` | none | Restart count and previous stream, so the receiver can link runs and report a missed one. The unit uses `/var/lib/wd2l/sender.json` |
 | `--drain-timeout` | `2` s | On shutdown, how long to keep reading input that is already arriving |
 | `--input-rcvbuf` | `262144` | TCP receive buffer for the aggregator connection. Bounds input that is acknowledged but not yet read |

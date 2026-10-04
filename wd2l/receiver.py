@@ -637,6 +637,7 @@ class Receiver:
         rec.update(open_gap_events=sum(t.gaps.count() for t in self.streams.values()),
                    sender_drops=sum(int(t.hb.get("sender_drops", 0)) for t in live),
                    sender_truncated=sum(int(t.hb.get("truncated", 0)) for t in live),
+                   sender_opaque_events=sum(int(t.hb.get("opaque_events", 0)) for t in live),
                    sender_bad_input=sum(int(t.hb.get("bad_input", 0)) for t in live),
                    sender_unread_bytes=sum(int(t.hb.get("shutdown_unread_bytes", 0)) for t in live))
         rec.update(type="health", time=round(self._wall(now), 3),

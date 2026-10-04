@@ -88,11 +88,12 @@ file output and the SIEM's own file ingestion. The SIEM needs:
   `hec_rejected_events`. Or run with `--force-index` and put everything in one index.
 * **A token** for the receiver, over TLS.
 * **Indexed (searchable) fields**, sent in each event's `fields` object: `wd2l_stream`,
-  `wd2l_seq`, `wd2l_truncated`, `wd2l_src_seq` (with the sender's `--source-seq`), and the send
-  and arrival times `wd2l_tx_time` and `wd2l_rx_time`.
+  `wd2l_seq`, `wd2l_truncated`, `wd2l_src_seq` (with the sender's `--source-seq`), the send
+  and arrival times `wd2l_tx_time` and `wd2l_rx_time`, and, on events with a blob that can't be
+  inspected, `wd2l_opaque` and `wd2l_opaque_bytes`.
 * **JSON parsing** for the `wd2l:health` records.
-* **Alerts** on lost events, stale heartbeat, silent receiver, and unexpected traffic or damage
-  (see [operations.md](../operations.md)).
+* **Alerts** on lost events, stale heartbeat, silent receiver, unexpected traffic or damage, and
+  opaque content (see [operations.md](../operations.md)).
 * **The same parsing add-ons** you use in Enclave 1 for each log source. Events keep their source
   type, so parsed fields come out the same.
 
@@ -104,9 +105,10 @@ them in an app, e.g. `$SPLUNK_HOME/etc/apps/wd2l/local/`:
 * `indexes.conf`: `enclave1` and `wd2l`.
 * `inputs.conf`: HEC on 8088 with TLS, and the `wd2l` token.
 * `fields.conf`: marks `wd2l_stream`, `wd2l_seq`, `wd2l_truncated`, `wd2l_src_seq`,
-  `wd2l_tx_time` and `wd2l_rx_time` as indexed fields.
+  `wd2l_tx_time`, `wd2l_rx_time`, `wd2l_opaque` and `wd2l_opaque_bytes` as indexed fields.
 * `props.conf`: JSON field extraction for `wd2l:health`.
-* `savedsearches.conf`: the four alerts. Add your alert actions.
+* `savedsearches.conf`: the six alerts (lost events, stale heartbeat, missing sender run, silent
+  receiver, unexpected traffic or damage, opaque content). Add your alert actions.
 
 ## 6. Check end to end
 

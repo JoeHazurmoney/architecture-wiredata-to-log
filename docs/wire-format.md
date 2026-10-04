@@ -44,6 +44,12 @@ millisecond) in `fields` unless started with `--no-tx-time`. It counts toward `-
 receiver adds `wd2l_rx_time` (its own clock when the event arrived) before sending the event on,
 replacing any `wd2l_rx_time` that came over the wire. Neither changes the frame format.
 
+When `_raw` carries a long blob that can't be inspected, the sender also sets `wd2l_opaque`
+(`encrypted`, `compressed` or `high-entropy`) and `wd2l_opaque_bytes` (the blob's decoded size),
+unless started with `--no-opaque-check`. It removes those two fields from anything the
+aggregator sent, so only the sender can set them. See
+[ADR-0002](decisions/0002-opaque-content.md).
+
 ## HEARTBEAT body
 
 One piece, JSON, sent every second and once more on clean shutdown:

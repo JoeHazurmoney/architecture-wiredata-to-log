@@ -67,8 +67,10 @@ def main():
 
     def expected(seq, tx):
         """What the sender put on the wire for this event, given the send time it stamped
-        (the stamp counts toward the size limit, so it changes where big events are cut)."""
-        return wire.parse_event(fitter._fit(dict(sent_by_seq[seq], wd2l_tx_time=tx)))
+        (the stamp counts toward the size limit, so it changes where big events are cut),
+        including any opaque-content flag."""
+        e = sent_by_seq[seq]
+        return wire.parse_event(fitter._fit(dict(e, wd2l_tx_time=tx, **fitter.opaque_fields(e))))
 
     got = load(os.path.join(a.received_dir, "events.jsonl"))
     health = load(os.path.join(a.received_dir, "health.jsonl"))
@@ -132,12 +134,14 @@ def main():
         if last.get(k):
             problems.append("%s = %s" % (k, last[k]))
     truncated = [s for s, e in seen.items() if "wd2l_truncated" in e.get("fields", {})]
+    flagged = sorted(s for s, e in seen.items() if "wd2l_opaque" in e.get("fields", {}))
 
     print("sent:            %d" % len(sent_by_seq))
     print("received:        %d" % len(seen))
     print("duplicates:      %d" % dups)
     print("gaps (reported): %d" % len(open_gaps))
     print("truncated:       %d (seq %s)" % (len(truncated), truncated))
+    print("opaque content:  %d (seq %s)" % (len(flagged), flagged))
     print("other packets on the tapped cable: %s" % last.get("other_packets"))
     print("kernel drops:    %s" % last.get("kernel_drops"))
     if delays:

@@ -62,6 +62,7 @@ Start with [docs/architecture.md](docs/architecture.md).
 | `wd2l/sender.py` | Enclave 1: JSON lines in from the log aggregator, framed UDP out, heartbeats |
 | `wd2l/receiver.py` | Enclave 2: live capture or pcap replay → rebuild → gap tracking → outputs |
 | `wd2l/wire.py` | Packet format shared by both sides ([docs/wire-format.md](docs/wire-format.md)) |
+| `wd2l/opaque.py` | Enclave 1: spots long encrypted, compressed or random-looking blobs in log text so the sender can flag them ([ADR-0002](docs/decisions/0002-opaque-content.md)) |
 | `wd2l/packets.py` | Ethernet/IPv4/UDP parsing, pcap files, raw-socket capture |
 | `wd2l/outputs.py` | SIEM output over an HTTP event collector (HEC format, with disk spool) and JSONL file output |
 | `deploy/log-server/` | Egress NIC script, nftables, systemd units |
@@ -75,7 +76,7 @@ Start with [docs/architecture.md](docs/architecture.md).
 ## Try it
 
 ```bash
-pip install pytest && python3 -m pytest          # 115 tests, no root needed
+pip install pytest && python3 -m pytest          # 138 tests, no root needed
 
 sudo lab/run-lab.sh                               # full path in network namespaces
 sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly
