@@ -3,6 +3,9 @@
 Assumes a Linux host running a log aggregator (a single node) with a **second, dedicated NIC** for the
 one-way link. Examples use `ens224` for that NIC. Replace it with yours.
 
+The log aggregator also sends a copy of every event to the **log retention server**, a separate
+Enclave 1 host reached over the normal NIC. See [retention-server.md](retention-server.md).
+
 Addresses used throughout (any unused /30 works; keep them consistent everywhere):
 
 | | |
@@ -80,6 +83,7 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | `--rate-pps` | `20000` | Packet rate cap, smooths bursts. 0 = off |
 | `--auth-token-file` | none | Must match the token set in the log aggregator |
 | `--extra-field` | none | Extra aggregator field to carry as an indexed field in the SIEM (repeatable) |
+| `--source-seq` | off | Number events per file (`wd2l_src_seq`) so Enclave 2 can rebuild interleaved files and name lost lines. See [multiple-files.md](../multiple-files.md) |
 | `--state` | none | Restart count and previous stream, so the receiver can link runs and report a missed one. The unit uses `/var/lib/wd2l/sender.json` |
 | `--drain-timeout` | `2` s | On shutdown, how long to keep reading input that is already arriving |
 | `--input-rcvbuf` | `262144` | TCP receive buffer for the aggregator connection. Bounds input that is acknowledged but not yet read |
@@ -110,6 +114,22 @@ Stream, Fluentd/Fluent Bit, Logstash, Vector, rsyslog/syslog-ng with a JSON temp
 Send everything that should cross (usually all of it) to that output. Anything you *don't* want
 in Enclave 2 should be filtered here, in Enclave 1.
 
+**Output to the log retention server**
+
+A second output keeps the 1-year Enclave 1 copy ([retention-server.md](retention-server.md)):
+
+* Send **every** event the aggregator collects, before any filter that decides what crosses,
+  with at least `_time`, `host`, `source`, `sourcetype`, `index` and `_raw`.
+* Send it over the log server's normal Enclave 1 NIC, never the egress NIC. The egress firewall
+  allows only the one wd2l flow.
+* Give it **its own persistent queue**, so a retention-server outage never holds up the output to
+  the sender.
+* The aggregator must be able to read a time window back from the retention server and route it
+  to the sender output. Route replayed events to the sender output only, not back to the
+  retention server.
+* Once wd2l writes audit files (audit plan, phase 1), also read `/var/log/wd2l/audit.jsonl` and
+  route it to the retention server only, with each line unchanged.
+
 ### Example: Cribl Stream
 
 This is the setup the proof of concept was designed against. Menu names follow Cribl's
@@ -129,7 +149,15 @@ documentation; check them against your version.
 * **Destination: TCP JSON**. It already produces the format above. Address `127.0.0.1`, port
   `10070`, load balancing off, TLS off, **Compression: None**, auth token from
   `/etc/wd2l/aggregator.token`, **Backpressure behavior: Persistent Queue**.
-* **Route**: everything that should cross, through a passthru pipeline, to that destination.
+* **Destination for the retention server**: Filesystem (on an NFS mount from the retention
+  server) or S3 (S3-compatible storage), JSON format, gzip compression, partitioned by date and
+  host, **Backpressure behavior: Persistent Queue**.
+* **Routes**, in this order:
+  1. everything to the retention destination, with **Final** turned off so each event also
+     continues to the next route;
+  2. everything that should cross, through a passthru pipeline, to the TCP JSON destination.
+* **Replay**: a Filesystem or S3 collector over the retention data, run for the time window you
+  need, routed to the TCP JSON destination only.
 
 ## 6. Check Enclave 1 end to end
 
@@ -141,3 +169,6 @@ sudo tcpdump -i ens224 -nn -c 20
 # nftables drop counters on that NIC should stay at 0 unless something is misbehaving:
 sudo nft list table inet wd2l
 ```
+
+On the log retention server, new data should keep arriving. See the checks in
+[retention-server.md](retention-server.md#7-checks).

@@ -40,11 +40,11 @@ def write_samples(d):
     return paths
 
 
-def transfer(tmp_path, events, drop_seq=None):
+def transfer(tmp_path, events, drop_seq=None, source_seq=False):
     """Send events through the real sender framing and receiver; return received events."""
     sock = FakeSock()
     snd = Sender(("10.255.255.2", 5514), sock=sock, rate_pps=0, max_datagram=200,
-                 extra_fields=(files_to_events.B64_FIELD,))
+                 extra_fields=(files_to_events.B64_FIELD,), source_seq=source_seq)
     marks = {}
     for e in events:
         start = len(sock.sent)
@@ -85,7 +85,7 @@ def test_lost_line_makes_file_incomplete_not_a_false_match(tmp_path):
     secure_first = manifest[1]["first_seq"]
     received = transfer(tmp_path, events, drop_seq=secure_first)
     rows = {r["name"]: r for r in rebuild_files.rebuild(manifest, received, str(tmp_path / "rb"))}
-    assert rows["secure"]["status"] == "INCOMPLETE" and rows["secure"]["missing"] == 1
+    assert rows["secure"]["status"] == "INCOMPLETE" and rows["secure"]["missing"] == [1]
     assert not (tmp_path / "rb" / "secure").exists()
     assert rows["messages"]["status"] == "MATCH" and rows["audit.log"]["status"] == "MATCH"
 
@@ -123,3 +123,85 @@ def test_sourcetypes():
     assert files_to_events.sourcetype_for("/var/log/messages") == "syslog"
     assert files_to_events.sourcetype_for("/tmp/other.txt") == "log_file"
     assert wire.DEFAULT_MAX_EVENT > 1024
+
+
+# ---------------------------------------------------------------- interleaved files
+
+AUDIT = (b"type=SYSCALL msg=audit(1759399201.500:1): a\n"
+         b"type=PATH msg=audit(1759399201.500:1): b\n"
+         b"type=SYSCALL msg=audit(1759399203.250:2): c\n"
+         b"no timestamp here\n"
+         b"type=SYSCALL msg=audit(1759399202.000:3): earlier than the line above\n")
+MESSAGES = (b"Oct  2 10:00:01 h app: one\n"
+            b"Oct  2 10:00:02 h app: two\n"
+            b"Oct  2 10:00:04 h app: three\n")
+
+
+def write_live(d):
+    (d / "audit.log").write_bytes(AUDIT)
+    (d / "messages").write_bytes(MESSAGES)
+    t = 1759399200  # 2025-10-02 10:00:00 UTC: gives the syslog lines their year
+    for p in ("audit.log", "messages"):
+        os.utime(d / p, (t, t))
+    return [str(d / "audit.log"), str(d / "messages")]
+
+
+def test_line_times():
+    assert files_to_events.line_time(b"type=X msg=audit(1759399201.5:9): x", 2025) == 1759399201.5
+    assert files_to_events.line_time(b"Oct  2 10:00:01 h app: x", 2025) == 1759399201.0
+    assert files_to_events.line_time(b"Oct 12 10:00:01 h app: x", 2025) == 1759399201.0 + 10 * 86400
+    assert files_to_events.line_time(b"plain text", 2025) is None
+    timed = files_to_events.timed_lines([b"no time", b"Oct  2 10:00:01 h a", b"again none"], 1759399200)
+    assert [t for t, _ in timed] == [1759399201.0] * 3
+
+
+def test_interleave_merges_by_time_and_keeps_each_files_order(tmp_path):
+    events, manifest = files_to_events.convert(write_live(tmp_path), host="h", interleave=True)
+    order = [(os.path.basename(e["source"]), e["_raw"].split(": ", 1)[-1].strip()) for e in events]
+    assert order == [("messages", "one"), ("audit.log", "a"), ("audit.log", "b"),
+                     ("messages", "two"), ("audit.log", "c"), ("audit.log", "no timestamp here"),
+                     ("audit.log", "earlier than the line above"), ("messages", "three")]
+    assert files_to_events.switches(events) == 4
+    assert all("first_seq" not in m for m in manifest)
+    assert [m["lines"] for m in manifest] == [5, 3]
+
+
+def test_interleaved_files_rebuild_byte_for_byte(tmp_path):
+    src, other = tmp_path / "src", tmp_path / "other"
+    src.mkdir()
+    other.mkdir()
+    # live-style files, plus the CRLF / no-final-newline / invalid-UTF-8 / empty samples
+    paths = write_live(src) + [p for p in write_samples(other)
+                               if os.path.basename(p) in ("secure", "empty.log")]
+    events, manifest = files_to_events.convert(paths, host="h", interleave=True)
+    received = transfer(tmp_path, events, source_seq=True)
+    rows = rebuild_files.rebuild(manifest, received, str(tmp_path / "rebuilt"))
+    assert [r["status"] for r in rows] == ["MATCH"] * len(paths)
+    for p in paths:
+        assert (tmp_path / "rebuilt" / os.path.basename(p)).read_bytes() == open(p, "rb").read()
+
+
+def test_interleaved_loss_names_the_file_and_line(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    events, manifest = files_to_events.convert(write_live(src), host="h", interleave=True)
+    # stream position 5 is audit.log line 3 ("c")
+    received = transfer(tmp_path, events, drop_seq=5, source_seq=True)
+    rows = {r["name"]: r for r in rebuild_files.rebuild(manifest, received, str(tmp_path / "rb"))}
+    assert rows["audit.log"]["status"] == "INCOMPLETE" and rows["audit.log"]["missing"] == [3]
+    assert rows["messages"]["status"] == "MATCH"
+    assert "line(s) missing: 3;" in rebuild_files.report(list(rows.values()))
+
+
+def test_interleaved_without_line_numbers_is_refused(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    events, manifest = files_to_events.convert(write_live(src), host="h", interleave=True)
+    received = transfer(tmp_path, events)
+    rows = rebuild_files.rebuild(manifest, received, str(tmp_path / "rb"))
+    assert {r["status"] for r in rows} == {"NO-LINE-NUMBERS"}
+
+
+def test_ranges():
+    assert rebuild_files.ranges([7, 1, 2, 3, 9, 10]) == "1-3, 7, 9-10"
+    assert rebuild_files.ranges([]) == ""

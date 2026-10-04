@@ -18,7 +18,8 @@ Two goals, one design:
 |---|---|
 | Control baseline | NIST SP 800-53 Rev 5, Moderate |
 | Audit record retention (AU-11) | 1 year, both enclaves |
-| SIEM | Splunk in Enclave 2. **No SIEM in Enclave 1**: logs are collected on the central log server only. |
+| SIEM | Splunk in Enclave 2. **No SIEM in Enclave 1**: logs are collected on the central log server, and a copy of everything is kept for 1 year on the log retention server. |
+| Enclave 1 retention | Log retention server ([deployment/retention-server.md](deployment/retention-server.md)): 1-year copy of every event the aggregator collects, the source for replaying lost events, and the proposed 1-year home of wd2l's Enclave 1 audit files (section 17, item 5) |
 | Time | GPS (SAASM) receiver in each enclave → a switch serving time as stratum 2 → hosts running chrony (stratum 3) |
 | Where the health view lives | Enclave 2 Splunk. Enclave 1 has no live view; see section 7 for how Enclave 1's state still reaches it |
 
@@ -45,7 +46,7 @@ Enclave 2 only inside heartbeats.
 |---|---|---|---|---|
 | **Operational log** | Troubleshooting detail | Moderate; debug on demand | journald (JSON) | journald (JSON) |
 | **Health** (`wd2l:health`) | Dashboard, alerts, fault location | One summary a minute per side, plus immediate change records | Local file + **in-band to Enclave 2** (section 7) | Splunk index `wd2l` |
-| **Audit** (`wd2l:audit`) | AU-2 events, evidence, reconciliation | Low: events and hourly summaries | Local append-only file (**official copy**, 1 year) + in-band copy | Local append-only file + Splunk index `wd2l_audit` (restricted) |
+| **Audit** (`wd2l:audit`) | AU-2 events, evidence, reconciliation | Low: events and hourly summaries | Local append-only file (**official copy**), kept 1 year on the log retention server, + in-band copy | Local append-only file + Splunk index `wd2l_audit` (restricted) |
 
 None of the three ever contains log content (`_raw`), only metadata, counts and hashes.
 
@@ -105,9 +106,10 @@ stream:
 * They get sequence numbers like everything else, so their loss is detected and reported too.
 * Volume is bounded (summaries, not per event), so there's no feedback loop.
 * No wire-format change: they're normal DATA events.
-* **The local file in Enclave 1 stays the official audit copy** (AU-11, 1 year). Records written
-  while the link is down don't reach Enclave 2 live. Their absence is visible as a gap, and the
-  local file has them.
+* **The local file in Enclave 1 stays the official audit copy.** The aggregator copies it to the
+  log retention server, which keeps it for 1 year (AU-11). Records written while the link is
+  down don't reach Enclave 2 live. Their absence is visible as a gap, and the local file and the
+  retention copy have them.
 
 The heartbeat also carries a compact health snapshot every second (some fields already there; new
 ones: events-in rate, stall time, egress NIC tx errors, chrony offset/stratum, running hash). So
@@ -145,7 +147,9 @@ Enclave 2 sees Enclave 1's state within about a second while the link is up.
   `wd2l-audit-report verify` detects any edited, removed or reordered record. The latest hash is
   copied into the hourly health record, so it also lives in Splunk.
 * **Files:** `/var/log/wd2l/audit.jsonl`, owned by a separate `wd2l-audit` group, mode 0640,
-  `chattr +a` (append-only), rotated by size with the chain carried across files.
+  `chattr +a` (append-only), rotated by size with the chain carried across files. In Enclave 1,
+  the aggregator copies each line unchanged to the log retention server, so the chain still
+  verifies on the 1-year copy.
 * **Splunk:** `wd2l_audit` index, its own HEC token, readable only by an auditor role
   (AU-9(4): only a subset of privileged users manage audit data).
 * **Host auditd rules** on both hosts watch wd2l's programs, settings, state files and audit files.
@@ -224,7 +228,7 @@ Confirm against the system security plan (SSP); organization-defined values are 
 | AU-8 Time Stamps | UTC, microseconds, chrony to GPS; time quality recorded |
 | AU-9 Protection of Audit Information | Hash chain, append-only files, permissions |
 | AU-9(4) Access by Subset of Privileged Users | `wd2l_audit` index and files restricted to an auditor role |
-| AU-11 Audit Record Retention | 1 year, both enclaves |
+| AU-11 Audit Record Retention | 1 year, both enclaves. In Enclave 1, on the log retention server (for wd2l's audit files this is proposed; section 17, item 5) |
 | AU-12 Audit Record Generation | Both components generate the catalog events |
 
 Related controls this supports (mostly with evidence):
@@ -247,6 +251,9 @@ At the planned < 1,000 events/s:
 * **Health:** one summary a minute per side plus change records, ~10 MB/day → ~4 GB/year in Splunk.
 * **Packet archive:** unchanged (7 days, ~600 GB at full rate). It's raw data for replay, not an
   audit record.
+* **Log retention server (Enclave 1):** the logs themselves, roughly 3–6 TB/year compressed at
+  full rate ([deployment/retention-server.md](deployment/retention-server.md)). wd2l's audit files
+  add under 2 GB.
 
 ## 16. Implementation phases
 
@@ -276,5 +283,5 @@ checks that the dashboard search names the right segment:
 2. AU-5 behavior: keep transferring when the audit log can't be written (proposed), or stop.
 3. Time thresholds: |offset| 100 ms, skew 50 ms. Adjust as needed.
 4. Who gets the auditor role in Splunk for `wd2l_audit`.
-5. Whether Enclave 1 audit files need copying off the log server (for example to backup media)
-   to meet 1-year retention if the server is rebuilt.
+5. Enclave 1 audit files: confirm the log retention server as their 1-year home (proposed), so
+   they survive a rebuild of the log server.

@@ -8,6 +8,11 @@ a central log server. The log server sends the combined stream toward a "black h
 A network tap copies that cable to Enclave 2, where the logs are rebuilt from the raw packets and
 indexed in a SIEM. Nothing can flow back: the fiber to Enclave 2 has only one strand.
 
+Because nothing can flow back, Enclave 2 can't ask for lost events again. So the log aggregator
+also sends a copy of every event to a log retention server in Enclave 1, which keeps it for one
+year. When Enclave 2 reports a loss, the aggregator replays that time window from the retention
+server.
+
 The design is product-neutral. Where a product is named, it is only an example of a component
 that fills that role (the proof of concept was built against Cribl Stream as the log aggregator
 and Splunk as the SIEM).
@@ -18,6 +23,8 @@ and Splunk as the SIEM).
 flowchart LR
   subgraph E1[Enclave 1]
     H[Firewalls, switches,<br/>workstations, servers, hypervisors] -->|forwarding agents<br/>syslog :514| C[Log aggregator]
+    C -->|copy of every event| RS[Log retention server<br/>1-year copy]
+    RS -.->|replay<br/>if needed| C
     C -->|TCP, JSON lines<br/>127.0.0.1:10070| S[wd2l-sender]
     S -->|UDP 10.255.255.1 → 10.255.255.2:5514| G{{Network tap}}
     G --> B[Black-hole switch port<br/>own VLAN, drops everything]
@@ -36,7 +43,8 @@ flowchart LR
 | Piece | Where | Job |
 |---|---|---|
 | Log forwarding agents / syslog | every Enclave 1 host | Send logs to the log aggregator, as today. |
-| Log aggregator (e.g. Cribl Stream) | central log server | Collect, parse into events, set host, source, source type and index, hand every event to the sender. |
+| Log aggregator (e.g. Cribl Stream) | central log server | Collect, parse into events, set host, source, source type and index, hand every event to the sender and a copy to the log retention server. Replay a time window from the retention server when asked. |
+| Log retention server | Enclave 1, its own host | Keep a copy of every event the aggregator collects for 1 year. The source for replaying lost events, and (proposed) the 1-year home of wd2l's Enclave 1 audit files once those are built. Not on the transfer path. |
 | `wd2l-sender` | central log server | Number each event, split big ones into packet-sized pieces, add checksums, send UDP to the black hole, send a heartbeat every second. |
 | Egress NIC | central log server | Dedicated NIC. One /30 address, static ARP for the black hole, IPv6 off, firewall allows one flow. |
 | Black-hole switch port | Enclave 1 switch | Keeps the log server's link up and throws every frame away. |
@@ -82,6 +90,10 @@ flowchart LR
     Anything still in memory at a crash is reported as a gap and filled by replay. The rule is
     duplicates over loss: every event carries `wd2l_stream` and `wd2l_seq`, so copies are easy
     to remove.
+11. **Keep a full copy in Enclave 1.** Loss is detected, not recovered: nothing can be asked for
+    again across a one-way link. The log retention server keeps every event for a year, so a lost
+    time window can be replayed through the aggregator. Its output in the aggregator has its own
+    persistent queue, so a retention-server outage never holds up the transfer.
 
 ## Data path details
 
@@ -90,6 +102,12 @@ flowchart LR
   Cribl Stream's TCP JSON destination. Any aggregator that can write JSON lines to a TCP socket
   works.) TCP gives backpressure: if the sender can't keep up, the aggregator blocks or queues
   (a persistent queue is recommended).
+* **Log aggregator → log retention server**: a second output, over the log server's normal
+  Enclave 1 network (never the egress NIC). Every event the aggregator collects, including any
+  that are filtered out of the crossing, with at least the fields that cross. It has its own
+  persistent queue. To replay, the aggregator reads a time window back from the retention server
+  and routes it to the sender only. The replayed events cross as new events with new sequence
+  numbers. See [deployment/retention-server.md](deployment/retention-server.md).
 * **What crosses**: per event `_time, host, source, sourcetype, index, _raw` (plus any fields named
   with `--extra-field`, which become indexed fields in the SIEM). Other aggregator fields are
   dropped.
@@ -109,17 +127,18 @@ flowchart LR
 
 | Failure | Effect on logs | What you see in Enclave 2 | Recovery |
 |---|---|---|---|
-| Packet loss on the wire (bad optic, overrun) | Those events lost | `type=gap` records with exact stream and sequence ranges | Pull the events again from Enclave 1 for that time window (see operations.md) |
+| Packet loss on the wire (bad optic, overrun) | Those events lost | `type=gap` records with exact stream and sequence ranges | Replay that time window from the log retention server (see operations.md) |
 | Receiver process stops cleanly | Nothing lost: tcpdump keeps capturing, queued events go to the spool | `type=gap` after restart | Replay the pcap archive: only the gaps are sent |
 | Receiver process crashes (killed, out of memory, host reboot) | Nothing lost: events still in memory are reported, not assumed delivered | `type=gap reason=receiver_restart` at startup | Replay the pcap archive. A few events may arrive twice (`dedup wd2l_stream wd2l_seq`) |
-| Receiver host down (capture down too) | Events sent during the outage never land in Enclave 2 | `type=gap` covering the outage once it's back (the next heartbeat carries the last sequence number) | Re-send from Enclave 1 |
+| Receiver host down (capture down too) | Events sent during the outage never land in Enclave 2 | `type=gap` covering the outage once it's back (the next heartbeat carries the last sequence number) | Replay the window from the log retention server |
 | SIEM ingest down | Nothing lost | `hec_spool_files` > 0 in health (once the SIEM is back) | Automatic drain |
 | Receiver can't keep up with the SIEM (memory queue full) or spool disk full | Those events are not sent | `type=gap reason=output_dropped`, `output_dropped` in health | Replay the pcap archive once the SIEM or disk is healthy |
-| Cable, tap or fiber down | Events sent during the outage lost | `heartbeat_stale`, then a gap for the exact range when it comes back | Re-send from Enclave 1 |
+| Cable, tap or fiber down | Events sent during the outage lost | `heartbeat_stale`, then a gap for the exact range when it comes back | Replay the window from the log retention server |
 | `wd2l-sender` stops cleanly | It reads what the aggregator already sent (up to 2 s), then sends a final heartbeat. The aggregator blocks or queues after that | `stream_end`; `sender.shutdown_unread_bytes` > 0 if input was still arriving when it gave up | Restart. It starts a new stream linked to the old one, so no false gaps |
-| `wd2l-sender` crashes | Input the aggregator had already handed over but the sender had not numbered is lost (bounded by a 256 KB receive buffer). Numbered events sent after the last heartbeat that were also lost on the wire show up via the next run's link | Unnumbered input: not visible as a gap. Numbered tail: `gap` once the new run starts | The aggregator's persistent queue narrows this. See accreditation notes |
-| `wd2l-sender` restarts while the link is down | That whole run never reaches Enclave 2 | `stream_missing` (with `--state` on the sender): the run's stream id and event count | Re-send from Enclave 1 |
+| `wd2l-sender` crashes | Input the aggregator had already handed over but the sender had not numbered is lost (bounded by a 256 KB receive buffer). Numbered events sent after the last heartbeat that were also lost on the wire show up via the next run's link | Unnumbered input: not visible as a gap. Numbered tail: `gap` once the new run starts | The aggregator's persistent queue narrows this. The unnumbered input is still on the log retention server, but no gap points to it. See accreditation notes |
+| `wd2l-sender` restarts while the link is down | That whole run never reaches Enclave 2 | `stream_missing` (with `--state` on the sender): the run's stream id and event count | Replay the window from the log retention server |
 | Log aggregator down | Hosts buffer or drop per their own settings (agents usually buffer; UDP syslog drops) | Heartbeats continue, no events | Enclave 1 monitoring of the aggregator |
+| Log retention server down or full | Transfer to Enclave 2 unaffected. The aggregator queues the copy and catches up when the server is back. If that queue fills, that window has no Enclave 1 copy to replay from | Nothing: it isn't on the transfer path | Enclave 1 monitoring of the retention server and the aggregator's queue for it |
 | Garbage or foreign traffic on the tap | Ignored | `other_packets` / `bad_frames` in health | Investigate the Enclave 1 cable/switch |
 
 Gaps are always reported, never silent. That was the requirement ("detect and report"). There is
@@ -154,4 +173,5 @@ In the network-namespace lab (`lab/run-lab.sh`), which builds the full path in s
 * 5,000 events/s with no drops.
 
 Not verified in the lab: the physical pieces (network tap, switch, fiber, NIC link behavior) and a
-real log aggregator or SIEM. Those steps are in `docs/deployment/`.
+real log aggregator, log retention server or SIEM. The lab has no retention server. Those steps
+are in `docs/deployment/`.

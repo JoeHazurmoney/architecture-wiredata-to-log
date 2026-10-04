@@ -8,10 +8,13 @@ flowchart TB
   subgraph E1["Enclave 1"]
     H["Hosts<br/>firewalls, switches, servers,<br/>workstations, hypervisors"]
     A["Log aggregator"]
+    RS["Log retention server<br/>1-year copy"]
     S["wd2l-sender<br/>numbers, splits, checksums"]
     T{{"Network tap"}}
     B["Black-hole switch port<br/>drops everything"]
     H -- "agents / syslog" --> A
+    A -- "copy of every event" --> RS
+    RS -. "replay<br/>if needed" .-> A
     A -- "JSON lines over TCP" --> S
     S -- "UDP to an IP<br/>nothing answers" --> T
     T --> B
@@ -41,6 +44,9 @@ flowchart TB
   their original host, source, sourcetype, index and time, and **reports every lost event by
   sequence number**.
 * A rolling pcap archive lets you replay after a receiver outage without duplicates.
+* Events that never reached Enclave 2 can't be asked for again across a one-way link. A log
+  retention server in Enclave 1 keeps a copy of every event for 1 year, and the aggregator
+  replays the lost time window from it.
 
 The design is product-neutral: any log aggregator, network tap and SIEM that fill the roles
 work. The proof of concept was built against Cribl Stream (aggregator) and Splunk (SIEM) as
@@ -69,7 +75,7 @@ Start with [docs/architecture.md](docs/architecture.md).
 ## Try it
 
 ```bash
-pip install pytest && python3 -m pytest          # 97 tests, no root needed
+pip install pytest && python3 -m pytest          # 105 tests, no root needed
 
 sudo lab/run-lab.sh                               # full path in network namespaces
 sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly
@@ -77,6 +83,8 @@ sudo lab/run-lab.sh --receiver-outage             # receiver stopped mid-run, ar
 sudo lab/run-lab.sh --receiver-crash              # receiver killed mid-run: nothing lost
 sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
                                                   # real logs: rebuilt files must hash the same
+sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log
+                                                  # same, interleaved as if written at the same time
 ```
 
 The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `python3`.
@@ -88,14 +96,20 @@ The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `pyt
 
 1. [Network](docs/deployment/network.md): black-hole switch port, network tap, one-strand fiber
 2. [Log server](docs/deployment/log-server.md): egress NIC, firewall, `wd2l-sender`, log aggregator
-3. [Receiver](docs/deployment/receiver.md): capture NIC, archive, `wd2l-receiver`, SIEM
-4. [Operations](docs/operations.md): health records, alerts, replay, re-send
+3. [Log retention server](docs/deployment/retention-server.md): 1-year copy in Enclave 1, replay
+   source, wd2l audit files
+4. [Receiver](docs/deployment/receiver.md): capture NIC, archive, `wd2l-receiver`, SIEM
+5. [Operations](docs/operations.md): health records, alerts, replay, re-send
 
 ## Status
 
 Proof of concept. Verified in the namespace lab (see the end of
 [architecture.md](docs/architecture.md)). Not yet verified: the physical tap, switch and fiber
-behavior, and a real log aggregator and SIEM. The deployment guides list the checks for each.
+behavior, and a real log aggregator, log retention server and SIEM (the lab has no retention
+server). The deployment guides list the checks for each.
 
 Next: audit records (NIST SP 800-53 Rev 5, Moderate) and a fault-location health dashboard.
 Proposal for review: [docs/audit-and-health-plan.md](docs/audit-and-health-plan.md).
+
+How several live log files are tracked and rebuilt from one stream:
+[docs/multiple-files.md](docs/multiple-files.md).

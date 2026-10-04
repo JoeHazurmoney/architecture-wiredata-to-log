@@ -11,13 +11,16 @@
 # Needs: root, iproute2, nftables (kernel >= 5.16 for the netdev egress hook), tcpdump, python3.
 #
 # Usage: sudo lab/run-lab.sh [--events N] [--eps N] [--loss PCT] [--receiver-outage]
-#                            [--receiver-crash] [--keep] [--files FILE...]
+#                            [--receiver-crash] [--keep] [--interleave] [--files FILE...]
 #   --loss PCT          drop PCT% of packets on the cable (before the tap): gaps must be reported
 #   --receiver-outage   stop the receiver mid-run, restart it, then replay the pcap archive:
 #                       everything must end up delivered with no duplicates
 #   --receiver-crash    same, but the receiver is killed (SIGKILL) instead of stopped: nothing
 #                       may be lost; a few duplicates are allowed (dedup on wd2l_stream/wd2l_seq)
 #   --keep              leave namespaces up afterwards (lab/teardown.sh removes them)
+#   --interleave        with --files: merge the files by each line's timestamp, as if they were
+#                       being written at the same time and tailed by a forwarder. The sender
+#                       numbers lines per file (--source-seq) so Enclave 2 can separate them.
 #   --files FILE...     send these log files (one event per line) instead of generated events,
 #                       then rebuild them in Enclave 2 and compare SHA-256 hashes. Must be the
 #                       last option: everything after it is a file.
@@ -34,6 +37,7 @@ KILLSIG=TERM
 KEEP=0
 MAX_EVENT=262144
 FILES=()
+INTERLEAVE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,6 +47,7 @@ while [ $# -gt 0 ]; do
     --receiver-outage) OUTAGE=1; shift ;;
     --receiver-crash) OUTAGE=1; KILLSIG=KILL; shift ;;
     --keep) KEEP=1; shift ;;
+    --interleave) INTERLEAVE=1; shift ;;
     --files) shift; FILES=("$@"); [ ${#FILES[@]} -gt 0 ] || { echo "--files needs files" >&2; exit 2; }; break ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
@@ -135,9 +140,13 @@ EOF
 SENDER_EXTRA=()
 if [ ${#FILES[@]} -gt 0 ]; then
   echo "== turning ${#FILES[@]} file(s) into events, one per line"
-  python3 "$HERE/files_to_events.py" --out "$OUT/sent.jsonl" --manifest "$OUT/manifest.json" \
-    --max-event "$MAX_EVENT" "${FILES[@]}"
+  F2E_ARGS=(--out "$OUT/sent.jsonl" --manifest "$OUT/manifest.json" --max-event "$MAX_EVENT")
   SENDER_EXTRA=(--extra-field wd2l_b64)
+  if [ "$INTERLEAVE" = 1 ]; then
+    F2E_ARGS+=(--interleave)
+    SENDER_EXTRA+=(--source-seq)
+  fi
+  python3 "$HERE/files_to_events.py" "${F2E_ARGS[@]}" "${FILES[@]}"
 else
   echo "== generating $EVENTS events (+1 oversize)"
   python3 "$HERE/gen_events.py" -n "$EVENTS" "$OUT/sent.jsonl"

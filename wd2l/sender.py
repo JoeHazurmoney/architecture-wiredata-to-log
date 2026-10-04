@@ -33,6 +33,7 @@ log = logging.getLogger("wd2l.sender")
 
 IP_MTU_DISCOVER = getattr(socket, "IP_MTU_DISCOVER", 10)
 IP_PMTUDISC_DO = getattr(socket, "IP_PMTUDISC_DO", 2)
+SRC_SEQ_FIELD = "wd2l_src_seq"
 MAX_LINE = 16 * 1024 * 1024
 ERROR_LOG_EVERY = 10.0
 
@@ -42,13 +43,21 @@ class Sender:
                  max_datagram: int = wire.DEFAULT_MAX_DATAGRAM,
                  max_event: int = wire.DEFAULT_MAX_EVENT,
                  rate_pps: float = 20000.0, extra_fields: Sequence[str] = (),
-                 sock: Optional[socket.socket] = None, state_path: Optional[str] = None):
+                 sock: Optional[socket.socket] = None, state_path: Optional[str] = None,
+                 source_seq: bool = False):
         if max_event < 1024:
             raise ValueError("max_event must be at least 1024")
         self.dst = dst
         self.max_datagram = max_datagram
         self.max_event = max_event
         self.extra_fields = tuple(extra_fields)
+        # Optional per-file line counter (indexed field wd2l_src_seq): numbers events 1, 2, 3...
+        # separately for each (host, source), so Enclave 2 can rebuild several interleaved files
+        # and name the exact lines a gap took from each one.
+        self.source_seq = source_seq
+        self.src_counters: Dict[Tuple[Any, Any], int] = {}
+        if source_seq and SRC_SEQ_FIELD not in self.extra_fields:
+            self.extra_fields += (SRC_SEQ_FIELD,)
         self.stream_id = int.from_bytes(os.urandom(8), "big") or 1
         self.seq = 0
         self.started = time.time()
@@ -188,10 +197,17 @@ class Sender:
 
     def send_event(self, event: Dict[str, Any]) -> int:
         """Send one event. Returns its sequence number (0 if the sender has already closed)."""
-        data = self._fit(event)
+        if not self.source_seq:
+            data = self._fit(event)
         with self.lock:
             if self.closed:
                 return 0
+            if self.source_seq:
+                # Numbered under the lock, together with seq, so both orders agree.
+                key = (event.get("host"), event.get("source"))
+                n = self.src_counters.get(key, 0) + 1
+                self.src_counters[key] = n
+                data = self._fit(dict(event, **{SRC_SEQ_FIELD: n}))
             self.seq += 1
             for dg in wire.encode_event(self.stream_id, self.seq, data, self.max_datagram):
                 self._transmit(dg)
@@ -423,6 +439,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--auth-token-file", help="file holding the token the log aggregator sends in its header")
     p.add_argument("--extra-field", action="append", default=[],
                    help="extra event field to carry as an indexed field in the SIEM (repeatable)")
+    p.add_argument("--source-seq", action="store_true",
+                   help="number events per (host, source) in indexed field wd2l_src_seq, so "
+                        "Enclave 2 can rebuild interleaved files and locate lost lines")
     p.add_argument("--state", help="state file for the restart count and previous stream "
                                    "(lets the receiver link runs together)")
     p.add_argument("--drain-timeout", type=float, default=2.0,
@@ -439,7 +458,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         with open(a.auth_token_file) as f:
             token = f.read().strip()
     sender = Sender(_hostport(a.dst), a.bind, a.max_datagram, a.max_event, a.rate_pps,
-                    a.extra_field, state_path=a.state)
+                    a.extra_field, state_path=a.state, source_seq=a.source_seq)
     server = InputServer(_hostport(a.listen), sender, token, a.input_rcvbuf, a.drain_timeout)
     stop = threading.Event()
     hb = threading.Thread(target=_heartbeat_loop,
