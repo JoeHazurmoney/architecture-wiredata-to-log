@@ -130,7 +130,9 @@ flowchart LR
   replayed events, the time the archive captured it). If the SIEM is unreachable, batches go to
   an on-disk spool and are resent automatically. A message queue (Kafka or similar) between the
   receiver and the SIEM was considered and deferred: see
-  [ADR-0001](decisions/0001-enclave-2-message-queue.md).
+  [ADR-0001](decisions/0001-enclave-2-message-queue.md). Events go straight to the SIEM, with no
+  log forwarder or aggregator in between and no event files to rotate: see
+  [ADR-0003](decisions/0003-receiver-to-siem-delivery.md).
 * **Timing**: three times on every event split the delay by segment. Enclave 1 (sources,
   forwarders, aggregator): `wd2l_tx_time − _time`. The link and receiver:
   `wd2l_rx_time − wd2l_tx_time`. The SIEM: index time − `wd2l_rx_time`. The receiver also reports

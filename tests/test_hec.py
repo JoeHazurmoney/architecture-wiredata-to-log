@@ -1,3 +1,4 @@
+import configparser
 import json
 import os
 import threading
@@ -7,6 +8,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from wd2l.outputs import HecOutput
+from wd2l.receiver import RX_TIME_FIELD, Receiver
+from wd2l.sender import (OPAQUE_BYTES_FIELD, OPAQUE_FIELD, SRC_SEQ_FIELD, TX_TIME_FIELD,
+                         Sender)
+
+from helpers import FakeSock, eth
 
 
 class FakeSplunk:
@@ -82,6 +88,36 @@ def test_event_shape(splunk, tmp_path):
     assert b["index"] == "net"
     assert h["sourcetype"] == "wd2l:health" and h["event"]["type"] == "gap" and h["time"] == 5
     assert splunk.auth[0] == "Splunk tok"
+
+
+def test_wd2l_fields_reach_the_siem_as_indexed_fields(splunk, tmp_path):
+    """Sender → receiver → SIEM: the wd2l fields, receive time included, arrive in the HEC
+    "fields" object, which the SIEM stores as indexed fields."""
+    sock = FakeSock()
+    Sender(("10.255.255.2", 5514), sock=sock, rate_pps=0).send_event({"_raw": "line", "host": "h"})
+    out = hec("http://127.0.0.1:%d" % splunk.port, tmp_path)
+    r = Receiver(out, dst_ip="10.255.255.2", dst_port=5514, record_clock=lambda: 1790000000.5)
+    for dg in sock.sent:
+        r.handle_frame(eth(dg), 0)
+
+    def events():
+        return [x for x in splunk.records() if x.get("sourcetype") != "wd2l:health"]
+    assert wait_for(lambda: len(events()) == 1)
+    out.close()
+    fields = events()[0]["fields"]
+    assert set(fields) == {TX_TIME_FIELD, RX_TIME_FIELD, "wd2l_stream", "wd2l_seq"}
+    assert fields[RX_TIME_FIELD] == 1790000000.5 and fields["wd2l_seq"] == 1
+
+
+def test_fields_conf_marks_every_wd2l_field_indexed():
+    """The example SIEM config has an INDEXED = true stanza for every field wd2l can add."""
+    cp = configparser.ConfigParser()
+    cp.read(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "deploy", "receiver",
+                         "splunk", "fields.conf"))
+    indexed = {s for s in cp.sections() if cp.get(s, "INDEXED", fallback="").lower() == "true"}
+    wd2l_fields = {"wd2l_stream", "wd2l_seq", "wd2l_truncated", SRC_SEQ_FIELD, TX_TIME_FIELD,
+                   RX_TIME_FIELD, OPAQUE_FIELD, OPAQUE_BYTES_FIELD}
+    assert not wd2l_fields - indexed, "not marked indexed: %s" % sorted(wd2l_fields - indexed)
 
 
 def test_outage_spools_then_drains(tmp_path):

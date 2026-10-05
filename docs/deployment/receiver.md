@@ -63,7 +63,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--default-index` | none | For events that arrive without an index |
 | `--force-index` | none | Put every event in this one index |
 | `--health-index` | default index | Index for `wd2l:health` |
-| `--out-dir` | none | Also (or instead) write `events.jsonl` + `health.jsonl` |
+| `--out-dir` | none | Also (or instead) write `events.jsonl` + `health.jsonl`. For the lab and tests; see [ADR-0003](../decisions/0003-receiver-to-siem-delivery.md) before using it in production |
 | `--gap-window` | `2` s | How long a missing event may be late before it's a gap |
 | `--reasm-timeout` | `5` s | How long to hold part of a split event |
 | `--hb-timeout` | `5` s | No heartbeat for this long → `heartbeat_stale` |
@@ -78,8 +78,10 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 The receiver sends events over HTTPS to an HTTP event collector interface in the format Splunk
 calls HEC (`POST /services/collector/event`, one JSON object per event, `Authorization: Splunk
 <token>` header). Splunk accepts it natively. For another SIEM, put a log pipeline that can
-receive this format in front of it (e.g. Vector, Fluent Bit or Cribl), or use the `--out-dir`
-file output and the SIEM's own file ingestion. The SIEM needs:
+receive this format in front of it (e.g. Vector, Fluent Bit or Cribl). No log forwarder or
+second aggregator is needed, and the receiver writes no event files, so there is nothing to
+rotate. Why, and why the `--out-dir` file output isn't for production yet:
+[ADR-0003](../decisions/0003-receiver-to-siem-delivery.md). The SIEM needs:
 
 * **Indexes** (or the SIEM's equivalent): one for the imported events and one for `wd2l`
   health records. **Every index name Enclave 1 uses must exist**, and the token must be allowed to

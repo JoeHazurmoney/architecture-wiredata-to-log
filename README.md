@@ -75,7 +75,9 @@ The design is product-neutral: any log aggregator, network tap and SIEM that fil
 work. The proof of concept was built against Cribl Stream (aggregator) and Splunk (SIEM) as
 examples.
 
-Start with [docs/architecture.md](docs/architecture.md).
+Start with [docs/architecture.md](docs/architecture.md). Design choices, and the options weighed
+for each, are recorded as Architecture Decision Records (ADRs) in
+[docs/decisions/](docs/decisions/).
 
 ## Repo map
 
@@ -91,7 +93,7 @@ Start with [docs/architecture.md](docs/architecture.md).
 | `deploy/log-server/` | Egress NIC script, nftables, systemd units |
 | `deploy/switch/` | Black-hole port config (example for one switch platform) |
 | `deploy/receiver/` | Capture NIC script, tcpdump archive, receiver unit, example SIEM configs (Splunk) |
-| `docs/` | Architecture, wire format, interface description (ICD input), deployment guides, operations and planned-downtime runbooks, accreditation notes, decision records (`docs/decisions/`) |
+| `docs/` | Architecture, wire format, interface description (ICD input), deployment guides, operations and planned-downtime runbooks, accreditation notes, Architecture Decision Records (ADRs, `docs/decisions/`) |
 | `lab/` | Whole path simulated with Linux network namespaces |
 | `samples/` | Real `messages`, `secure` and `audit.log` sample logs, and the script that generated them |
 | `tests/` | Unit, fuzz and end-to-end tests |
@@ -99,7 +101,7 @@ Start with [docs/architecture.md](docs/architecture.md).
 ## Try it
 
 ```bash
-pip install pytest && python3 -m pytest          # 141 tests, no root needed
+pip install pytest && python3 -m pytest          # 143 tests, no root needed
 
 sudo lab/run-lab.sh                               # full path in network namespaces
 sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly

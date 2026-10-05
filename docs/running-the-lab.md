@@ -57,7 +57,7 @@ If the repository is private, git will ask you to sign in to GitHub.
 python3 -m pytest
 ```
 
-These run without root and take about 25 seconds. You should see `141 passed`.
+These run without root and take about 25 seconds. You should see `143 passed`.
 
 ## 5. Run the lab
 
