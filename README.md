@@ -1,4 +1,4 @@
-# architecture-wiredata-to-log
+# Architecture: wiredata-to-log
 
 **Problem.** Some environments must move security telemetry between enclaves that may not
 communicate in both directions: an operational or mission network monitored from a separate
