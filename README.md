@@ -6,6 +6,12 @@ security enclave, or any boundary where policy, accreditation or physics rules o
 Conventional log transport assumes the opposite. It relies on handshakes, acknowledgements and
 retransmission, none of which can cross a one-way link.
 
+**Direction.** Data moves only from Enclave 1 to Enclave 2, and Enclave 2 must be at the same or
+a higher sensitivity level than Enclave 1, never a lower one. The difference can be
+classification levels, an untrusted network feeding a trusted one (for example, logs collected
+in a DMZ and sent into the internal network), or any similar distinction. Two separate enclaves
+at the same level qualify too.
+
 **Approach.** This repository presents an architecture and proof of concept that removes that
 assumption. The wire itself is the transport. Enclave 1 emits each log event as sequenced,
 self-verifying UDP datagrams toward an address that never answers. A network tap copies that cable

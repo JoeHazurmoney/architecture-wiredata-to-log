@@ -96,9 +96,9 @@ flowchart LR
     persistent queue, so a retention-server outage never holds up the transfer.
 12. **Flag content that can't be inspected; don't drop it.** The sender looks for long encrypted,
     compressed or random-looking blobs in each event and tags them (`wd2l_opaque`). Tagged events
-    cross unchanged and the SIEM alerts on them. Both enclaves are at the same level, so
-    visibility is the goal, and dropping would break "detect and report". It's a tripwire for
-    blobs, not proof that nothing is hidden. See
+    cross unchanged and the SIEM alerts on them. Given the direction rule in the
+    [README](../README.md), visibility is the goal, and dropping would break "detect and report".
+    It's a tripwire for blobs, not proof that nothing is hidden. See
     [ADR-0002](decisions/0002-opaque-content.md).
 
 ## Data path details

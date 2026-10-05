@@ -18,6 +18,7 @@ developer reference and holds the receiver's sequencing rules.
 |---|---|
 | Interface | Log transfer, Enclave 1 central log server → Enclave 2 receiver host |
 | Direction | One way (simplex), Enclave 1 → Enclave 2. No return path at any layer |
+| Sensitivity levels | See the [README](../README.md) |
 | How one-way is enforced | Physically: only the network tap monitor port's transmit strand is connected to Enclave 2 |
 | Protocol stack | WD2L v1 frame / UDP / IPv4 / Ethernet II / fiber |
 | Sender | `wd2l-sender` on the central log server, egress NIC, `10.255.255.1`, UDP port `5514` |
@@ -295,8 +296,8 @@ All of these go to the SIEM as `sourcetype=wd2l:health` records, with alerts
   * the receiver's capture NIC has no IP address and no ARP;
   * an egress filter on it drops anything the host tries to send;
   * the black-hole switch port drops all ingress.
-* **Confidentiality:** not encrypted. Both enclaves are at the same level, and the log server,
-  cable and tap are under Enclave 1 physical and administrative controls.
+* **Confidentiality:** not encrypted. The log server, cable and tap are under Enclave 1 physical
+  and administrative controls.
 * **Integrity:** CRC-32 per packet and SHA-256 per event detect accidental corruption. They use no
   key, so they don't prove who sent the data.
 * **Authenticity:** none on the wire. Physical and administrative controls on the log server,
