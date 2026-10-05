@@ -1,7 +1,24 @@
 # architecture-wiredata-to-log
 
-Architecture and proof of concept for moving logs **one way (physically and logically)** from Enclave 1 to
-Enclave 2 by tapping a cable and rebuilding the logs from the raw packets.
+**Problem.** Some environments must move security telemetry between enclaves that may not
+communicate in both directions: an operational or mission network monitored from a separate
+security enclave, or any boundary where policy, accreditation or physics rules out a return path.
+Conventional log transport assumes the opposite. It relies on handshakes, acknowledgements and
+retransmission, none of which can cross a one-way link.
+
+**Approach.** This repository presents an architecture and proof of concept that removes that
+assumption. The wire itself is the transport. Enclave 1 emits each log event as sequenced,
+self-verifying UDP datagrams toward an address that never answers. A network tap copies that cable
+to Enclave 2 over a single transmit-only fiber strand, and Enclave 2 reconstructs every event from
+the raw captured packets. Completeness is shown by sequence numbers and heartbeats, not
+acknowledgements: every event is accounted for as either delivered intact or explicitly reported
+lost. Recovery is by replay, from a packet archive in Enclave 2 or a one-year event store in
+Enclave 1.
+
+**Result.** In a network-namespace model of the full path, real system logs were rebuilt byte for
+byte (identical SHA-256). With 1% injected packet loss, every lost event was reported by exact
+sequence number, with no false reports. No frame ever traveled from Enclave 2 back toward
+Enclave 1.
 
 ```mermaid
 flowchart TB
