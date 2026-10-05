@@ -1,6 +1,6 @@
 # architecture-wiredata-to-log
 
-Architecture and proof of concept for moving logs **one way** from Enclave 1 to
+Architecture and proof of concept for moving logs **one way (physically and logically)** from Enclave 1 to
 Enclave 2 by tapping a cable and rebuilding the logs from the raw packets.
 
 ```mermaid
