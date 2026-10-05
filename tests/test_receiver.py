@@ -179,6 +179,18 @@ def test_other_traffic_is_counted():
     assert r.counters["other_packets"] == 1 and "udp 10.255.255.3:67" in r.other_reasons
 
 
+def test_source_port_filter():
+    from wd2l import packets
+    r, out = rx(src_port=5514)
+    feed(r, ev(1), 0)  # helpers.eth sends from port 40000
+    assert r.counters["other_packets"] == 1 and "udp from 10.255.255.1:40000" in r.other_reasons
+    assert out.events == []
+    for dg in ev(2):
+        r.handle_frame(packets.build_udp_frame("02:00:00:00:00:01", "02:00:00:00:00:02",
+                                               "10.255.255.1", "10.255.255.2", 5514, 5514, dg), 0)
+    assert [s for _, s, _ in out.events] == [2]
+
+
 def test_state_survives_restart(tmp_path):
     state = str(tmp_path / "state.json")
     r, out = rx(state_path=state, gap_window=1)

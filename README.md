@@ -1,7 +1,30 @@
-# architecture-wiredata-to-log
+# Architecture: wiredata-to-log
 
-Architecture and proof of concept for moving logs **one way** from Enclave 1 to
-Enclave 2 by tapping a cable and rebuilding the logs from the raw packets.
+**Problem.** Some environments must move security telemetry between enclaves that may not
+communicate in both directions: an operational or mission network monitored from a separate
+security enclave, or any boundary where policy, accreditation or physics rules out a return path.
+Conventional log transport assumes the opposite. It relies on handshakes, acknowledgements and
+retransmission, none of which can cross a one-way link.
+
+**Direction.** Data moves only from Enclave 1 to Enclave 2, and Enclave 2 must be at the same or
+a higher sensitivity level than Enclave 1, never a lower one. The difference can be
+classification levels, an untrusted network feeding a trusted one (for example, logs collected
+in a DMZ and sent into the internal network), or any similar distinction. Two separate enclaves
+at the same level qualify too.
+
+**Approach.** This repository presents an architecture and proof of concept that removes that
+assumption. The wire itself is the transport. Enclave 1 emits each log event as sequenced,
+self-verifying UDP datagrams toward an address that never answers. A network tap copies that cable
+to Enclave 2 over a single transmit-only fiber strand, and Enclave 2 reconstructs every event from
+the raw captured packets. Completeness is shown by sequence numbers and heartbeats, not
+acknowledgements: every event is accounted for as either delivered intact or explicitly reported
+lost. Recovery is by replay, from a packet archive in Enclave 2 or a one-year event store in
+Enclave 1.
+
+**Result.** In a network-namespace model of the full path, real system logs were rebuilt byte for
+byte (identical SHA-256). With 1% injected packet loss, every lost event was reported by exact
+sequence number, with no false reports. No frame ever traveled from Enclave 2 back toward
+Enclave 1.
 
 ```mermaid
 flowchart TB
@@ -52,7 +75,9 @@ The design is product-neutral: any log aggregator, network tap and SIEM that fil
 work. The proof of concept was built against Cribl Stream (aggregator) and Splunk (SIEM) as
 examples.
 
-Start with [docs/architecture.md](docs/architecture.md).
+Start with [docs/architecture.md](docs/architecture.md). Design choices, and the options weighed
+for each, are recorded as Architecture Decision Records (ADRs) in
+[docs/decisions/](docs/decisions/).
 
 ## Repo map
 
@@ -68,7 +93,7 @@ Start with [docs/architecture.md](docs/architecture.md).
 | `deploy/log-server/` | Egress NIC script, nftables, systemd units |
 | `deploy/switch/` | Black-hole port config (example for one switch platform) |
 | `deploy/receiver/` | Capture NIC script, tcpdump archive, receiver unit, example SIEM configs (Splunk) |
-| `docs/` | Architecture, wire format, deployment guides, operations runbook, accreditation notes, decision records (`docs/decisions/`) |
+| `docs/` | Architecture, wire format, interface description (ICD input), deployment guides, operations and planned-downtime runbooks, accreditation notes, Architecture Decision Records (ADRs, `docs/decisions/`) |
 | `lab/` | Whole path simulated with Linux network namespaces |
 | `samples/` | Real `messages`, `secure` and `audit.log` sample logs, and the script that generated them |
 | `tests/` | Unit, fuzz and end-to-end tests |
@@ -76,12 +101,13 @@ Start with [docs/architecture.md](docs/architecture.md).
 ## Try it
 
 ```bash
-pip install pytest && python3 -m pytest          # 138 tests, no root needed
+pip install pytest && python3 -m pytest          # 143 tests, no root needed
 
 sudo lab/run-lab.sh                               # full path in network namespaces
 sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly
 sudo lab/run-lab.sh --receiver-outage             # receiver stopped mid-run, archive replay fills it
 sudo lab/run-lab.sh --receiver-crash              # receiver killed mid-run: nothing lost
+sudo lab/run-lab.sh --maintenance                 # planned downtime: stop and start both sides, nothing lost
 sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
                                                   # real logs: rebuilt files must hash the same
 sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log
@@ -101,6 +127,11 @@ The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `pyt
    source, wd2l audit files
 4. [Receiver](docs/deployment/receiver.md): capture NIC, archive, `wd2l-receiver`, SIEM
 5. [Operations](docs/operations.md): health records, alerts, replay, re-send
+6. [Planned downtime](docs/planned-downtime.md): stopping and starting the sender and receiver
+   cleanly for patching, reboots and link work
+
+What crosses between the enclaves, packet by packet, for the interface control document (ICD):
+[docs/interface-description.md](docs/interface-description.md).
 
 ## Status
 

@@ -1,7 +1,12 @@
 # Wire format (WD2L version 1)
 
-One UDP datagram carries one frame. Default destination `10.255.255.2:5514`. All integers are
-big-endian. The implementation is `wd2l/wire.py`.
+One UDP datagram carries one frame, from `10.255.255.1:5514` to `10.255.255.2:5514`. All
+integers are big-endian. The implementation is `wd2l/wire.py`.
+
+This page is the developer reference for the frame and the receiver's rules. For the whole packet
+(Ethernet, IPv4 and UDP headers included), every field's type, size and range, rates, and
+annotated captures, written for the interface control document, see
+[interface-description.md](interface-description.md).
 
 ## Frame
 
@@ -55,10 +60,13 @@ aggregator sent, so only the sender can set them. See
 One piece, JSON, sent every second and once more on clean shutdown:
 
 ```json
-{"events_sent":5001,"datagrams_sent":8673,"sender_drops":0,"truncated":1,"bad_input":0,
- "send_errors":0,"shutdown_unread_bytes":0,"sender_time":1790360018.66,"uptime":12.3,
- "boot":42,"prev_stream":9140175346201236511,"prev_last_seq":1837204,"final":true}
+{"bad_input":0,"boot":42,"datagrams_sent":8673,"events_sent":5001,"final":true,
+ "opaque_events":0,"prev_last_seq":1837204,"prev_stream":9140175346201236511,"send_errors":0,
+ "sender_drops":0,"sender_time":1790360018.66,"shutdown_unread_bytes":0,"truncated":1,
+ "uptime":12.3}
 ```
+
+Keys are sent in sorted order, as shown.
 
 `seq` in the header is the last event number sent. That's what lets the receiver notice events
 lost at the very end of a burst, when nothing newer arrives to reveal the hole. `final` is present

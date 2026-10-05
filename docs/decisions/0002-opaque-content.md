@@ -14,8 +14,9 @@ that it's encrypted, and what should we do about it?
 * Encrypted data in a log can be harmless (a certificate, a compressed debug dump, a token an
   application logs), evidence an analyst needs (malware traffic in a proxy log), or a way to move
   information that shouldn't move.
-* Enclave 1 and Enclave 2 are at the **same sensitivity level**. So this is mainly a question of
-  visibility and policy: nothing moves to a less trusted place, and nothing that crosses is run.
+* The flow's direction relative to each enclave's sensitivity follows the rule in the
+  [README](../../README.md). So this is mainly a question of visibility and policy, and nothing
+  that crosses is run.
 * Constraints: losses are detected and reported, never silent. The link is one-way. Volume is
   under 1,000 events/s. The sender uses only the Python standard library.
 
@@ -111,8 +112,8 @@ release.
 
 ## Trade-off analysis
 
-* **Same sensitivity on both sides.** The main value is visibility, so flagging gives most of
-  the benefit at the least cost.
+* **Direction of the flow.** Under the README's direction rule, the main value is visibility, so
+  flagging gives most of the benefit at the least cost.
 * **Detect and report.** B keeps every event. D turns some into stubs. A hides the question.
 * **The SOC needs the blobs.** Encrypted command-and-control traffic in a proxy log is evidence.
   C and D take it away from analysts.
@@ -131,8 +132,7 @@ release.
   encrypted payloads). Each source needs a one-time review and, if it's benign, a note or a
   suppression in the alert.
 * **Revisit when:**
-  1. one enclave becomes more sensitive than the other (then hold, option D, for traffic toward
-     the less sensitive side);
+  1. the direction rule in the [README](../../README.md) changes;
   2. the ISSO tailors in AC-4(4) or AC-4(15) enforcement (then C or D);
   3. the alerts, or a review, show a real channel.
 

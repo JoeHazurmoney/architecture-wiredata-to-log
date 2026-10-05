@@ -6,6 +6,7 @@ the risks that remain. This is an engineering write-up, not a formal assessment.
 ## The transfer
 
 * **Direction:** Enclave 1 → Enclave 2 only. Content: log events (text) and heartbeat counters.
+* **Sensitivity levels:** see the [README](../README.md).
 * **Enclave 1:** central log server (log aggregator + `wd2l-sender`), black-hole switch port, network tap.
   Also in Enclave 1, but off the transfer path: the log retention server, which keeps a 1-year
   copy of everything the aggregator collects and is the source for replaying lost events.
@@ -83,7 +84,7 @@ aggregator, but no gap record points to them.
 
 ## Encrypted or opaque content
 
-Both enclaves are at the same sensitivity level, so encrypted content in a log is mainly a
+Given the direction rule in the [README](../README.md), encrypted content in a log is mainly a
 visibility question. [ADR-0002](decisions/0002-opaque-content.md) has the full reasoning.
 
 * **What is detected:** `wd2l-sender` flags events whose text carries a long blob that can't be

@@ -58,7 +58,8 @@ this is the intent.
    use bypass/failsafe so a tap power loss doesn't take the link down.
 2. **Filter** to the Enclave 2 monitor port, if the tap can filter. Pass only:
    * direction: log server → switch (the copy of the switch's receive side), and
-   * IPv4, source `10.255.255.1`, destination `10.255.255.2`, UDP destination port `5514`.
+   * IPv4, source `10.255.255.1`, destination `10.255.255.2`, UDP source and destination port
+     `5514`.
 
    Drop everything else. A tap that can't filter is also fine: the switch-port isolation keeps
    that cable nearly silent anyway, and the receiver counts any stray packets (`other_packets`), so
@@ -81,7 +82,7 @@ this is the intent.
 * On the switch: `show access-lists WD2L-DROP-ALL`. The deny counter climbs at the log rate.
   `show lldp neighbors`: the log server isn't listed.
 * On the receiver: `tcpdump -i ens256 -nn -c 20` shows only
-  `10.255.255.1.x > 10.255.255.2.5514: UDP`.
+  `10.255.255.1.5514 > 10.255.255.2.5514: UDP`.
 * In the Enclave 2 SIEM: `other_packets` stays 0 in `sourcetype=wd2l:health`.
 * Physically: with the fiber pulled at the receiver end, check with a light meter that no light is
   coming from the receiver NIC's TX port toward Enclave 1. Better still, that strand isn't

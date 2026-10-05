@@ -9,6 +9,11 @@ gap. Nothing else may show up.
 Each received event must also carry its send time (wd2l_tx_time, part of what the sender put on
 the wire) and its arrival time (wd2l_rx_time, added in Enclave 2). The difference is reported as
 the link delay.
+
+With --sender-runs N the sender was stopped and started again in between (planned downtime).
+Each run numbers its events from 1 again, so run k's events continue the file where run k-1
+ended (the last_seq of its stream_end record). Every run but the last must have ended cleanly
+with no input left unread, and nothing may be reported lost, missing or reset.
 """
 
 import argparse
@@ -50,7 +55,13 @@ def main():
                    help="the sender ran with --source-seq (per-file line numbers)")
     p.add_argument("--extra-field", action="append", default=[],
                    help="extra field the sender was told to carry (same as wd2l-sender)")
+    p.add_argument("--sender-runs", type=int, default=1,
+                   help="the sender was stopped and started again: expect this many runs, "
+                        "linked, with nothing lost in between")
     a = p.parse_args()
+    if a.sender_runs > 1 and a.source_seq:
+        p.error("--sender-runs can't be combined with --source-seq (line numbers restart "
+                "with each sender run)")
 
     extra = list(a.extra_field) + (["wd2l_src_seq"] if a.source_seq else [])
     fitter = Sender(("127.0.0.1", 9), sock=_NoSock(), max_event=a.max_event, rate_pps=0,
@@ -77,14 +88,45 @@ def main():
     streams = {g["wd2l_stream"] for g in got}
 
     problems = []
-    if len(streams) > 1:
-        problems.append("expected one sender stream, saw %d" % len(streams))
+    # Sender runs in the order Enclave 2 first saw them, and where each run's numbers start in
+    # the sent file.
+    runs = list(dict.fromkeys(h["stream"] for h in health if h["type"] == "stream_start"))
+    ends = {h["stream"]: h for h in health if h["type"] == "stream_end"}
+    offset = {}
+    if a.sender_runs == 1:
+        if len(streams) > 1:
+            problems.append("expected one sender stream, saw %d" % len(streams))
+        offset = dict.fromkeys(streams | set(runs), 0)
+    else:
+        seen_runs = set(runs) | streams
+        if len(runs) != a.sender_runs or len(seen_runs) != a.sender_runs:
+            problems.append("expected %d sender runs, saw %d" % (a.sender_runs, len(seen_runs)))
+        received_max = {}
+        for g in got:
+            s = g["wd2l_stream"]
+            received_max[s] = max(received_max.get(s, 0), g["wd2l_seq"])
+        base = 0
+        for s in runs:
+            offset[s] = base
+            if s in ends:
+                base += ends[s]["last_seq"]
+            else:
+                if s != runs[-1]:
+                    problems.append("sender run %s did not end cleanly (no stream_end)" % s)
+                base += received_max.get(s, 0)  # best guess, so later runs still line up
+        for s, h in ends.items():
+            unread = h.get("sender", {}).get("shutdown_unread_bytes")
+            if unread:
+                problems.append("sender run %s stopped with %s bytes of input unread" % (s, unread))
+        for kind in ("stream_lost", "stream_missing", "sender_boot_reset"):
+            n = sum(h["type"] == kind for h in health)
+            if n:
+                problems.append("%d %s record(s)" % (n, kind))
     seen = {}
     dups = 0
     delays = []
     for g in got:
-        seq = g.pop("wd2l_seq")
-        g.pop("wd2l_stream")
+        seq = offset.get(g.pop("wd2l_stream"), 0) + g.pop("wd2l_seq")
         # The arrival time is added in Enclave 2, so it is checked apart from the wire content.
         fields = g.get("fields", {})
         rx, tx = fields.pop("wd2l_rx_time", None), fields.get("wd2l_tx_time")
@@ -108,14 +150,16 @@ def main():
         with open(a.state) as f:
             st = json.load(f)
         open_gaps = set()
-        for s in st["streams"].values():
+        for sid, s in st["streams"].items():
+            base = offset.get(sid, 0)
             for lo, hi in s["gaps"]:
-                open_gaps |= set(range(lo, hi + 1))
+                open_gaps |= set(range(base + lo, base + hi + 1))
     else:
         open_gaps = set()
         for h in health:
             if h["type"] == "gap":
-                open_gaps |= set(range(h["first_seq"], h["last_seq"] + 1))
+                base = offset.get(h["stream"], 0)
+                open_gaps |= set(range(base + h["first_seq"], base + h["last_seq"] + 1))
 
     missing = set(sent_by_seq) - set(seen)
     if missing - open_gaps:
@@ -137,6 +181,12 @@ def main():
     flagged = sorted(s for s, e in seen.items() if "wd2l_opaque" in e.get("fields", {}))
 
     print("sent:            %d" % len(sent_by_seq))
+    if a.sender_runs > 1:
+        print("sender runs:     %s" % ", ".join(
+            "%s (%s events, input unread at stop: %s)"
+            % (s, ends[s]["last_seq"] if s in ends else "?",
+               ends[s].get("sender", {}).get("shutdown_unread_bytes") if s in ends else "?")
+            for s in runs))
     print("received:        %d" % len(seen))
     print("duplicates:      %d" % dups)
     print("gaps (reported): %d" % len(open_gaps))

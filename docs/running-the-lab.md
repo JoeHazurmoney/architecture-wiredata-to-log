@@ -57,7 +57,7 @@ If the repository is private, git will ask you to sign in to GitHub.
 python3 -m pytest
 ```
 
-These run without root and take about 25 seconds. You should see `138 passed`.
+These run without root and take about 25 seconds. You should see `143 passed`.
 
 ## 5. Run the lab
 
@@ -68,6 +68,7 @@ sudo lab/run-lab.sh                             # clean run
 sudo lab/run-lab.sh --loss 1                    # drop 1% of packets on the "cable"
 sudo lab/run-lab.sh --receiver-outage           # stop the receiver mid-run, then replay the archive
 sudo lab/run-lab.sh --receiver-crash            # kill the receiver mid-run, then replay the archive
+sudo lab/run-lab.sh --maintenance               # planned downtime: stop and restart both sides
 sudo lab/run-lab.sh --events 25000 --eps 5000   # more logs, faster
 ```
 
@@ -98,6 +99,7 @@ What each run proves:
 | `--loss 1` | Some logs are lost, and every one is reported by number. PASS means nothing went missing unreported and nothing was falsely reported as missing. |
 | `--receiver-outage` | The receiver misses about 2 seconds of logs, then replay from the packet archive fills them in with no duplicates. |
 | `--receiver-crash` | Same, but the receiver is killed with no chance to clean up. Nothing is lost; some logs arrive twice (the `duplicates` line), which is allowed here because they are identical and carry the same sequence number. |
+| `--maintenance` | Planned downtime, in the order of [planned-downtime.md](planned-downtime.md). Half the logs are sent. The stand-in aggregator stops, the sender stops, then the receiver and the capture stop as if the receiver host were going down. Everything starts again in reverse order and the rest is sent. The `sender runs` line shows two runs, each with `input unread at stop: 0`. No gaps, no replay. |
 
 Every run also checks two things:
 

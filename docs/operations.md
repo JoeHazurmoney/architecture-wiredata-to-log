@@ -160,6 +160,8 @@ Reading the numbers:
 
 ## Routine
 
+* **Planned downtime** (patching, reboots, link work): stop and start in the order given in
+  [planned-downtime.md](planned-downtime.md) and nothing is lost or needs replaying.
 * **Sender restarts** start a new stream. You'll see `stream_end` (clean) or `stream_lost` (crash)
   for the old one, and `stream_start` for the new one. Not a problem. With `--state` the new run
   names the old one, so a lost tail shows up as a `gap` and a run that never arrived as
@@ -187,6 +189,7 @@ sudo lab/run-lab.sh                     # clean run: 0 gaps, byte-for-byte match
 sudo lab/run-lab.sh --loss 1            # 1% wire loss: every lost event reported exactly
 sudo lab/run-lab.sh --receiver-outage   # stop the receiver mid-run, then replay: nothing lost
 sudo lab/run-lab.sh --receiver-crash    # kill it instead: nothing lost, a few duplicates
+sudo lab/run-lab.sh --maintenance       # planned downtime on both sides: nothing lost, no replay
 sudo lab/run-lab.sh --events 25000 --eps 5000
 ```
 

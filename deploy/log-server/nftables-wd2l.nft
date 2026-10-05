@@ -7,6 +7,8 @@ define WD2L_IF = "ens224"
 define WD2L_SRC = 10.255.255.1
 define WD2L_BH = 10.255.255.2
 define WD2L_PORT = 5514
+# wd2l-sender's fixed source port (--bind 10.255.255.1:5514 in wd2l-sender.service).
+define WD2L_SPORT = 5514
 
 table inet wd2l {
     chain input {
@@ -15,7 +17,7 @@ table inet wd2l {
     }
     chain output {
         type filter hook output priority filter; policy accept;
-        oifname $WD2L_IF meta skuid "wd2l" ip saddr $WD2L_SRC ip daddr $WD2L_BH udp dport $WD2L_PORT accept
+        oifname $WD2L_IF meta skuid "wd2l" ip saddr $WD2L_SRC ip daddr $WD2L_BH udp sport $WD2L_SPORT udp dport $WD2L_PORT accept
         oifname $WD2L_IF counter drop comment "only wd2l-sender may use this NIC"
     }
 }
@@ -38,6 +40,6 @@ table arp wd2l_arp {
 table netdev wd2l_egress {
     chain out {
         type filter hook egress device $WD2L_IF priority filter; policy drop;
-        ip saddr $WD2L_SRC ip daddr $WD2L_BH udp dport $WD2L_PORT accept
+        ip saddr $WD2L_SRC ip daddr $WD2L_BH udp sport $WD2L_SPORT udp dport $WD2L_PORT accept
     }
 }
