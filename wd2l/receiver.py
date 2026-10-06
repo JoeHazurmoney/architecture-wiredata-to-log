@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import platform
+import re
 import shlex
 import signal
 import time
@@ -27,6 +28,7 @@ from . import __version__, fault, hostinfo, logsetup, packets, wire
 from . import audit as auditlog
 from .audit import Summarizer
 from .outputs import FileOutput, HecOutput, MultiOutput, Output
+from .reconcile import StreamReconciler
 
 log = logging.getLogger("wd2l.receiver")
 
@@ -36,6 +38,7 @@ MAX_RETIRED = 10000
 MAX_REASONS = 32
 STATE_VERSION = 2
 RX_TIME_FIELD = "wd2l_rx_time"
+HEX64 = re.compile(r"[0-9a-f]{64}")
 
 # Health records that are also audit events (§6), with their outcome.
 AUDITED_HEALTH = {"gap": "failure", "stream_start": "info", "stream_end": "success",
@@ -138,6 +141,7 @@ class StreamTracker:
         self.linked = False               # its link to the previous stream has been checked
         self.records = False   # the sender's records stream (flags bit 0)
         self.clock_offset: Optional[float] = None   # receiver minus sender clock, last heartbeat
+        self.rc = StreamReconciler()
 
     def needed(self, seq: int) -> bool:
         if seq < self.lo:
@@ -231,7 +235,7 @@ class StreamTracker:
                 "last_seen": self.last_seen, "final": self.final,
                 "lost_reported": self.lost_reported, "hb": self.hb,
                 "delivered": self.delivered, "boot": self.boot, "linked": self.linked,
-                "records": self.records}
+                "records": self.records, "rc": self.rc.to_json()}
 
     @classmethod
     def from_json(cls, sid: int, d: Dict[str, Any]) -> "StreamTracker":
@@ -252,6 +256,7 @@ class StreamTracker:
         t.boot = int(boot) if isinstance(boot, int) else None
         t.linked = bool(d.get("linked", False))
         t.records = bool(d.get("records", False))
+        t.rc = StreamReconciler.from_json(d.get("rc"))
         return t
 
 
@@ -414,6 +419,8 @@ class Receiver:
         self.max_skew_s = max_skew_s
         self.faults = fault.FaultTracker(fault_window)
         self.last_fault: Optional[float] = None
+        self.last_rc: Optional[float] = None
+        self.last_rc_hourly: Optional[float] = None
         self.gap_by_reason: Dict[str, int] = {}
         self.proc = hostinfo.ProcStats()
         self.sample: Dict[str, Any] = {}
@@ -505,6 +512,7 @@ class Receiver:
             self.counters["duplicates"] += 1
             return
         if res == "late":
+            t.rc.filled += 1
             self.counters["late_fills"] += 1
             self.summary.note("gap_filled", {"stream": "%016x" % f.stream_id},
                               seq_first=f.seq, seq_last=f.seq)
@@ -512,6 +520,7 @@ class Receiver:
             self._deliver_record(evt, f.stream_id, f.seq)
             self.dirty = True
             return
+        t.rc.delivered(f.seq, f.digest)
         if self.rx_time:
             evt["fields"] = dict(evt.get("fields", {}), **{RX_TIME_FIELD: round(self._wall(now), 3)})
         self.out.event(evt, f.stream_id, f.seq)
@@ -546,6 +555,7 @@ class Receiver:
         if sid in self.retired:
             t = self._restore(sid, now)
             t.records = records
+            t.rc.enabled = not records
             return t
         # Only data streams are history: a records stream must not make a new receiver report
         # the runs before it as missing.
@@ -553,6 +563,7 @@ class Receiver:
             self.had_history = True
         t = StreamTracker(sid, now)
         t.records = records
+        t.rc.enabled = not records
         self._add(t, now)
         log.info("new %sstream %016x", "records " if records else "", sid,
                  extra={"stream": "%016x" % sid})
@@ -570,6 +581,7 @@ class Receiver:
         treated as delivered, so replayed copies are dropped as duplicates."""
         known, final = self.retired.pop(sid)
         t = StreamTracker(sid, now)
+        t.rc = StreamReconciler(enabled=False)
         t.lo, t.known, t.final = int(known) + 1, int(known), bool(final)
         t.lost_reported = t.linked = True
         self._add(t, now)
@@ -611,8 +623,12 @@ class Receiver:
             self.counters["bad_frames"] += 1
             self._bump(self.bad_reasons, "bad heartbeat json")
             return
+        eh = info.get("events_hash")
         info = {k: v for k, v in info.items()
                 if isinstance(k, str) and isinstance(v, (int, float, bool))}
+        if isinstance(eh, str) and HEX64.fullmatch(eh) and not t.records:
+            info["events_hash"] = eh
+            t.rc.cut(f.seq, eh)
         # A 64-bit id is kept out of the stored counters: SIEMs read JSON numbers as floats.
         prev = info.pop("prev_stream", None)
         self.counters["heartbeats"] += 1
@@ -662,6 +678,7 @@ class Receiver:
             elif self.had_history:
                 prev_known = True
                 p = StreamTracker(prev, now)
+                p.rc = StreamReconciler(enabled=False)
                 p.boot, p.lost_reported, p.linked = boot - 1, True, True
                 p._raise_known(prev_last, now)  # all of it becomes a gap after the window
                 self._add(p, now)
@@ -714,6 +731,9 @@ class Receiver:
         if (self.state_path and (self.dirty or self.saved_with_pending)
                 and time.monotonic() - self.last_save >= 1.0):
             self.save_state()
+        if self.last_rc is None or now - self.last_rc >= 1.0:
+            self.last_rc = now
+            self._reconcile(now)
         if self.fault_interval and (self.last_fault is None
                                     or now - self.last_fault >= self.fault_interval):
             self.last_fault = now
@@ -725,6 +745,43 @@ class Receiver:
                 self.last_audit = now
                 self.audit_periodic()
             self._drain_audit()
+
+    def _reconcile(self, now: float) -> None:
+        """Settle what the outputs made durable, compare at ready cuts, write reconcile records:
+        for ended streams whenever (cut, balanced) changes, and hourly for the rest."""
+        pending = self._pending()
+        hourly = self.last_rc_hourly is not None and now - self.last_rc_hourly >= 3600
+        if self.last_rc_hourly is None or hourly:
+            self.last_rc_hourly = now
+        for t in list(self.streams.values()):
+            if t.records or not t.rc.enabled:
+                continue
+            t.rc.settle(pending.get(t.stream_id, set()))
+            res = t.rc.check(t.lo, t.gaps)
+            last = t.rc.last
+            if last is None:
+                continue
+            ended = t.final and t.lo > t.known and last["cut"] == t.known
+            key = (last["cut"], last["balanced"])
+            if (ended and res is not None and key != t.rc.written) or (
+                    hourly and (now - t.last_seen < 3600 or not last["balanced"])):
+                self._reconcile_record(t, last, now)
+
+    def _reconcile_record(self, t: StreamTracker, res: Dict[str, Any], now: float) -> None:
+        """A health record for the dashboard and, when auditing, the full audit record."""
+        sid = "%016x" % t.stream_id
+        self._health_record("reconcile", now, stream=sid, cut=res["cut"],
+                            balanced=res["balanced"], gaps_open=t.gaps.count(),
+                            events_delivered=t.delivered)
+        if self.audit is not None:
+            self.audit.write(
+                "reconcile", "success" if res["balanced"] else "failure",
+                stream=sid, cut=res["cut"], events_in=t.hb.get("events_in"),
+                events_sent=t.hb.get("events_sent"), events_delivered=t.delivered,
+                gaps_open=t.gaps.count(), gaps_filled=t.rc.filled, last_seq=t.known,
+                sender_hash=res["sender_hash"], receiver_hash=res["receiver_hash"],
+                balanced=res["balanced"])
+        t.rc.written = (res["cut"], res["balanced"])
 
     def _evaluate_faults(self, now: float) -> None:
         data = [t for t in self.streams.values() if not t.records]
@@ -799,6 +856,8 @@ class Receiver:
             log.error("output gave up on %d events of stream %016x", len(seqs), sid)
             t = self.streams.get(sid)
             if t is not None:
+                for s in seqs:
+                    t.rc.dropped(s)
                 self._report_gaps(t, t.reopen(seqs), now, reason="output_dropped")
 
     def _report_gaps(self, t: StreamTracker, declared: List[Tuple[int, int]], now: float,
@@ -842,7 +901,9 @@ class Receiver:
             streams["%016x" % t.stream_id] = {
                 "next_seq": t.lo, "known_seq": t.known, "open_gap_events": t.gaps.count(),
                 "final": t.final, "idle_s": round(now - t.last_seen, 1), "boot": t.boot,
-                "clock_offset_s": t.clock_offset, "sender": t.hb, **self._flag(t)}
+                "clock_offset_s": t.clock_offset, "sender": t.hb,
+                "reconcile": ({"cut": t.rc.last["cut"], "balanced": t.rc.last["balanced"]}
+                              if t.rc.last else None), **self._flag(t)}
         ref = self.last_hb if self.last_hb is not None else self.started
         rec = dict(self.counters, **self.reasm.counters, **self._stats())
         # Flat totals so SIEM alerts don't have to dig into the per-stream map.
@@ -854,7 +915,9 @@ class Receiver:
                    sender_opaque_events=sum(int(t.hb.get("opaque_events", 0)) for t in live),
                    sender_bad_input=sum(int(t.hb.get("bad_input", 0)) for t in live),
                    sender_unread_bytes=sum(int(t.hb.get("shutdown_unread_bytes", 0)) for t in live),
-                   sender_events_in=sum(int(t.hb.get("events_in", 0)) for t in live))
+                   sender_events_in=sum(int(t.hb.get("events_in", 0)) for t in live),
+                   reconcile_unbalanced=sum(1 for t in self.streams.values()
+                                            if t.rc.last and not t.rc.last["balanced"]))
         rec.update(type="health", time=round(self._wall(now), 3),
                    streams=streams, retired_streams=len(self.retired),
                    clock_offset_s=self.last_clock_offset,
@@ -923,6 +986,8 @@ class Receiver:
         self.reasm.expire(now, force=True)
         for t in self.streams.values():
             self._report_gaps(t, t.declare(now, self.gap_window, force=True), now)
+        self.flush()
+        self._reconcile(now)
         rec = self.emit_health(now)
         if on_end is not None:
             on_end(rec)
@@ -934,6 +999,8 @@ class Receiver:
         output could not make durable is saved as uncommitted and reported on the next start."""
         if health:
             self.emit_health(now)
+        self.flush()
+        self._reconcile(now)
         self._drain_audit()
         for o in self.outputs:
             o.close()
@@ -947,6 +1014,8 @@ class Receiver:
         pending = self._pending()
         for sid, seq in extra_uncommitted:
             pending.setdefault(sid, set()).add(seq)
+        for sid, t in self.streams.items():
+            t.rc.settle(pending.get(sid, set()))
         streams = {}
         for sid, t in self.streams.items():
             d = t.to_json()
