@@ -1,0 +1,9 @@
+[Unit]
+Description=wd2l: hourly append-only flag and 1-year retention for audit files
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

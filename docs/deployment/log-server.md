@@ -26,6 +26,9 @@ sudo cp -r wd2l deploy /opt/wd2l/          # from this repo
 sudo cp deploy/log-server/egress.env.example /etc/wd2l/egress.env   # edit IFACE etc.
 uuidgen | sudo tee /etc/wd2l/aggregator.token >/dev/null
 sudo chown root:wd2l /etc/wd2l/aggregator.token && sudo chmod 640 /etc/wd2l/aggregator.token
+sudo groupadd --system wd2l-audit                                # who may read audit files
+sudo install -d -o wd2l -g wd2l-audit -m 2750 /var/log/wd2l      # setgid: files get the group
+git rev-parse HEAD | sudo tee /opt/wd2l/wd2l/BUILD >/dev/null    # the build audit records name
 ```
 
 ## 2. Egress NIC
@@ -95,6 +98,49 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | `--state` | none | Restart count and previous stream, so the receiver can link runs and report a missed one. The unit uses `/var/lib/wd2l/sender.json` |
 | `--drain-timeout` | `2` s | On shutdown, how long to keep reading input that is already arriving |
 | `--input-rcvbuf` | `262144` | TCP receive buffer for the aggregator connection. Bounds input that is acknowledged but not yet read |
+| `--audit-dir` | none | The unit uses `/var/log/wd2l`. Hash-chained audit records, see [the audit plan](../audit-and-health-plan.md) and **Audit files** below |
+| `--audit-min-free-mb` | `256` | Free space the audit directory must keep |
+| `--egress-iface` | none | The unit uses `ens224`. NIC carrier and transmit counters go into every heartbeat |
+| `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
+| `--log-format` | text | The unit uses `json`: one JSON object per log line |
+
+### Audit files
+
+The sender writes audit records to `/var/log/wd2l/audit-*.jsonl`. Each record carries the hash of
+the one before it, so a removed or changed record breaks the chain. A timer makes the files
+append-only and deletes them after a year:
+
+```bash
+sudo cp deploy/common/wd2l-audit-seal.* /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-audit-seal.timer
+```
+
+auditd rules record who changes wd2l's programs, settings, units and files:
+
+```bash
+sudo cp deploy/log-server/wd2l.rules /etc/audit/rules.d/
+sudo augenrules --load
+```
+
+Check the chain:
+
+```bash
+sudo -u wd2l python3 -m wd2l.audit verify /var/log/wd2l
+wd2l-audit-report verify --dir /var/log/wd2l      # once installed with pip
+```
+
+To turn debug logging on or off so that the audit record names you, signal the sender from your
+own session:
+
+```bash
+sudo kill -USR1 "$(systemctl show -p MainPID --value wd2l-sender)"
+```
+
+Don't use `systemctl kill`: systemd becomes the sender of the signal, and the record can't name
+you.
+
+The log aggregator copies these files to the log retention server
+([retention-server.md](retention-server.md)).
 
 ## 5. Log aggregator
 

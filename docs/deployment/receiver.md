@@ -12,6 +12,11 @@ sudo chown -R wd2l:wd2l /var/lib/wd2l
 sudo cp -r wd2l deploy /opt/wd2l/                      # from this repo
 echo '<HEC token>' | sudo tee /etc/wd2l/hec.token >/dev/null
 sudo chown root:wd2l /etc/wd2l/hec.token && sudo chmod 640 /etc/wd2l/hec.token
+echo '<HEC audit token>' | sudo tee /etc/wd2l/hec-audit.token >/dev/null
+sudo chown root:wd2l /etc/wd2l/hec-audit.token && sudo chmod 640 /etc/wd2l/hec-audit.token
+sudo groupadd --system wd2l-audit                                # who may read audit files
+sudo install -d -o wd2l -g wd2l-audit -m 2750 /var/log/wd2l      # setgid: files get the group
+git rev-parse HEAD | sudo tee /opt/wd2l/wd2l/BUILD >/dev/null    # the build audit records name
 sudo cp <SIEM CA bundle> /etc/wd2l/siem-ca.pem
 ```
 
@@ -71,6 +76,53 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--max-event`, `--max-buffer` | 256 KB, 64 MB | Input caps |
 | `--hec-queue` | `100000` | Events held in memory for the SIEM. Overflow is reported as `reason=output_dropped` gaps (replay recovers them) |
 | `--stream-retention` | 7 days | How long finished sender runs with nothing open stay fully tracked. Keep it at least as long as the pcap archive |
+| `--audit-dir` | none | The unit uses `/var/log/wd2l`. Hash-chained audit records, see [the audit plan](../audit-and-health-plan.md) and **Audit files** below |
+| `--audit-min-free-mb` | `256` | Free space the audit directory must keep |
+| `--hec-audit-token-file` | none | Token for the audit index. The unit uses `/etc/wd2l/hec-audit.token` |
+| `--audit-index` | none | Index that receives audit records. The unit uses `wd2l_audit` |
+| `--pcap-dir` | none | Capture archive directory, to check that tcpdump is writing it. The unit uses `/var/lib/wd2l/pcap` |
+| `--capture-iface` | the `--live` NIC | NIC whose carrier and receive counters go into the health record |
+| `--capture-rcvbuf` | `67108864` | Receive buffer of the capture socket, in bytes |
+| `--fault-interval`, `--fault-window` | `5`, `60` s | How often the fault-location checks run, and over what window counter growth counts as new |
+| `--input-flat-after` | `300` s | No new events from the aggregator for this long is reported as flat input |
+| `--time-check-interval` | `60` s | Time between chrony reads |
+| `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
+| `--log-format` | text | The unit uses `json`: one JSON object per log line |
+
+### Audit files
+
+The receiver writes audit records to `/var/log/wd2l/audit-*.jsonl` and sends them to the
+`wd2l_audit` index. Each record carries the hash of the one before it, so a removed or changed
+record breaks the chain. A timer makes the files append-only and deletes them after a year:
+
+```bash
+sudo cp deploy/common/wd2l-audit-seal.* /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-audit-seal.timer
+```
+
+auditd rules record who changes wd2l's programs, settings, units and files:
+
+```bash
+sudo cp deploy/receiver/wd2l.rules /etc/audit/rules.d/
+sudo augenrules --load
+```
+
+Check the chain:
+
+```bash
+sudo -u wd2l python3 -m wd2l.audit verify /var/log/wd2l
+wd2l-audit-report verify --dir /var/log/wd2l      # once installed with pip
+```
+
+To turn debug logging on or off so that the audit record names you, signal the receiver from your
+own session (not `systemctl kill`: systemd becomes the sender of the signal):
+
+```bash
+sudo kill -USR1 "$(systemctl show -p MainPID --value wd2l-receiver)"
+```
+
+An archive replay writes to the same directory, so stop the live receiver first. The replay
+refuses to start otherwise.
 | `--no-rx-time` | stamping on | Stop stamping each event's arrival time (`wd2l_rx_time`). Leave it on: it's how delays are measured ([operations.md](../operations.md#measuring-delays)) |
 
 ## 5. SIEM
