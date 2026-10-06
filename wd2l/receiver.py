@@ -757,13 +757,13 @@ class Receiver:
             if t.records or not t.rc.enabled:
                 continue
             t.rc.settle(pending.get(t.stream_id, set()))
-            res = t.rc.check(t.lo, t.gaps)
+            t.rc.check(t.lo, t.gaps)
             last = t.rc.last
             if last is None:
                 continue
             ended = t.final and t.lo > t.known and last["cut"] == t.known
             key = (last["cut"], last["balanced"])
-            if (ended and res is not None and key != t.rc.written) or (
+            if (ended and key != t.rc.written) or (
                     hourly and (now - t.last_seen < 3600 or not last["balanced"])):
                 self._reconcile_record(t, last, now)
 

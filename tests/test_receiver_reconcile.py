@@ -207,3 +207,24 @@ def test_save_state_does_not_settle_a_failed_event(tmp_path):
     feed(r2, data + hb, 10)
     r2.tick(11)
     assert last(r2, s)["balanced"] is True
+
+
+def test_stream_end_record_is_written_when_the_final_cut_was_compared_before_the_end(tmp_path):
+    a = auditlog.AuditLog(str(tmp_path / "audit"), "receiver", 2, host="rx", actor="me", build="b")
+    sock = FakeSock()
+    s = Sender(("10.255.255.2", 5514), sock=sock, rate_pps=0)
+    for i in range(20):
+        s.send_event({"_raw": "event %d" % i})
+    s.send_heartbeat()                 # regular heartbeat already carries seq 20
+    n_regular = len(sock.sent)
+    s.send_heartbeat(final=True)       # final heartbeat: same seq, no new cut
+    r, out = rx(audit=a)
+    feed(r, sock.sent[:n_regular], 0)
+    r.tick(1)                          # the cut is compared; the stream is not final yet
+    assert last(r, s)["balanced"] is True
+    feed(r, sock.sent[n_regular:], 2)
+    r.tick(3)
+    r.tick(4)
+    recs = [x for x in read_audit(a.dir) if x["event"] == "reconcile"]
+    assert [(x["balanced"], x["cut"]) for x in recs] == [(True, 20)]
+    assert [(h["balanced"], h["cut"]) for h in out.kinds("reconcile")] == [(True, 20)]
