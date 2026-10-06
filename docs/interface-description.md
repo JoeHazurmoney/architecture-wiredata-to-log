@@ -226,23 +226,41 @@ Sent every second (`--heartbeat`) and once more on clean shutdown. One packet, `
 `seq` in the header is the last DATA `seq` sent. That's how the receiver notices events lost at
 the very end of a burst, when nothing newer arrives to show the gap.
 
-The body is compact UTF-8 JSON with **keys in sorted order**, about 200–300 bytes, so the
-datagram is about 270–370 bytes. Numbers are cumulative for this sender run unless noted.
+The body is compact UTF-8 JSON with **keys in sorted order**, about 600–800 bytes with
+the deployed unit, so the datagram is about 670–870 bytes. It is always one packet: if the
+snapshot keys would not fit `--max-datagram`, they are left out of that heartbeat and
+`heartbeat_trimmed` counts it. Numbers are cumulative for this sender run unless noted.
 
 | Name | Type | Units | When present | Meaning |
 |---|---|---|---|---|
+| `audit_n` | integer | records | with `--audit-dir` | Records in the sender's audit chain |
+| `audit_ok` | boolean |  | with `--audit-dir` | The audit file is being written and has free space |
 | `bad_input` | integer | lines | always | Input lines from the aggregator that weren't a JSON object, or were over 16 MiB |
 | `boot` | integer ≥ 1 | | with `--state` (deployed: yes) | Sender run counter, kept in its state file |
+| `clients` | integer | connections | always | Aggregator connections to the sender |
+| `cpu_pct` | number | % | always | Sender process CPU over the last heartbeat interval |
 | `datagrams_sent` | integer | packets | always | Datagrams handed to the OS so far, not counting this one |
+| `events_in` | integer | lines | always | Input lines that were events or were rejected |
 | `events_sent` | integer | events | always | Events numbered and sent |
 | `final` | `true` | | last heartbeat only | Clean shutdown. Always the last frame of a run |
+| `heartbeat_trimmed` | integer | heartbeats | always | Heartbeats sent without the snapshot because it wouldn't fit |
+| `input_backlog_bytes` | integer | bytes | always | Handed over by the aggregator, not yet read |
+| `nic_carrier` | boolean |  | with `--egress-iface` | The egress NIC has link |
+| `nic_tx_dropped` | integer | packets | with `--egress-iface` | The egress NIC's transmit drop counter |
+| `nic_tx_errors` | integer | packets | with `--egress-iface` | The egress NIC's transmit error counter |
+| `nic_tx_packets` | integer | packets | with `--egress-iface` | The egress NIC's transmit packet counter |
 | `opaque_events` | integer | events | always | Events flagged `wd2l_opaque` |
 | `prev_last_seq` | integer ≥ 0 | | with `--state`, from the second run on | Last `seq` the previous run recorded (saved at each heartbeat) |
 | `prev_stream` | integer, 0 … 2⁶⁴−1 | | with `--state`, from the second run on | The previous run's `stream_id`. Up to 20 digits; parse it as an integer, not a double |
+| `rss_mb` | number | MiB | always | Sender memory |
 | `send_errors` | integer | packets | always | Sends that failed with an error other than "buffer full" (for example, too big for the MTU) |
 | `sender_drops` | integer | packets | always | Datagrams the sender gave up on (buffer full after retries, or an error) |
 | `sender_time` | number, 3 decimals | seconds since 1970-01-01 UTC | always | Sender's clock. Enclave 2 compares it to its own clock (`clock_offset_s`) |
 | `shutdown_unread_bytes` | integer | bytes | always | Input the aggregator had handed over that the sender couldn't read before stopping. 0 except, at worst, on the final heartbeat |
+| `stall_s` | number | seconds | always | Cumulative time waiting on pacing or a full send buffer |
+| `time_offset_ms` | number | ms | when chrony answers | Clock offset from chrony on the log server |
+| `time_stratum` | integer |  | when chrony answers | Clock stratum from chrony on the log server |
+| `time_synced` | boolean |  | when chrony answers | Chrony reports the clock as synchronised |
 | `truncated` | integer | events | always | Events cut to fit the size limit |
 | `uptime` | number, 1 decimal | seconds | always | Time since this run started |
 
@@ -289,10 +307,10 @@ There is no `boot` and there are no `prev_*` keys. Records streams aren't linked
 | Item | Value | Set by |
 |---|---|---|
 | DATA | As events arrive from the aggregator, with no batching or delay | |
-| HEARTBEAT | Every 1 s, plus one at shutdown | `--heartbeat` |
+| HEARTBEAT | Every 1 s, plus one at shutdown. With `--audit-dir`, the records stream adds a second heartbeat every second | `--heartbeat` |
 | Packet rate cap | 20,000 packets/s, bursts up to 2,000 packets. Covers DATA and HEARTBEAT | `--rate-pps` |
 | Maximum bandwidth at the cap | About 245 Mbit/s with 1,514-byte frames. At MTU 9000 the cap allows more than a 1 G link carries | |
-| Expected load | Under 1,000 events/s × about 1 KB ≈ 8 Mbit/s. Heartbeats add about 3 kbit/s | |
+| Expected load | Under 1,000 events/s × about 1 KB ≈ 8 Mbit/s. Two heartbeats a second per run (data and records streams) add about 8 kbit/s | |
 | Delay, sender to receiver | A few milliseconds. Lab: median under 1 ms, p99 about 4 ms | |
 | Clocks | Each enclave from its own GPS receiver. Every event carries the sender's time (`wd2l_tx_time`), and the receiver adds its own (`wd2l_rx_time`) | |
 
@@ -452,6 +470,8 @@ The WD2L fields are:
 This was the sender's first run with a new state file (`boot` 1), so there is no `prev_stream`
 or `prev_last_seq` yet.
 
+Captured before wd2l 0.2.0; current heartbeats carry more keys (§8).
+
 ## 14. After the link (inside Enclave 2)
 
 Not part of this interface, for context. For each event, the receiver sends the SIEM's HTTP event
@@ -496,6 +516,7 @@ It also writes its own status records (`sourcetype=wd2l:health`) to a separate i
 | `--no-tx-time`, `--no-opaque-check`, `--source-seq`, `--extra-field` (sender) | Which `fields` are present |
 | `--state` (sender) | Whether heartbeats carry `boot`, `prev_stream`, `prev_last_seq` |
 | `--audit-dir` (sender) | Adds the records stream (flags bit 0) |
+| `--egress-iface` (sender) | Adds `nic_*` keys to the heartbeat |
 
 ## 17. Changing the format
 

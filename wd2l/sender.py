@@ -70,7 +70,8 @@ class Sender:
                  source_seq: bool = False, tx_time: bool = True, opaque_check: bool = True,
                  bind_port: int = 0, stream_id: Optional[int] = None,
                  audit: Optional[auditlog.AuditLog] = None,
-                 config_sha256: Optional[str] = None, time_quality: Any = None):
+                 config_sha256: Optional[str] = None, time_quality: Any = None,
+                 egress_iface: Optional[str] = None):
         if max_event < 1024:
             raise ValueError("max_event must be at least 1024")
         self.dst = dst
@@ -100,7 +101,8 @@ class Sender:
         self.started = time.time()
         self.counters = {"events_sent": 0, "datagrams_sent": 0, "sender_drops": 0,
                          "truncated": 0, "bad_input": 0, "send_errors": 0,
-                         "shutdown_unread_bytes": 0, "opaque_events": 0}
+                         "shutdown_unread_bytes": 0, "opaque_events": 0,
+                         "events_in": 0, "heartbeat_trimmed": 0}
         self.lock = threading.Lock()
         self.closed = False
         self.rate = float(rate_pps)
@@ -113,6 +115,11 @@ class Sender:
         self.tq = time_quality
         self.hostname = audit.host if audit is not None else hostinfo.hostname()
         self.last_snapshot: Dict[str, Any] = {}
+        self.egress_iface = egress_iface
+        self.sysfs = "/sys/class/net"
+        self.input_server: Optional["InputServer"] = None
+        self.proc = hostinfo.ProcStats()
+        self.stall_s = 0.0    # time spent waiting on pacing or a full send buffer
         # The records stream (§7): this sender's own audit and health records, in-band, as a
         # second stream with its own id, numbers and heartbeat, marked by flags bit 0.
         self.records = audit is not None and audit.forward
@@ -209,7 +216,9 @@ class Sender:
         self.tokens = min(max(1.0, self.rate / 10), self.tokens + (now - self.last_refill) * self.rate)
         self.last_refill = now
         if self.tokens < 1:
-            time.sleep((1 - self.tokens) / self.rate)
+            wait = (1 - self.tokens) / self.rate
+            time.sleep(wait)
+            self.stall_s += wait
             self.tokens = 1.0
             self.last_refill = time.monotonic()
         self.tokens -= 1
@@ -241,6 +250,7 @@ class Sender:
                     self._log_error(e.errno or -1, "send failed: %s" % e)
                     break
                 time.sleep(0.001)
+                self.stall_s += 0.001
         self.counters["sender_drops"] += 1
         self.summary.note("send_failure", {"error": errno.errorcode.get(code, str(code))})
         return False
@@ -295,6 +305,7 @@ class Sender:
         with self.lock:
             if self.closed:
                 return 0
+            self.counters["events_in"] += 1
             if stamped:
                 # Stamped under the lock, together with seq, so all orders agree.
                 stamps: Dict[str, Any] = dict(found)
@@ -318,18 +329,52 @@ class Sender:
             self.counters["events_sent"] += 1
             return self.seq
 
-    def heartbeat_info(self, final: bool = False) -> Dict[str, Any]:
+    def snapshot(self) -> Dict[str, Any]:
+        """Enclave 1's state for every heartbeat (§7): input, the sender process, the egress NIC,
+        time and the audit trail. Read outside the lock; values that can't be read are left out."""
+        snap: Dict[str, Any] = {"stall_s": round(self.stall_s, 3)}
+        srv = self.input_server
+        if srv is not None:
+            snap.update(clients=srv.client_count(), input_backlog_bytes=srv.backlog_bytes())
+        snap.update(self.proc.read())
+        if self.egress_iface:
+            nic = hostinfo.nic_stats(self.egress_iface, self.sysfs)
+            snap.update(nic_carrier=nic["carrier"], nic_tx_packets=nic["tx_packets"],
+                        nic_tx_errors=nic["tx_errors"], nic_tx_dropped=nic["tx_dropped"])
+        if self.tq is not None:
+            q = self.tq.read()
+            snap.update(time_stratum=q.get("stratum"), time_offset_ms=q.get("offset_ms"),
+                        time_synced=q.get("synced"))
+        if self.audit is not None:
+            st = self.audit.status()
+            snap.update(audit_ok=st["audit_ok"], audit_n=st["audit_n"])
+        return {k: v for k, v in snap.items() if v is not None}
+
+    def heartbeat_info(self, final: bool = False,
+                       snap: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         info = dict(self.counters, sender_time=round(time.time(), 3),
                     uptime=round(time.time() - self.started, 1), **self.link)
+        if snap:
+            info.update(snap)
         if final:
             info["final"] = True
         return info
 
+    def _heartbeat_frame(self, final: bool, snap: Dict[str, Any]) -> bytes:
+        """One packet, always: if the snapshot would make it too big, it is left out."""
+        frame = wire.encode_heartbeat(self.stream_id, self.seq, self.heartbeat_info(final, snap))
+        if len(frame) > self.max_datagram and snap:
+            self.counters["heartbeat_trimmed"] += 1
+            frame = wire.encode_heartbeat(self.stream_id, self.seq, self.heartbeat_info(final))
+        return frame
+
     def send_heartbeat(self, final: bool = False) -> None:
+        snap = self.snapshot()
         with self.lock:
             if self.closed:
                 return
-            self._transmit(wire.encode_heartbeat(self.stream_id, self.seq, self.heartbeat_info(final)))
+            self.last_snapshot = snap
+            self._transmit(self._heartbeat_frame(final, snap))
             self._save_state()
             if final:
                 self.closed = True
@@ -337,6 +382,7 @@ class Sender:
     def count_bad_input(self, reason: str = "bad_json") -> None:
         with self.lock:
             self.counters["bad_input"] += 1
+            self.counters["events_in"] += 1
         self.summary.note("input_rejected", {"reason": reason})
 
     def count_unread(self, nbytes: int) -> None:
@@ -451,11 +497,14 @@ class CriblHandler(socketserver.BaseRequestHandler):
 
     def handle(self) -> None:
         srv: "InputServer" = self.server  # type: ignore[assignment]
+        with srv.handlers_lock:
+            srv.conns.add(self.request)
         try:
             self._run(srv, self.request)
         finally:
             with srv.handlers_lock:
                 srv.handlers.discard(threading.current_thread())
+                srv.conns.discard(self.request)
 
     def _run(self, srv: "InputServer", sock: socket.socket) -> None:
         self.defaults: Dict[str, Any] = {}
@@ -559,8 +608,19 @@ class InputServer(socketserver.ThreadingTCPServer):
         self.drain_timeout = drain_timeout
         self.stopping = threading.Event()
         self.handlers: Set[threading.Thread] = set()
+        self.conns: Set[socket.socket] = set()
         self.handlers_lock = threading.Lock()
         super().__init__(addr, CriblHandler)
+
+    def client_count(self) -> int:
+        with self.handlers_lock:
+            return len(self.conns)
+
+    def backlog_bytes(self) -> int:
+        """Bytes the aggregator has handed over that the sender hasn't read yet."""
+        with self.handlers_lock:
+            socks = list(self.conns)
+        return sum(_unread_bytes(s) for s in socks)
 
     def server_bind(self) -> None:
         # A small receive buffer (inherited by accepted connections) bounds how much data the
@@ -660,6 +720,8 @@ def build_parser() -> argparse.ArgumentParser:
                                        "(deployed: /var/log/wd2l)")
     p.add_argument("--audit-min-free-mb", type=int, default=256,
                    help="free space below this raises audit_failure")
+    p.add_argument("--egress-iface", help="egress NIC whose carrier and transmit counters go in "
+                                          "every heartbeat (deployed: ens224)")
     p.add_argument("--chronyc", default="chronyc",
                    help="chronyc command for time quality (\"-c tracking\" is added)")
     p.add_argument("--log-format", choices=("text", "json"), default="text",
@@ -703,10 +765,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sender = Sender(_hostport(a.dst), bind_ip, a.max_datagram, a.max_event, a.rate_pps,
                     a.extra_field, state_path=a.state, source_seq=a.source_seq,
                     tx_time=a.tx_time, opaque_check=a.opaque_check, bind_port=bind_port,
-                    stream_id=sid, audit=audit, config_sha256=cfg_sha, time_quality=tq)
+                    stream_id=sid, audit=audit, config_sha256=cfg_sha, time_quality=tq,
+                    egress_iface=a.egress_iface)
     if audit:
         audit.start_verify()
     server = InputServer(_hostport(a.listen), sender, token, a.input_rcvbuf, a.drain_timeout)
+    sender.input_server = server
     stop = threading.Event()
     hb = threading.Thread(target=_heartbeat_loop,
                           args=(sender, a.heartbeat, stop, a.stats_interval), daemon=True)
