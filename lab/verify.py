@@ -24,6 +24,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
+from wd2l import audit as auditlog  # noqa: E402
 from wd2l import wire  # noqa: E402
 from wd2l.sender import Sender  # noqa: E402
 
@@ -58,6 +59,8 @@ def main():
     p.add_argument("--sender-runs", type=int, default=1,
                    help="the sender was stopped and started again: expect this many runs, "
                         "linked, with nothing lost in between")
+    p.add_argument("--audit-dir", action="append", default=[],
+                   help="an audit directory whose hash chain must verify (repeatable)")
     a = p.parse_args()
     if a.sender_runs > 1 and a.source_seq:
         p.error("--sender-runs can't be combined with --source-seq (line numbers restart "
@@ -179,6 +182,21 @@ def main():
             problems.append("%s = %s" % (k, last[k]))
     truncated = [s for s, e in seen.items() if "wd2l_truncated" in e.get("fields", {})]
     flagged = sorted(s for s, e in seen.items() if "wd2l_opaque" in e.get("fields", {}))
+
+    for d in a.audit_dir:
+        res = auditlog.verify_dir(d)
+        names = []
+        for path in auditlog.audit_files(d):
+            with open(path, "rb") as f:
+                names += [json.loads(x)["event"] for x in auditlog.split_lines(f.read())
+                          if x.endswith(b"\n")]
+        if not res.ok:
+            problems.append("audit chain in %s: %s" % (d, res.problems[:3]))
+        if "start" not in names:
+            problems.append("audit trail in %s has no start record" % d)
+        print("audit %-28s %d records, chain %s%s" % (
+            os.path.basename(d.rstrip("/")) + ":", res.records, "ok" if res.ok else "BROKEN",
+            ", %d torn line(s)" % len(res.torn) if res.torn else ""))
 
     print("sent:            %d" % len(sent_by_seq))
     if a.sender_runs > 1:

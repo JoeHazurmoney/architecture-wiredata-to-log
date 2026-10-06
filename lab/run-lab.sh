@@ -44,6 +44,7 @@ MAX_EVENT=262144
 FILES=()
 INTERLEAVE=0
 MAINT=0
+CHRONYC="python3 $HERE/fake_chronyc.py"   # the clock-bad flag file is added once OUT is known
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -93,6 +94,7 @@ trap cleanup EXIT
 "$HERE/teardown.sh" >/dev/null 2>&1 || true
 rm -rf "$OUT"
 mkdir -p "$OUT/pcap" "$OUT/received"
+CHRONYC="$CHRONYC $OUT/clock-bad"
 
 echo "== building namespaces"
 for ns in wd2l-enc1 wd2l-bh wd2l-enc2; do
@@ -170,7 +172,8 @@ start_capture() {
 }
 RX_ARGS=(--live cap0 --dst-ip 10.255.255.2 --dst-port 5514 --src-ip 10.255.255.1 --src-port 5514
          --out-dir "$OUT/received" --state "$OUT/state.json"
-         --gap-window 2 --health-interval 5 --max-event "$MAX_EVENT")
+         --gap-window 2 --health-interval 5 --max-event "$MAX_EVENT"
+         --audit-dir "$OUT/audit-e2" --chronyc "$CHRONYC")
 start_receiver() {
   $ENC2 python3 -m wd2l.receiver "${RX_ARGS[@]}" >>"$OUT/receiver.log" 2>&1 &
   RX_PID=$!
@@ -179,7 +182,8 @@ start_receiver() {
 start_sender() {
   $ENC1 python3 -m wd2l.sender --listen 127.0.0.1:10070 --dst 10.255.255.2:5514 \
     --bind 10.255.255.1:5514 --max-event "$MAX_EVENT" --stats-interval 5 \
-    --state "$OUT/sender.json" "${SENDER_EXTRA[@]}" >>"$OUT/sender.log" 2>&1 &
+    --state "$OUT/sender.json" --audit-dir "$OUT/audit-e1" --chronyc "$CHRONYC" \
+    "${SENDER_EXTRA[@]}" >>"$OUT/sender.log" 2>&1 &
   TX_PID=$!
   PIDS+=($TX_PID)
 }
@@ -247,6 +251,7 @@ if [ "$OUTAGE" = 1 ]; then
   python3 -m wd2l.receiver --pcap "$OUT"/pcap/*.pcap --dst-ip 10.255.255.2 --dst-port 5514 \
     --src-ip 10.255.255.1 --src-port 5514 \
     --out-dir "$OUT/received" --state "$OUT/state.json" --max-event "$MAX_EVENT" \
+    --audit-dir "$OUT/audit-e2" --chronyc "$CHRONYC" \
     >"$OUT/replay.log" 2>&1
 fi
 
@@ -255,7 +260,8 @@ BACK=$($BH cat /sys/class/net/tap0/statistics/rx_packets)
 echo "== frames sent back toward Enclave 1 from Enclave 2: $BACK"
 
 echo "== verifying"
-VERIFY_ARGS=("$OUT/sent.jsonl" "$OUT/received" --max-event "$MAX_EVENT" "${SENDER_EXTRA[@]}")
+VERIFY_ARGS=("$OUT/sent.jsonl" "$OUT/received" --max-event "$MAX_EVENT" "${SENDER_EXTRA[@]}"
+             --audit-dir "$OUT/audit-e1" --audit-dir "$OUT/audit-e2")
 if [ -n "$LOSS" ]; then VERIFY_ARGS+=(--expect-gaps); fi
 if [ "$OUTAGE" = 1 ]; then VERIFY_ARGS+=(--state "$OUT/state.json"); fi
 if [ "$KILLSIG" = KILL ]; then VERIFY_ARGS+=(--allow-duplicates); fi
