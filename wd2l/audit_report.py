@@ -16,6 +16,7 @@ import argparse
 import csv
 import io
 import json
+import os
 import sys
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
@@ -39,26 +40,55 @@ def unwrap(obj: Any) -> Optional[Dict[str, Any]]:
     return obj if isinstance(obj, dict) and "event" in obj else None
 
 
-def load(dirs: Sequence[str], exports: Sequence[str]) -> List[Dict[str, Any]]:
+def load(dirs: Sequence[str], exports: Sequence[str]) -> tuple[List[Dict[str, Any]], List[str]]:
     out: List[Dict[str, Any]] = []
+    skipped: List[str] = []
     for d in dirs:
-        for path in audit_files(d):
-            with open(path, "rb") as f:
-                out += [json.loads(x) for x in split_lines(f.read()) if x.endswith(b"\n")]
+        try:
+            paths = list(audit_files(d))
+        except (OSError, IOError):
+            skipped.append(f"{d}: cannot read directory")
+            continue
+        for path in paths:
+            try:
+                with open(path, "rb") as f:
+                    for line_num, line in enumerate(split_lines(f.read()), 1):
+                        if line.endswith(b"\n"):
+                            try:
+                                obj = json.loads(line)
+                                if not isinstance(obj, dict):
+                                    skipped.append(f"{path}:{line_num}: not a JSON object")
+                                else:
+                                    out.append(obj)
+                            except ValueError:
+                                skipped.append(f"{path}:{line_num}: not JSON")
+            except (OSError, IOError) as e:
+                skipped.append(f"{path}: {e}")
     for path in exports:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    rec = unwrap(json.loads(line))
-                    if rec is not None:
-                        out.append(rec)
-    return out
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for line_num, line in enumerate(f, 1):
+                    if line.strip():
+                        try:
+                            obj = json.loads(line)
+                        except ValueError:
+                            skipped.append(f"{path}:{line_num}: not JSON")
+                            continue
+                        rec = unwrap(obj)
+                        if rec is None:
+                            skipped.append(f"{path}:{line_num}: not an audit record")
+                        else:
+                            out.append(rec)
+        except (OSError, IOError) as e:
+            skipped.append(f"{path}: {e}")
+    return out, skipped
 
 
 def verify_export(records: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """A SIEM copy can come in any order, with duplicates (re-sent) and holes (records-stream
     loss, or a search window): sort by n, accept identical copies, list the holes. Links are
-    checked between neighbouring numbers only."""
+    checked between neighbouring numbers only. Chains are split by host/enclave, so a record
+    whose host was altered lands in another chain (design limit)."""
     chains: Dict[str, List[Dict[str, Any]]] = {}
     for r in records:
         chains.setdefault("%s/enclave%s" % (r.get("host"), r.get("enclave")), []).append(r)
@@ -72,14 +102,26 @@ def verify_export(records: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, Any]
             if n is None:
                 unchained += 1
                 continue
-            if n in by_n and by_n[n] != r:
-                problems.append("n=%d: two different records" % n)
-            by_n[n] = r
+            # Check if n is a valid integer (not bool, which is a subclass of int)
+            if isinstance(n, bool) or not isinstance(n, int):
+                problems.append("record with non-integer n (%r)" % (n,))
+                continue
+            # Keep the first record for each n; later different copies are a problem
+            if n in by_n:
+                if by_n[n] != r:
+                    problems.append("n=%d: two different records" % n)
+            else:
+                by_n[n] = r
         missing: List[List[int]] = []
         prev = None
         for n in sorted(by_n):
             r = by_n[n]
-            if record_hash(r) != r.get("hash"):
+            try:
+                h = record_hash(r)
+            except (ValueError, TypeError, RecursionError):
+                problems.append("n=%d can't be hashed (not canonical JSON)" % n)
+                continue
+            if h != r.get("hash"):
                 problems.append("n=%d content does not match its hash (edited)" % n)
             if prev is None:
                 if n == 1 and r.get("prev_hash") != GENESIS:
@@ -138,7 +180,11 @@ def filter_events(records: Iterable[Dict[str, Any]], since: Optional[str] = None
                 break
         else:
             out.append(r)
-    return sorted(out, key=lambda r: (str(r.get("ts", "")), str(r.get("host")), r.get("n") or 0))
+    def sort_key(r: Dict[str, Any]) -> tuple:
+        n = r.get("n")
+        n_val = n if isinstance(n, int) and not isinstance(n, bool) else 0
+        return (str(r.get("ts", "")), str(r.get("host")), n_val)
+    return sorted(out, key=sort_key)
 
 
 def _csv(rows: List[Dict[str, Any]], columns: Sequence[str]) -> str:
@@ -179,8 +225,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ev.add_argument(flag, action="append", default=[])
     try:
         a = p.parse_args(argv)
-    except SystemExit:
-        return 2
+    except SystemExit as e:
+        return e.code if isinstance(e.code, int) else 2
     if not a.cmd or not (a.dir or a.export):
         p.print_usage(sys.stderr)
         print("need a subcommand and --dir or --export", file=sys.stderr)
@@ -191,31 +237,66 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if len(a.dir) != 1 or a.export:
                 print("verify takes one --dir (one chain) or --export", file=sys.stderr)
                 return 2
-            res = verify_dir(a.dir[0], a.upto, a.upto_hash).to_json()
+            if not os.path.isdir(a.dir[0]):
+                print("no such directory: %s" % a.dir[0], file=sys.stderr)
+                return 2
+            try:
+                verify_result = verify_dir(a.dir[0], a.upto, a.upto_hash)
+            except (OSError, IOError) as e:
+                print("no such directory: %s" % a.dir[0], file=sys.stderr)
+                return 2
+            if verify_result.records == 0:
+                verify_result.problems.append("no audit records found")
+            res = verify_result.to_json()
             print(json.dumps(res, sort_keys=True) if a.format == "json" else
                   _csv([dict(res, problems="; ".join(res["problems"]))], sorted(res)), end="\n")
             return 0 if res["result"] == "ok" else 1
-        chains = verify_export(load([], a.export))
-        bad = any(c["problems"] or (a.complete and c["missing"]) for c in chains.values())
+        for path in a.export:
+            if not os.path.exists(path):
+                print("no such file: %s" % path, file=sys.stderr)
+                return 2
+        recs, skipped = load([], a.export)
+        chains = verify_export(recs)
+        bad = bool(skipped) or not chains or any(c["problems"] or (a.complete and c["missing"])
+                                                   for c in chains.values())
         if a.format == "json":
+            if skipped:
+                chains["unreadable"] = skipped
             print(json.dumps(chains, sort_keys=True))
         else:
             rows = [dict(c, chain=k, missing=json.dumps(c["missing"]), problems="; ".join(c["problems"]))
                     for k, c in chains.items()]
+            if skipped:
+                rows.append({"chain": "(unreadable)", "result": "failed", "problems": "; ".join(skipped)})
             print(_csv(rows, ["chain", "result", "records", "first_n", "last_n", "missing",
                               "unchained", "problems"]), end="")
+        if not chains:
+            print("nothing to verify", file=sys.stderr)
         return 1 if bad else 0
 
-    recs = load(a.dir, a.export)
+    # Check directories exist for reconcile/events
+    for d in a.dir:
+        if not os.path.isdir(d):
+            print("no such directory: %s" % d, file=sys.stderr)
+            return 2
+    for path in a.export:
+        if not os.path.exists(path):
+            print("no such file: %s" % path, file=sys.stderr)
+            return 2
+    recs, skipped = load(a.dir, a.export)
     if a.cmd == "reconcile":
         rows = reconcile_rows(filter_events(recs, a.since, a.until, events=["reconcile"]))
         print(json.dumps(rows) if a.format == "json" else _csv(rows, RECONCILE_COLUMNS), end="\n")
+        if skipped:
+            print("skipped %d unreadable lines" % len(skipped), file=sys.stderr)
         return 0
     rows = filter_events(recs, a.since, a.until, a.stream, a.event, a.segment, a.component, a.host)
     if a.format == "json":
         print(json.dumps(rows))
     else:
         print(_csv([_event_row(r) for r in rows], EVENT_COLUMNS + ("details",)), end="")
+    if skipped:
+        print("skipped %d unreadable lines" % len(skipped), file=sys.stderr)
     return 0
 
 

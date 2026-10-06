@@ -126,3 +126,97 @@ def test_events_filters(tmp_path, capsys):
 
 def test_needs_a_source(capsys):
     assert audit_report.main(["events"]) == 2
+
+
+def test_verify_export_bad_json_line(tmp_path, capsys):
+    exp = tmp_path / "export.json"
+    with open(exp, "w") as f:
+        f.write('{"preview": false, "result": {"_raw": "not json"}}\n')
+    code, out = run(capsys, ["verify", "--export", str(exp)])
+    assert code == 1 and "unreadable" in json.loads(out)
+
+
+def test_verify_export_non_integer_n(tmp_path, capsys):
+    _, e2 = make(tmp_path)
+    recs = read_audit(e2)
+    exp = tmp_path / "export.json"
+    bad_rec = dict(recs[0], n="x")
+    splunk_export(exp, [bad_rec])
+    code, out = run(capsys, ["verify", "--export", str(exp)])
+    res = json.loads(out)
+    assert code == 1 and any("non-integer n" in p for p in res["rx01/enclave2"]["problems"])
+
+
+def test_verify_export_result_not_dict(tmp_path, capsys):
+    exp = tmp_path / "export.json"
+    with open(exp, "w") as f:
+        f.write('{"preview": false, "result": "notadict"}\n')
+    code, out = run(capsys, ["verify", "--export", str(exp)])
+    assert code == 1 and "unreadable" in json.loads(out)
+
+
+def test_verify_export_empty_file(tmp_path, capsys):
+    exp = tmp_path / "export.json"
+    with open(exp, "w") as f:
+        f.write("")
+    code = audit_report.main(["verify", "--export", str(exp)])
+    _, err = capsys.readouterr()
+    assert code == 1 and "nothing to verify" in err
+
+
+def test_verify_export_keep_first_record(tmp_path, capsys):
+    _, e2 = make(tmp_path)
+    recs = read_audit(e2)
+    original_hash = recs[0]["hash"]
+    forged = dict(recs[0], event="forged")
+    exp = tmp_path / "export.json"
+    splunk_export(exp, [forged, recs[0]])
+    code, out = run(capsys, ["verify", "--export", str(exp)])
+    res = json.loads(out)
+    assert code == 1 and res["rx01/enclave2"]["last_hash"] == original_hash
+    assert any("two different records" in p for p in res["rx01/enclave2"]["problems"])
+
+
+def test_verify_dir_with_garbage_line(tmp_path, capsys):
+    e1, _ = make(tmp_path)
+    [path] = auditlog.audit_files(e1)
+    with open(path, "ab") as f:
+        f.write(b'not json\n')
+    code, out = run(capsys, ["verify", "--dir", e1])
+    res = json.loads(out)
+    assert code == 1 and any("not JSON" in p for p in res["problems"])
+
+
+def test_verify_dir_no_records(tmp_path, capsys):
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    code, out = run(capsys, ["verify", "--dir", str(empty_dir)])
+    res = json.loads(out)
+    assert code == 1 and any("no audit records found" in p for p in res["problems"])
+
+
+def test_events_with_unreadable_lines(tmp_path, capsys):
+    e1, _ = make(tmp_path)
+    [path] = auditlog.audit_files(e1)
+    with open(path, "ab") as f:
+        f.write(b'garbage\n')
+    code = audit_report.main(["events", "--dir", e1])
+    out, err = capsys.readouterr()
+    recs = json.loads(out)
+    assert code == 0 and len(recs) == 2  # start and reconcile
+    assert "skipped 1 unreadable lines" in err
+
+
+def test_help_returns_zero(capsys):
+    code = audit_report.main(["--help"])
+    assert code == 0
+
+
+def test_nonexistent_dir_returns_two(capsys):
+    code = audit_report.main(["events", "--dir", "/nonexistent"])
+    assert code == 2
+
+
+def test_nonexistent_export_file_returns_two(capsys):
+    code = audit_report.main(["verify", "--export", "/nonexistent.json"])
+    assert code == 2
