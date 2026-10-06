@@ -88,6 +88,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--time-check-interval` | `60` s | Time between chrony reads |
 | `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
 | `--log-format` | text | The unit uses `json`: one JSON object per log line |
+| `--no-rx-time` | stamping on | Stop stamping each event's arrival time (`wd2l_rx_time`). Leave it on: it's how delays are measured ([operations.md](../operations.md#measuring-delays)) |
 
 ### Audit files
 
@@ -96,7 +97,7 @@ The receiver writes audit records to `/var/log/wd2l/audit-*.jsonl` and sends the
 record breaks the chain. A timer makes the files append-only and deletes them after a year:
 
 ```bash
-sudo cp deploy/common/wd2l-audit-seal.* /etc/systemd/system/
+sudo cp deploy/common/wd2l-audit-seal.service deploy/common/wd2l-audit-seal.timer /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-audit-seal.timer
 ```
 
@@ -123,7 +124,6 @@ sudo kill -USR1 "$(systemctl show -p MainPID --value wd2l-receiver)"
 
 An archive replay writes to the same directory, so stop the live receiver first. The replay
 refuses to start otherwise.
-| `--no-rx-time` | stamping on | Stop stamping each event's arrival time (`wd2l_rx_time`). Leave it on: it's how delays are measured ([operations.md](../operations.md#measuring-delays)) |
 
 ## 5. SIEM
 

@@ -111,7 +111,7 @@ the one before it, so a removed or changed record breaks the chain. A timer make
 append-only and deletes them after a year:
 
 ```bash
-sudo cp deploy/common/wd2l-audit-seal.* /etc/systemd/system/
+sudo cp deploy/common/wd2l-audit-seal.service deploy/common/wd2l-audit-seal.timer /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-audit-seal.timer
 ```
 
