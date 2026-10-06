@@ -413,3 +413,24 @@ def test_self_check_runs_at_start_then_daily(tmp_path):
     a.maybe_verify()
     assert a.verify_proc is not None
     a.close()
+
+
+def test_values_that_cannot_be_json_are_made_safe_not_raised(tmp_path):
+    import pathlib
+    a = new_log(tmp_path)
+    r = a.write("gap", "failure", ratio=float("nan"), raw=b"\x00\x01", where=pathlib.Path("/x"),
+                tags={"b", "a"}, nested={1: (float("inf"), 2)})
+    assert r["n"] == 1 and a.ok
+    assert (r["ratio"], r["raw"], r["where"], r["tags"], r["nested"]) == (
+        None, r"b'\x00\x01'", str(pathlib.Path("/x")), ["a", "b"], {"1": [None, 2]})
+    assert read_audit(a.dir) == [r] and a.take_outbox() == [r]
+    assert audit.verify_dir(a.dir).ok
+
+
+def test_a_bad_time_quality_reading_does_not_stop_write(tmp_path):
+    tq = FakeTQ()
+    tq.q = {"stratum": 3, "offset_ms": float("inf"), "synced": True, "source": "gps"}
+    a = new_log(tmp_path, time_quality=tq)
+    r = a.write("start", "success")
+    assert r["n"] == 1 and r["time_quality"]["offset_ms"] is None
+    assert audit.verify_dir(a.dir).ok

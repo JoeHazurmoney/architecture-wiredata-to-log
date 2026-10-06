@@ -18,6 +18,7 @@ import glob
 import hashlib
 import json
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -225,6 +226,22 @@ def _last_record(path: str) -> Tuple[Optional[Dict[str, Any]], bool]:
     return None, torn
 
 
+def _jsonable(v: Any) -> Any:
+    """A value canonical() can always serialize: non-finite floats become None, containers are
+    converted recursively, and anything that is not plain JSON becomes its str()."""
+    if v is None or isinstance(v, (str, bool, int)):
+        return v
+    if isinstance(v, float):
+        return v if math.isfinite(v) else None
+    if isinstance(v, dict):
+        return {str(k): _jsonable(x) for k, x in v.items()}
+    if isinstance(v, (set, frozenset)):
+        return [_jsonable(x) for x in sorted(v, key=repr)]
+    if isinstance(v, (list, tuple)):
+        return [_jsonable(x) for x in v]
+    return str(v)
+
+
 class AuditLog:
     """This process's audit trail: <directory>/audit-<UTC start>.jsonl, hash-chained (§10).
 
@@ -321,7 +338,7 @@ class AuditLog:
             "component": self.component, "segment": self.segment, "version": __version__,
             "build": self.build, "event": event, "outcome": outcome, "actor": self.actor}
         if self.tq is not None:
-            rec["time_quality"] = self.tq.read()
+            rec["time_quality"] = _jsonable(self.tq.read())
         return rec
 
     def write(self, event: str, outcome: str = "info", **fields: Any) -> Dict[str, Any]:
@@ -331,7 +348,7 @@ class AuditLog:
             raise ValueError("outcome must be one of %s" % (OUTCOMES,))
         with self.lock:
             rec = self._base(event, outcome)
-            rec.update((k, v) for k, v in fields.items() if v is not None)
+            rec.update((k, _jsonable(v)) for k, v in fields.items() if v is not None)
             if not self.ok:
                 note = self._base("audit_failure", "info")
                 note.update(reason="recovered", error=self.error, missed=self.missed)
