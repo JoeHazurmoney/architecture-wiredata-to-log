@@ -23,7 +23,7 @@ import time
 from collections import OrderedDict, deque
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from . import __version__, hostinfo, logsetup, packets, wire
+from . import __version__, fault, hostinfo, logsetup, packets, wire
 from . import audit as auditlog
 from .audit import Summarizer
 from .outputs import FileOutput, HecOutput, MultiOutput, Output
@@ -348,7 +348,10 @@ class Receiver:
                  component: str = "receiver", time_quality: Any = None,
                  nic_probe: Optional[Callable[[], Dict[str, Any]]] = None,
                  archive_probe: Optional[Callable[[], Dict[str, Any]]] = None,
-                 sample_interval: float = 5.0):
+                 sample_interval: float = 5.0,
+                 fault_interval: float = 0.0, fault_window: float = 60.0,
+                 input_flat_after: float = 300.0, backlog_alarm_bytes: int = 1 << 20,
+                 archive_stale_after: float = 15.0, max_skew_s: float = 0.05):
         """`now` passed to handle_frame/tick drives every timer. Live capture passes a steady
         clock (immune to clock steps); pcap replay passes packet timestamps. `record_clock`,
         if given, supplies the wall-clock `time` written into health records, each event's
@@ -404,6 +407,14 @@ class Receiver:
         self.nic_probe = nic_probe
         self.archive_probe = archive_probe
         self.sample_interval = sample_interval
+        self.fault_interval = fault_interval
+        self.input_flat_after = input_flat_after
+        self.backlog_alarm_bytes = backlog_alarm_bytes
+        self.archive_stale_after = archive_stale_after
+        self.max_skew_s = max_skew_s
+        self.faults = fault.FaultTracker(fault_window)
+        self.last_fault: Optional[float] = None
+        self.gap_by_reason: Dict[str, int] = {}
         self.proc = hostinfo.ProcStats()
         self.sample: Dict[str, Any] = {}
         self.last_sample: Optional[float] = None
@@ -690,7 +701,7 @@ class Receiver:
                                      or now - self.last_sample >= self.sample_interval):
             self.last_sample = now
             self._take_sample()
-        ref =self.last_hb if self.last_hb is not None else self.started
+        ref = self.last_hb if self.last_hb is not None else self.started
         if not self.hb_stale and now - ref > self.hb_timeout:
             self.hb_stale = True
             log.warning("no heartbeat for %.1fs", now - ref)
@@ -703,6 +714,10 @@ class Receiver:
         if (self.state_path and (self.dirty or self.saved_with_pending)
                 and time.monotonic() - self.last_save >= 1.0):
             self.save_state()
+        if self.fault_interval and (self.last_fault is None
+                                    or now - self.last_fault >= self.fault_interval):
+            self.last_fault = now
+            self._evaluate_faults(now)
         if self.audit is not None:
             if self.last_audit is None:
                 self.last_audit = now
@@ -710,6 +725,62 @@ class Receiver:
                 self.last_audit = now
                 self.audit_periodic()
             self._drain_audit()
+
+    def _evaluate_faults(self, now: float) -> None:
+        data = [t for t in self.streams.values() if not t.records]
+        newest = max(data, key=lambda t: t.first_seen) if data else None
+        hb = newest.hb if newest is not None else {}
+        stats = self._stats()
+        ft = self.faults
+        ft.add(now, {
+            "gaps_not_received": self.gap_by_reason.get("not_received", 0),
+            "gaps_output_dropped": self.gap_by_reason.get("output_dropped", 0),
+            "nic_errors": sum(self.sample.get("nic_" + k) or 0 for k in (
+                "rx_errors", "rx_crc_errors", "rx_frame_errors", "rx_missed_errors")),
+            "kernel_drops": self.counters["kernel_drops"],
+            "output_dropped": self.counters["output_dropped"],
+            "hec_errors": sum(stats.get(p + k, 0) for p in ("", "audit_")
+                              for k in ("hec_posts_failed", "hec_rejected_events")),
+            "spool_files": stats.get("hec_spool_files", 0) + stats.get("audit_hec_spool_files", 0),
+            "sender_drops": hb.get("sender_drops", 0), "send_errors": hb.get("send_errors", 0),
+            "input_backlog_bytes": hb.get("input_backlog_bytes", 0)})
+        ref = self.started if self.started is not None else now
+        packet_age = now - (self.last_packet if self.last_packet is not None else ref)
+        frame_age = now - (self.last_wd2l if self.last_wd2l is not None else ref)
+        live_run = newest is not None and not newest.final
+        flat = ft.input_flat(now, newest.stream_id if newest else None,
+                             hb.get("events_in", hb.get("events_sent")))
+        archive_age = self.sample.get("archive_age_s")
+        sig = fault.Signals(
+            hb_timeout=self.hb_timeout, carrier=self.sample.get("nic_carrier"),
+            packet_age=packet_age, frame_age=frame_age,
+            clean_end=newest is not None and newest.final,
+            input_flat_s=flat if live_run else 0.0, input_flat_after=self.input_flat_after,
+            sender_drops=ft.delta("sender_drops"), send_errors=ft.delta("send_errors"),
+            backlog_growing=(ft.delta("input_backlog_bytes") > 0
+                             and (hb.get("input_backlog_bytes") or 0) > self.backlog_alarm_bytes),
+            gaps_not_received=ft.delta("gaps_not_received"),
+            gaps_output_dropped=ft.delta("gaps_output_dropped"),
+            nic_errors=ft.delta("nic_errors"), kernel_drops=ft.delta("kernel_drops"),
+            output_dropped=ft.delta("output_dropped"), spool_growing=ft.delta("spool_files") > 0,
+            hec_errors=ft.delta("hec_errors"),
+            archive_stale=(None if archive_age is None else
+                           packet_age < self.hb_timeout and archive_age > self.archive_stale_after))
+        f = fault.evaluate(sig)
+        prev, ft.current = ft.current, f
+        if f.key() != prev.key():
+            (log.info if f.status == "ok" else log.warning)(
+                "fault status %s%s", f.status,
+                " in %s (rule %d): %s" % (f.segment, f.rule, f.detail) if f.rule else "")
+            self._health_record("fault", now, fault_status=f.status, fault_segment=f.segment,
+                                fault_rule=f.rule, fault_detail=f.detail, segments=f.segments,
+                                previous_status=prev.status, previous_segment=prev.segment,
+                                previous_rule=prev.rule)
+        ts = fault.time_status(self.tq.read() if self.tq is not None else None, hb,
+                               self.last_clock_offset, max_skew_s=self.max_skew_s)
+        if ts != ft.time:
+            ft.time = ts
+            self._health_record("time_status", now, time_status=ts[0], time_reason=ts[1])
 
     def _take_sample(self) -> None:
         s: Dict[str, Any] = dict(self.proc.read())
@@ -734,6 +805,7 @@ class Receiver:
                      reason: str = "not_received") -> None:
         for a, b in declared:
             n = b - a + 1
+            self.gap_by_reason[reason] = self.gap_by_reason.get(reason, 0) + n
             self.counters["gap_events"] += n
             log.warning("GAP stream %016x seq %d-%d (%d events, %s)", t.stream_id, a, b, n, reason,
                         extra={"stream": "%016x" % t.stream_id, "seq": a})
@@ -792,6 +864,12 @@ class Receiver:
         rec.update(self.sample)
         rec.update(packet_age_s=round(now - self.last_packet, 1) if self.last_packet is not None else None,
                    frame_age_s=round(now - self.last_wd2l, 1) if self.last_wd2l is not None else None)
+        if self.fault_interval:
+            f = self.faults.current
+            rec.update(fault_status=f.status, fault_segment=f.segment, fault_rule=f.rule,
+                       fault_detail=f.detail or None, time_status=self.faults.time[0],
+                       time_reason=self.faults.time[1])
+            rec.update(("seg_" + k.replace("-", "_"), v) for k, v in f.segments.items())
         rec.update(self._identity())
         if self.tq is not None:
             rec["time_quality"] = self.tq.read()
@@ -978,6 +1056,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help="seconds a missing event may be late before it is declared a gap")
     p.add_argument("--hb-timeout", type=float, default=5.0)
     p.add_argument("--health-interval", type=float, default=60.0)
+    p.add_argument("--fault-interval", type=float, default=5.0,
+                   help="seconds between fault-location checks (live capture only)")
+    p.add_argument("--fault-window", type=float, default=60.0,
+                   help="seconds over which counter growth counts as 'new'")
+    p.add_argument("--input-flat-after", type=float, default=300.0,
+                   help="seconds without new events from the aggregator before rule 5 fires")
+    p.add_argument("--time-check-interval", type=float, default=60.0,
+                   help="seconds between chrony reads")
     p.add_argument("--stream-lost-after", type=float, default=60.0)
     p.add_argument("--stream-retention", type=float, default=7 * 86400.0,
                    help="seconds to keep full records of finished streams with nothing open; "
@@ -1053,7 +1139,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     logsetup.setup(a.log_format, a.verbose)
     settings = {k: v for k, v in sorted(vars(a).items())}
     cfg_sha = auditlog.sha256_hex(auditlog.canonical(settings))
-    tq = hostinfo.TimeQuality(shlex.split(a.chronyc) + ["-c", "tracking"])
+    tq = hostinfo.TimeQuality(shlex.split(a.chronyc) + ["-c", "tracking"],
+                             every=a.time_check_interval)
     component = "replay" if a.pcap else "receiver"
     audit = None
     if a.audit_dir:
@@ -1078,6 +1165,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
               stream_retention=a.stream_retention, rx_time=a.rx_time, src_port=a.src_port,
               audit=audit, audit_output=audit_out,
               config_sha256=None if a.pcap else cfg_sha,
+              fault_window=a.fault_window, input_flat_after=a.input_flat_after,
               component=component, time_quality=tq)
     try:
         if a.pcap:
@@ -1108,7 +1196,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 0
 
         clock = steady_clock()
-        rx = Receiver(out, record_clock=time.time,
+        rx = Receiver(out, record_clock=time.time, fault_interval=a.fault_interval,
                       nic_probe=(lambda: hostinfo.nic_stats(a.capture_iface or a.live)),
                       archive_probe=(lambda: hostinfo.archive_status(a.pcap_dir))
                       if a.pcap_dir else None, **kw)
