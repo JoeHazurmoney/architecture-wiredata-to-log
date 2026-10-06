@@ -133,3 +133,41 @@ def test_proc_stats_with_garbage_statm(tmp_path):
     ps = hostinfo.ProcStats(statm=str(statm))
     r = ps.read()
     assert isinstance(r["cpu_pct"], (int, float)) and r["rss_mb"] is None
+
+
+import os
+
+
+def fake_nic(root, name, carrier="1", **counters):
+    d = root / name
+    (d / "statistics").mkdir(parents=True)
+    if carrier is not None:
+        (d / "carrier").write_text(carrier + "\n")
+    (d / "carrier_changes").write_text("3\n")
+    for k, v in counters.items():
+        (d / "statistics" / k).write_text("%d\n" % v)
+
+
+def test_nic_stats_reads_carrier_and_counters(tmp_path):
+    fake_nic(tmp_path, "cap0", rx_packets=10, rx_crc_errors=2)
+    s = hostinfo.nic_stats("cap0", str(tmp_path))
+    assert (s["carrier"], s["carrier_changes"], s["rx_packets"], s["rx_crc_errors"]) == (True, 3, 10, 2)
+    assert s["tx_errors"] is None
+
+
+def test_nic_down_or_missing(tmp_path):
+    fake_nic(tmp_path, "cap0", carrier=None)     # reading carrier fails while the link is down
+    assert hostinfo.nic_stats("cap0", str(tmp_path))["carrier"] is False
+    assert hostinfo.nic_stats("nope", str(tmp_path))["carrier"] is None
+
+
+def test_archive_status_reports_the_newest_file(tmp_path):
+    assert hostinfo.archive_status(str(tmp_path)) == {
+        "archive_file": None, "archive_age_s": None, "archive_bytes": None}
+    old, new = tmp_path / "cap-1.pcap", tmp_path / "cap-2.pcap"
+    old.write_bytes(b"x" * 10)
+    new.write_bytes(b"y" * 20)
+    os.utime(old, (1000, 1000))
+    os.utime(new, (2000, 2000))
+    assert hostinfo.archive_status(str(tmp_path), now=2030.0) == {
+        "archive_file": "cap-2.pcap", "archive_age_s": 30.0, "archive_bytes": 20}

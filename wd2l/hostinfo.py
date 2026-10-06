@@ -5,6 +5,7 @@ ValueError for TimeQuality to catch."""
 
 from __future__ import annotations
 
+import glob
 import hashlib
 import os
 import pwd
@@ -196,3 +197,43 @@ class ProcStats:
             except (IndexError, ValueError):
                 rss = None
         return {"cpu_pct": pct, "rss_mb": rss}
+
+
+# ---------------------------------------------------------------- NICs and the capture archive
+
+NIC_COUNTERS = ("rx_packets", "rx_bytes", "rx_errors", "rx_dropped", "rx_crc_errors",
+                "rx_frame_errors", "rx_missed_errors", "tx_packets", "tx_errors", "tx_dropped")
+
+
+def _int(v: Optional[str]) -> Optional[int]:
+    try:
+        return int(v) if v is not None else None
+    except ValueError:
+        return None
+
+
+def nic_stats(iface: str, sysfs: str = "/sys/class/net") -> Dict[str, Any]:
+    """Carrier and counters from sysfs. Reading `carrier` fails while the interface is down,
+    which counts as no carrier. Driver-specific counters need `ethtool -S` by hand."""
+    base = os.path.join(sysfs, iface)
+    carrier = _read(os.path.join(base, "carrier"))
+    out: Dict[str, Any] = {
+        "carrier": (carrier == "1") if carrier in ("0", "1") else (False if os.path.isdir(base) else None),
+        "carrier_changes": _int(_read(os.path.join(base, "carrier_changes")))}
+    for c in NIC_COUNTERS:
+        out[c] = _int(_read(os.path.join(base, "statistics", c)))
+    return out
+
+
+def archive_status(pcap_dir: str, now: Optional[float] = None,
+                   pattern: str = "cap-*.pcap") -> Dict[str, Any]:
+    """The newest capture file: name, seconds since it was last written, size. tcpdump -U
+    writes every packet as it arrives, so with packets arriving the age stays near 0."""
+    files = glob.glob(os.path.join(pcap_dir, pattern))
+    if not files:
+        return {"archive_file": None, "archive_age_s": None, "archive_bytes": None}
+    newest = max(files, key=os.path.getmtime)
+    st = os.stat(newest)
+    now = time.time() if now is None else now
+    return {"archive_file": os.path.basename(newest), "archive_age_s": round(now - st.st_mtime, 1),
+            "archive_bytes": st.st_size}
