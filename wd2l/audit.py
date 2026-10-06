@@ -42,6 +42,7 @@ TAIL_BYTES = 1024 * 1024
 OUTCOMES = ("success", "failure", "info")
 HOME_SEGMENT = {"sender": "e1-sender", "receiver": "e2-receiver", "replay": "e2-receiver"}
 _UNSET = object()
+MIN_FIELDS = {"seq_first"}
 
 
 def canonical(rec: Dict[str, Any]) -> bytes:
@@ -193,7 +194,52 @@ def verify_dir(directory: str, upto: Optional[int] = None,
     return verify_lines(files(), upto, upto_hash)
 
 
-# ---------------------------------------------------------------- writing
+class Summarizer:
+    """Counts frequent events (bad input, truncation, send errors, gap fills...) so the owner
+    writes one audit record per event and key a minute instead of one per occurrence (§6)."""
+
+    def __init__(self, max_keys: int = 100):
+        self.max_keys = max_keys
+        self.lock = threading.Lock()
+        self.items: Dict[Tuple[str, Tuple[Tuple[str, Any], ...]], Dict[str, Any]] = {}
+
+    def note(self, event: str, key: Optional[Dict[str, Any]] = None, count: int = 1,
+             **values: Any) -> None:
+        """`key`: the fields that split the summary (host, source, reason...). `values`: numbers
+        keep the maximum (or the minimum, for MIN_FIELDS); strings are collected."""
+        key = dict(key or {})
+        k = (event, tuple(sorted(key.items())))
+        with self.lock:
+            item = self.items.get(k)
+            if item is None and sum(1 for e, _ in self.items if e == event) >= self.max_keys:
+                key = {"overflow": True}
+                k = (event, (("overflow", True),))
+                item = self.items.get(k)
+            if item is None:
+                item = self.items[k] = {"key": key, "count": 0, "num": {}, "sets": {}}
+            item["count"] += count
+            for name, v in values.items():
+                if v is None:
+                    continue
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    old = item["num"].get(name, v)
+                    item["num"][name] = min(old, v) if name in MIN_FIELDS else max(old, v)
+                else:
+                    item["sets"].setdefault(name, set()).add(str(v))
+
+    def drain(self) -> List[Tuple[str, Dict[str, Any]]]:
+        with self.lock:
+            items, self.items = self.items, {}
+        out = []
+        for (event, _), item in sorted(items.items(), key=lambda kv: (kv[0][0], repr(kv[0][1]))):
+            fields = dict(item["key"], count=item["count"])
+            fields.update(item["num"])
+            fields.update((n, sorted(s)) for n, s in item["sets"].items())
+            out.append((event, fields))
+        return out
+
+
+# ---- writing
 
 class AuditLocked(RuntimeError):
     """Another process is writing to this audit directory."""

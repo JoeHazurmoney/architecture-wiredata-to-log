@@ -434,3 +434,46 @@ def test_a_bad_time_quality_reading_does_not_stop_write(tmp_path):
     r = a.write("start", "success")
     assert r["n"] == 1 and r["time_quality"]["offset_ms"] is None
     assert audit.verify_dir(a.dir).ok
+
+
+import threading
+
+
+def test_summarizer_counts_per_key_and_keeps_extremes():
+    s = audit.Summarizer()
+    s.note("truncated", {"host": "h1", "source": "s"}, max_original_bytes=300000)
+    s.note("truncated", {"host": "h1", "source": "s"}, max_original_bytes=900000)
+    s.note("truncated", {"host": "h2", "source": "s"}, max_original_bytes=1)
+    s.note("opaque_content", {"host": "h1", "source": "s"}, kinds="encrypted")
+    s.note("opaque_content", {"host": "h1", "source": "s"}, kinds="compressed")
+    s.note("gap_filled", {"stream": "ab"}, seq_first=9, seq_last=9)
+    s.note("gap_filled", {"stream": "ab"}, seq_first=4, seq_last=4)
+    got = s.drain()
+    assert ("truncated", {"host": "h1", "source": "s", "count": 2,
+                          "max_original_bytes": 900000}) in got
+    assert ("opaque_content", {"host": "h1", "source": "s", "count": 2,
+                               "kinds": ["compressed", "encrypted"]}) in got
+    assert ("gap_filled", {"stream": "ab", "count": 2, "seq_first": 4, "seq_last": 9}) in got
+    assert len(got) == 4 and s.drain() == []
+
+
+def test_summarizer_caps_keys_per_event():
+    s = audit.Summarizer(max_keys=2)
+    for i in range(5):
+        s.note("auth_failure", {"client": "10.0.0.%d" % i})
+    got = dict((tuple(sorted(f.items())), e) for e, f in s.drain())
+    assert (("count", 3), ("overflow", True)) in got and len(got) == 3
+
+
+def test_summarizer_is_thread_safe():
+    s = audit.Summarizer()
+
+    def worker():
+        for _ in range(1000):
+            s.note("send_failure", {"error": "ENOBUFS"})
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert s.drain() == [("send_failure", {"error": "ENOBUFS", "count": 4000})]
