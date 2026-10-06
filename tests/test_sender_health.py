@@ -85,3 +85,52 @@ def test_clients_come_from_the_input_server():
         c.close()
         srv.shutdown()
         srv.server_close()
+
+
+from wd2l.reconcile import SetHash
+from helpers import read_audit
+
+
+def test_heartbeat_events_hash_covers_events_up_to_its_seq():
+    sock = FakeSock()
+    s = Sender(("10.255.255.2", 5514), sock=sock, rate_pps=0, max_datagram=500)
+    s.send_heartbeat()
+    assert last_info(sock)["events_hash"] == "0" * 64
+    for i in range(5):
+        s.send_event({"_raw": "line %d " % i * 100})    # several pieces each
+    s.send_heartbeat()
+    h = SetHash()
+    for f in [wire.decode(x) for x in sock.sent]:
+        if f.type == wire.TYPE_DATA and f.chunk_idx == 0:
+            h.add(f.seq, f.digest)
+    assert last_info(sock)["events_hash"] == h.hex() and wire.decode(sock.sent[-1]).seq == 5
+
+
+def test_worst_case_heartbeat_fits_one_packet():
+    """Review focus 3: every key at its largest still fits one packet at MTU 1500."""
+    sock = FakeSock()
+    s = Sender(("10.255.255.2", 5514), sock=sock, rate_pps=0)
+    s.link = {"boot": 2 ** 63, "prev_stream": 2 ** 64 - 1, "prev_last_seq": 2 ** 63}
+    s.counters = {k: 2 ** 63 for k in s.counters}
+    s.events_hash = SetHash(2 ** 256 - 1)
+    snap = {"stall_s": 123456789.123, "cpu_pct": 9999.9, "rss_mb": 1048576.5, "clients": 99999,
+            "input_backlog_bytes": 2 ** 63, "nic_carrier": False, "nic_tx_packets": 2 ** 63,
+            "nic_tx_errors": 2 ** 63, "nic_tx_dropped": 2 ** 63, "time_stratum": 16,
+            "time_offset_ms": -123456789.123, "time_synced": False, "audit_ok": False,
+            "audit_n": 2 ** 63}
+    frame = s._heartbeat_frame(True, snap)
+    info = json.loads(wire.decode(frame).payload)
+    assert "nic_tx_dropped" in info and info["events_hash"] == "f" * 64
+    assert len(frame) <= wire.DEFAULT_MAX_DATAGRAM, len(frame)
+
+
+def test_reconcile_records(tmp_path):
+    a = auditlog.AuditLog(str(tmp_path / "audit"), "sender", 1, host="h", actor="me", build="b")
+    sock = FakeSock()
+    s = Sender(("10.255.255.2", 5514), sock=sock, rate_pps=0, audit=a)
+    for i in range(3):
+        s.send_event({"_raw": "x%d" % i})
+    s.reconcile_record()
+    [r] = [x for x in read_audit(a.dir) if x["event"] == "reconcile"]
+    assert (r["cut"], r["last_seq"], r["events_sent"], r["sender_hash"]) == \
+        (3, 3, 3, s.events_hash.hex())

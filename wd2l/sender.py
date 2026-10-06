@@ -34,6 +34,7 @@ from typing import Any, Deque, Dict, List, Optional, Sequence, Set, Tuple
 from . import __version__
 from . import audit as auditlog
 from . import hostinfo, logsetup, opaque, wire
+from .reconcile import SetHash
 
 log = logging.getLogger("wd2l.sender")
 log_input = logging.getLogger("wd2l.sender.input")
@@ -98,6 +99,8 @@ class Sender:
                                        if f not in self.extra_fields)
         self.stream_id = stream_id or new_stream_id()
         self.seq = 0
+        self.events_hash = SetHash()   # §9: this run's set hash over (seq, event SHA-256)
+        self.next_reconcile = time.monotonic() + 3600
         self.started = time.time()
         self.counters = {"events_sent": 0, "datagrams_sent": 0, "sender_drops": 0,
                          "truncated": 0, "bad_input": 0, "send_errors": 0,
@@ -302,6 +305,7 @@ class Sender:
         stamped = self.source_seq or self.tx_time or self.opaque_check
         if not stamped:
             data = self._fit(event)
+            digest = wire.event_digest(data)
         with self.lock:
             if self.closed:
                 return 0
@@ -323,8 +327,11 @@ class Sender:
                 if self.tx_time:
                     stamps[TX_TIME_FIELD] = round(time.time(), 3)
                 data = self._fit(dict(event, **stamps))
+                digest = wire.event_digest(data)
             self.seq += 1
-            for dg in wire.encode_event(self.stream_id, self.seq, data, self.max_datagram):
+            self.events_hash.add(self.seq, digest)
+            for dg in wire.encode_event(self.stream_id, self.seq, data, self.max_datagram,
+                                        digest=digest):
                 self._transmit(dg)
             self.counters["events_sent"] += 1
             return self.seq
@@ -353,7 +360,8 @@ class Sender:
     def heartbeat_info(self, final: bool = False,
                        snap: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         info = dict(self.counters, sender_time=round(time.time(), 3),
-                    uptime=round(time.time() - self.started, 1), **self.link)
+                    uptime=round(time.time() - self.started, 1),
+                    events_hash=self.events_hash.hex(), **self.link)
         if snap:
             info.update(snap)
         if final:
@@ -398,12 +406,26 @@ class Sender:
             self.audit.write(event, SUMMARY_OUTCOME.get(event, "info"),
                              stream="%016x" % self.stream_id, **fields)
 
+    def reconcile_record(self) -> None:
+        """§9: this side's numbers at the current cut, for the reconcile report."""
+        if self.audit is None:
+            return
+        with self.lock:
+            fields = dict(stream="%016x" % self.stream_id, cut=self.seq, last_seq=self.seq,
+                          events_in=self.counters["events_in"],
+                          events_sent=self.counters["events_sent"],
+                          sender_hash=self.events_hash.hex())
+        self.audit.write("reconcile", "info", **fields)
+
     def periodic(self) -> None:
         """About once a minute, from the heartbeat thread: summaries, time quality, free space
         and the daily self-check of the audit chain."""
         if self.audit is None:
             return
         self.flush_summaries()
+        if time.monotonic() >= self.next_reconcile:
+            self.next_reconcile += 3600
+            self.reconcile_record()
         self.audit.check_time()
         self.audit.check_space()
         self.audit.maybe_verify()
@@ -795,6 +817,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     log.info("final: last_seq=%d %s", sender.seq, json.dumps(sender.counters, sort_keys=True))
     if audit:
         sender.flush_summaries()
+        sender.reconcile_record()
         audit.write("stop", "success", stream="%016x" % sender.stream_id, last_seq=sender.seq,
                     signal=signal.Signals(stopped_by[0]).name if stopped_by else None,
                     counters=dict(sender.counters))

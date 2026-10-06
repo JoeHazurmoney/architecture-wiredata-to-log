@@ -240,6 +240,7 @@ snapshot keys would not fit `--max-datagram`, they are left out of that heartbea
 | `clients` | integer | connections | always | Aggregator connections to the sender |
 | `cpu_pct` | number | % | always | Sender process CPU over the last heartbeat interval |
 | `datagrams_sent` | integer | packets | always | Datagrams handed to the OS so far, not counting this one |
+| `events_hash` | string, 64 hex digits | | always (wd2l ≥ 0.2.0) | Set hash of this run's events 1 … `seq` (the heartbeat's `seq` is the cut): the sum modulo 2²⁵⁶ of SHA-256(`seq` as 8 bytes big-endian ‖ the event's SHA-256 `digest`). Enclave 2 compares it with its own value to prove it delivered exactly these events ([audit plan §9](audit-and-health-plan.md#9-reconciliation-completeness-and-accuracy)). Never dropped from a trimmed heartbeat. |
 | `events_in` | integer | lines | always | Input lines that were events or were rejected |
 | `events_sent` | integer | events | always | Events numbered and sent |
 | `final` | `true` | | last heartbeat only | Clean shutdown. Always the last frame of a run |
@@ -286,6 +287,8 @@ There is no `boot` and there are no `prev_*` keys. Records streams aren't linked
   restarts only with a new stream, so the pair (`stream_id`, `seq`) names one event.
 * Runs are chained by `boot`, `prev_stream` and `prev_last_seq`. Enclave 2 can therefore tell a
   lost tail of one run, or a whole run it never saw.
+* Each heartbeat's `events_hash` lets Enclave 2 reconcile the data stream end to end; the records
+  stream doesn't carry one.
 * The receiver's rules for gaps, duplicates and links are in
   [wire-format.md](wire-format.md#receiver-rules).
 
