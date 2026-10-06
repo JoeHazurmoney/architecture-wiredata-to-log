@@ -1,14 +1,15 @@
 # Enclave 1: log retention server
 
-Keeps a copy of every event the log aggregator collects for **1 year** (NIST SP 800-53 Rev 5,
-AU-11). It has two jobs:
+Keeps a copy of every event the log aggregator collects for **1 year**, the audit record retention
+period (for example NIST SP 800-53 AU-11, or the period a SOC 2 retention policy sets). It has two
+jobs:
 
 1. **Replay source.** Enclave 2 can't ask for lost events again across a one-way link. When it
    reports a loss, the aggregator reads that time window back from this server and sends it
    through `wd2l-sender` again.
 2. **1-year home for wd2l's Enclave 1 audit files**, once those are built (see
    [audit-and-health-plan.md](../audit-and-health-plan.md)). This is proposed; confirm it with the
-   ISSO (open item 5 in the plan).
+   security owner (open item 5 in the plan).
 
 It isn't on the transfer path. If it's down, logs still reach Enclave 2; only the Enclave 1 copy
 falls behind.
@@ -39,8 +40,8 @@ objects and read them back with a file or S3 input.
 | Layout | Compressed files (or objects) split by time, at least by day, so a time window can be found and read back quickly. JSON lines with gzip is a good default |
 | Network | Reached from the central log server's normal Enclave 1 NIC. Never through the egress NIC: its firewall allows only the one wd2l flow. Use TLS where the protocol supports it |
 | Aggregator side | Its own output with its **own persistent queue**, so an outage here never holds up the sender |
-| Retention | 1 year (AU-11), then delete |
-| Time | chrony from the Enclave 1 time source, like every other host (AU-8) |
+| Retention | 1 year (audit record retention), then delete |
+| Time | chrony from the Enclave 1 time source, like every other host (time stamps) |
 
 ## 2. Size the storage
 
@@ -61,11 +62,12 @@ earlier: these are audit records.
 ## 4. Protect it
 
 It holds a full copy of Enclave 1's logs, and later wd2l's audit files, so treat it as audit
-storage (AU-9):
+storage (protection of audit information):
 
 * Only the aggregator's service account can write. Only the delete job (or lifecycle rule) can
   delete. Administrators and analysts who need the data get read access.
-* Use write-once storage (object lock) if you have it. It's optional at the Moderate baseline.
+* Use write-once storage (object lock) if you have it. It's optional unless your framework or
+  assessor requires it.
 
 ## 5. Replay a time window
 
@@ -81,9 +83,10 @@ The full procedure is in [operations.md](../operations.md#re-sending-from-enclav
 ## 6. wd2l audit files (proposed)
 
 Once wd2l writes audit files (phase 1 of the audit plan), the aggregator also reads
-`/var/log/wd2l/audit.jsonl` on the central log server and routes it to the retention server
+`/var/log/wd2l/audit-*.jsonl` on the central log server and routes them to the retention server
 only. Enclave 2 already gets those records in-band from the sender. Keep every line unchanged,
-so the hash chain still verifies on the copy.
+so the hash chain still verifies on the copy. wd2l starts a new file when one gets large and
+never renames them, so a file input that picks up new files by name pattern is enough.
 
 ## 7. Checks
 

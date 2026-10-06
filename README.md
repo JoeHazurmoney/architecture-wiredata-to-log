@@ -140,8 +140,9 @@ Proof of concept. Verified in the namespace lab (see the end of
 behavior, and a real log aggregator, log retention server and SIEM (the lab has no retention
 server). The deployment guides list the checks for each.
 
-Next: audit records (NIST SP 800-53 Rev 5, Moderate) and a fault-location health dashboard.
-Proposal for review: [docs/audit-and-health-plan.md](docs/audit-and-health-plan.md).
+Next: audit records that meet common audit-control requirements (for example the NIST SP 800-53
+AU family or SOC 2 CC7.2), and a fault-location health dashboard. Proposal for review:
+[docs/audit-and-health-plan.md](docs/audit-and-health-plan.md).
 
 How several live log files are tracked and rebuilt from one stream:
 [docs/multiple-files.md](docs/multiple-files.md).

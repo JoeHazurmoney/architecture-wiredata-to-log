@@ -135,8 +135,8 @@ A second output keeps the 1-year Enclave 1 copy ([retention-server.md](retention
 * The aggregator must be able to read a time window back from the retention server and route it
   to the sender output. Route replayed events to the sender output only, not back to the
   retention server.
-* Once wd2l writes audit files (audit plan, phase 1), also read `/var/log/wd2l/audit.jsonl` and
-  route it to the retention server only, with each line unchanged.
+* Once wd2l writes audit files (audit plan, phase 1), also read `/var/log/wd2l/audit-*.jsonl`
+  and route them to the retention server only, with each line unchanged.
 
 ### Example: Cribl Stream
 
