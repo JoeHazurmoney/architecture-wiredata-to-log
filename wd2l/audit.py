@@ -97,8 +97,13 @@ class ChainChecker:
             res.problems.append("%s: record has no valid n and hash" % where)
             return
         res.records += 1
-        if record_hash(rec) != h:
-            res.problems.append("%s: n=%d content does not match its hash (edited)" % (where, n))
+        try:
+            computed_hash = record_hash(rec)
+        except (ValueError, RecursionError):
+            res.problems.append("%s: n=%d can't be hashed (not canonical JSON: NaN, Infinity or too deeply nested)" % (where, n))
+        else:
+            if computed_hash != h:
+                res.problems.append("%s: n=%d content does not match its hash (edited)" % (where, n))
         if self.prev is None:
             res.first_n = n
             if n == 1 and ph != GENESIS:
@@ -131,7 +136,7 @@ def verify_lines(files: Iterable[Tuple[str, List[bytes]]], upto: Optional[int] =
                 continue
             try:
                 rec = json.loads(line)
-            except ValueError:
+            except (ValueError, RecursionError):
                 res.problems.append("%s: not JSON" % where)
                 continue
             if not isinstance(rec, dict):

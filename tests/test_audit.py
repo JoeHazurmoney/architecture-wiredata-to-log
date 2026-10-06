@@ -140,3 +140,20 @@ def test_verify_cli(tmp_path, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["result"] == "ok" and out["records"] == 3
     assert audit.main(["verify", str(tmp_path), "--upto", "9"]) == 1
+
+
+def test_nan_record_is_reported_not_crash():
+    # A record with NaN in JSON (json.loads accepts NaN, but canonical refuses it)
+    recs = chain(2)
+    nan_line = b'{"n":2,"prev_hash":"' + recs[0]["hash"].encode() + b'","hash":"x","v":NaN}\n'
+    res = audit.verify_lines([("f", lines(recs[:1]) + [nan_line])])
+    assert not res.ok and any("n=2" in p and "can't be hashed" in p for p in res.problems)
+    # should complete normally and report a problem, not crash
+
+
+def test_deeply_nested_json_is_reported_not_crash():
+    # Very deeply nested JSON causes RecursionError
+    deep = b"[" * 100000 + b"]" * 100000 + b"\n"
+    res = audit.verify_lines([("f", [deep])])
+    assert any("f:1: not JSON" in p for p in res.problems)
+    # should complete normally and report as junk, not crash
