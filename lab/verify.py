@@ -49,6 +49,8 @@ def main():
     p.add_argument("received_dir")
     p.add_argument("--state", help="receiver state file: open gaps are read from here")
     p.add_argument("--max-event", type=int, default=wire.DEFAULT_MAX_EVENT)
+    p.add_argument("--allow-other-packets", action="store_true",
+                   help="foreign packets crossed the cable on purpose")
     p.add_argument("--expect-gaps", action="store_true", help="loss was injected on purpose")
     p.add_argument("--allow-duplicates", action="store_true",
                    help="identical copies of an event are fine (after a receiver crash)")
@@ -184,6 +186,8 @@ def main():
     last = [h for h in health if h["type"] == "health"]
     last = last[-1] if last else {}
     for k in ("other_packets", "bad_frames", "bad_events", "digest_mismatch"):
+        if k == "other_packets" and a.allow_other_packets:
+            continue
         if last.get(k):
             problems.append("%s = %s" % (k, last[k]))
     truncated = [s for s, e in seen.items() if "wd2l_truncated" in e.get("fields", {})]

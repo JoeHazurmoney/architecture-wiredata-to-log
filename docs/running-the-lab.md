@@ -242,6 +242,38 @@ Things to know:
 * Lines that aren't valid UTF-8 (rare, but some logs have them) are carried base64-encoded and
   restored exactly.
 
+## 9. Inject faults and see where the receiver places them
+
+The receiver decides which segment of the path is at fault: Enclave 1's input, the sender, the cable and tap, the capture, or the SIEM link. Each `--fault` run injects one fault, checks that the receiver names the right segment and rule, then checks that the report clears once the fault is over. A run ends with `PASS: fault reported where expected, then cleared`, and the usual verify must still print `PASS`.
+
+| `--fault` | What the lab does | What the receiver should say |
+|---|---|---|
+| `aggregator-stop` | The stand-in aggregator pauses for 12 seconds mid-run. | `e1-input`, amber, rule 5 |
+| `sender-stop` | Half the logs, a clean sender stop, 10 seconds, sender start, the other half. | `e1-sender`, amber, rule 2 |
+| `sender-hang` | The sender is frozen (`kill -STOP`) for 10 seconds. | `e1-sender/boundary`, red, rule 3 |
+| `tap-down` | The tap's monitor port goes down for 10 seconds. | `boundary`, red, rule 1 |
+| `foreign-only` | The sender is stopped and other UDP traffic crosses the cable for 10 seconds. | `boundary`, red, rule 4 |
+| `wire-loss` | 20% of packets are lost on the cable for 10 seconds. | `boundary`, amber, rule 9 |
+| `receiver-slow` | A small capture buffer, and the receiver is stopped for 4 seconds at 5,000 events a second. | `e2-capture`, red, rule 8 |
+| `siem-down` | The stand-in SIEM is down for 12 seconds. | `e2-siem`, amber, rule 10 |
+| `clock` | The stand-in `chronyc` says "not synchronised" for 10 seconds. | a time alarm |
+
+Run one:
+
+```bash
+sudo lab/run-lab.sh --fault tap-down
+```
+
+A fault run sends more events than the default (20,000) so that it outlasts the injection. It can't be combined with `--loss`, `--receiver-outage`, `--maintenance` or `--files`.
+
+To look at the answer, search the receiver's health file:
+
+```bash
+grep '"type": "fault"' lab/out/received/health.jsonl
+```
+
+For how the answer appears on the dashboard, see section 12 of the [audit and health plan](audit-and-health-plan.md).
+
 ## If something goes wrong
 
 * **"run as root"**: add `sudo`.

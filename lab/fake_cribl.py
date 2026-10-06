@@ -14,6 +14,9 @@ def main():
     p.add_argument("--to", default="127.0.0.1:10070")
     p.add_argument("--eps", type=float, default=1000, help="events per second, 0 = as fast as possible")
     p.add_argument("--token", default="")
+    p.add_argument("--pause-after", type=int, default=0,
+                   help="after this many events, stop sending (connection stays open)")
+    p.add_argument("--pause-s", type=float, default=0, help="for this many seconds")
     a = p.parse_args()
     host, _, port = a.to.rpartition(":")
     s = socket.create_connection((host, int(port)))
@@ -24,6 +27,9 @@ def main():
         for line in f:
             s.sendall(line if line.endswith(b"\n") else line + b"\n")
             n += 1
+            if a.pause_after and n == a.pause_after:
+                time.sleep(a.pause_s)
+                start += a.pause_s
             if a.eps > 0:
                 ahead = n / a.eps - (time.monotonic() - start)
                 if ahead > 0:
