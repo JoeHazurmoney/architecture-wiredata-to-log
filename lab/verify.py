@@ -61,6 +61,8 @@ def main():
                         "linked, with nothing lost in between")
     p.add_argument("--audit-dir", action="append", default=[],
                    help="an audit directory whose hash chain must verify (repeatable)")
+    p.add_argument("--e1-audit-dir", help="Enclave 1's audit directory: the in-band copy in "
+                   "<received>/audit.jsonl must match it")
     a = p.parse_args()
     if a.sender_runs > 1 and a.source_seq:
         p.error("--sender-runs can't be combined with --source-seq (line numbers restart "
@@ -93,8 +95,10 @@ def main():
     problems = []
     # Sender runs in the order Enclave 2 first saw them, and where each run's numbers start in
     # the sent file.
-    runs = list(dict.fromkeys(h["stream"] for h in health if h["type"] == "stream_start"))
-    ends = {h["stream"]: h for h in health if h["type"] == "stream_end"}
+    runs = list(dict.fromkeys(h["stream"] for h in health
+                              if h["type"] == "stream_start" and not h.get("records")))
+    ends = {h["stream"]: h for h in health
+            if h["type"] == "stream_end" and not h.get("records")}
     offset = {}
     if a.sender_runs == 1:
         if len(streams) > 1:
@@ -122,7 +126,7 @@ def main():
             if unread:
                 problems.append("sender run %s stopped with %s bytes of input unread" % (s, unread))
         for kind in ("stream_lost", "stream_missing", "sender_boot_reset"):
-            n = sum(h["type"] == kind for h in health)
+            n = sum(h["type"] == kind for h in health if not h.get("records"))
             if n:
                 problems.append("%d %s record(s)" % (n, kind))
     seen = {}
@@ -154,13 +158,15 @@ def main():
             st = json.load(f)
         open_gaps = set()
         for sid, s in st["streams"].items():
+            if s.get("records"):
+                continue
             base = offset.get(sid, 0)
             for lo, hi in s["gaps"]:
                 open_gaps |= set(range(base + lo, base + hi + 1))
     else:
         open_gaps = set()
         for h in health:
-            if h["type"] == "gap":
+            if h["type"] == "gap" and not h.get("records"):
                 base = offset.get(h["stream"], 0)
                 open_gaps |= set(range(base + h["first_seq"], base + h["last_seq"] + 1))
 
@@ -197,6 +203,27 @@ def main():
         print("audit %-28s %d records, chain %s%s" % (
             os.path.basename(d.rstrip("/")) + ":", res.records, "ok" if res.ok else "BROKEN",
             ", %d torn line(s)" % len(res.torn) if res.torn else ""))
+
+    if a.e1_audit_dir:
+        official = {}
+        for path in auditlog.audit_files(a.e1_audit_dir):
+            with open(path, "rb") as f:
+                for line in auditlog.split_lines(f.read()):
+                    if line.endswith(b"\n"):
+                        r = json.loads(line)
+                        official[r["n"]] = r["hash"]
+        inband = [r for r in load(os.path.join(a.received_dir, "audit.jsonl"))
+                  if r.get("component") == "sender" and r.get("n") is not None]
+        wrong = [r["n"] for r in inband if official.get(r["n"]) != r["hash"]]
+        missing = set(official) - {r["n"] for r in inband}
+        if wrong:
+            problems.append("%d in-band sender audit records differ from Enclave 1's files: %s"
+                            % (len(wrong), wrong[:10]))
+        if missing and not a.expect_gaps:
+            problems.append("%d sender audit records never reached Enclave 2: %s"
+                            % (len(missing), sorted(missing)[:10]))
+        print("sender audit:    %d of %d records arrived in-band" % (len(official) - len(missing),
+                                                                     len(official)))
 
     print("sent:            %d" % len(sent_by_seq))
     if a.sender_runs > 1:

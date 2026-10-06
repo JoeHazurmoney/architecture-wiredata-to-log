@@ -39,6 +39,7 @@ class MemOutput(Output):
         self.events = []
         self.records = []
         self.audits = []
+        self.forwarded_records = []
 
     def event(self, evt, stream_id, seq):
         self.events.append((stream_id, seq, evt))
@@ -48,6 +49,9 @@ class MemOutput(Output):
 
     def audit(self, rec):
         self.audits.append(rec)
+
+    def forwarded(self, evt, stream_id, seq, kind):
+        self.forwarded_records.append((kind, stream_id, seq, evt))
 
     def kinds(self, kind):
         return [r for r in self.records if r["type"] == kind]

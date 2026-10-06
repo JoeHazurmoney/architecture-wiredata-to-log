@@ -84,3 +84,117 @@ def test_no_records_stream_without_a_forwarding_audit_log(tmp_path):
     a.write("start", "success")
     s.flush_records(final=True)
     assert sock.sent == []
+
+
+import os
+
+from wd2l import receiver
+from wd2l.outputs import FileOutput
+from wd2l.receiver import Receiver
+
+from helpers import MemOutput, eth, read_audit, write_pcap
+
+DATA, RECS = 0x1111, 0x2222
+
+
+def rx(**kw):
+    out, aout = MemOutput(), MemOutput()
+    kw.setdefault("health_interval", 1e9)
+    return Receiver(out, dst_ip="10.255.255.2", dst_port=5514, audit_output=aout, **kw), out, aout
+
+
+def rec_frames(seq, rec, kind="audit", sid=RECS):
+    body = json.dumps({"_raw": json.dumps(rec), "host": "logsrv01",
+                       "sourcetype": "wd2l:sender:" + kind}).encode()
+    return wire.encode_event(sid, seq, body, flags=wire.FLAG_RECORDS)
+
+
+def feed(r, dgs, now=0):
+    for d in dgs:
+        r.handle_frame(eth(d), now)
+
+
+def test_records_stream_is_routed_by_the_flag(tmp_path):
+    s, a, sock = make(tmp_path)
+    s.send_event({"_raw": "data"})
+    a.write("start", "success")
+    s.health_outbox.append(s.health_record())
+    s.flush_records()
+    r, out, aout = rx()
+    feed(r, sock.sent)
+    assert [e[2]["_raw"] for e in out.events] == ["data"]
+    assert [k for k, *_ in aout.forwarded_records] == ["audit"]
+    assert [k for k, *_ in out.forwarded_records] == ["health"]
+    assert r.counters["events_delivered"] == 1 and r.counters["records_delivered"] == 2
+    audit_evt = aout.forwarded_records[0][3]
+    assert json.loads(audit_evt["_raw"])["event"] == "start"
+
+
+def test_aggregator_event_claiming_audit_sourcetype_stays_data():
+    """Review focus 4: routing is by the flag, never by sourcetype."""
+    r, out, aout = rx()
+    body = json.dumps({"_raw": '{"event":"start"}', "sourcetype": "wd2l:sender:audit",
+                       "index": "wd2l_audit"}).encode()
+    feed(r, wire.encode_event(DATA, 1, body))
+    assert len(out.events) == 1 and out.forwarded_records == aout.forwarded_records == []
+
+
+def test_lost_records_frames_are_a_gap_marked_records():
+    r, out, _ = rx(gap_window=1)
+    feed(r, rec_frames(1, {"event": "a"}) + rec_frames(3, {"event": "c"}))
+    r.tick(5)
+    [g] = out.kinds("gap")
+    assert g["records"] is True and (g["first_seq"], g["last_seq"]) == (2, 2)
+    assert out.kinds("stream_start")[0]["records"] is True
+
+
+def test_records_streams_stay_out_of_the_sender_totals():
+    r, out, _ = rx()
+    feed(r, [wire.encode_heartbeat(DATA, 0, {"sender_drops": 2})])
+    feed(r, [wire.encode_heartbeat(RECS, 0, {"sender_drops": 5}, flags=wire.FLAG_RECORDS)])
+    assert r.emit_health(0)["sender_drops"] == 2
+
+
+def test_a_records_stream_is_not_history_for_a_new_receiver():
+    r, out, _ = rx()
+    feed(r, rec_frames(1, {"event": "start"}))
+    feed(r, [wire.encode_heartbeat(DATA, 0, {"boot": 5, "prev_stream": 99, "prev_last_seq": 10})])
+    assert out.kinds("stream_missing") == []
+
+
+def test_bad_record_json_is_counted_and_not_forwarded():
+    r, out, aout = rx()
+    body = json.dumps({"_raw": "not json", "sourcetype": "wd2l:sender:audit"}).encode()
+    feed(r, wire.encode_event(RECS, 1, body, flags=wire.FLAG_RECORDS))
+    assert r.counters["records_bad"] == 1 and aout.forwarded_records == []
+
+
+def test_file_output_writes_forwarded_records_durably(tmp_path):
+    o = FileOutput(str(tmp_path))
+    o.forwarded({"_raw": '{"event":"start"}'}, RECS, 1, "audit")
+    o.forwarded({"_raw": '{"type":"health"}'}, RECS, 2, "health")
+    assert o.pending() == {RECS: {1, 2}}
+    o.flush()
+    assert o.pending() == {}
+    o.close()
+    assert (tmp_path / "audit.jsonl").read_text() == '{"event":"start"}\n'
+    assert (tmp_path / "e1-health.jsonl").read_text() == '{"type":"health"}\n'
+
+
+def test_the_senders_trail_arrives_whole_in_enclave_2(tmp_path):
+    s, a, sock = make(tmp_path)
+    a.write("start", "success")
+    for i in range(30):
+        s.send_event({"_raw": "line %d" % i})
+        if i % 10 == 9:
+            a.write("gap_check", "info", i=i)
+            s.flush_records()
+    s.send_heartbeat(final=True)
+    a.write("stop", "success")
+    s.flush_records(final=True)
+    write_pcap(str(tmp_path / "a.pcap"), sock.sent)
+    out = tmp_path / "out"
+    receiver.main(["--pcap", str(tmp_path / "a.pcap"), "--out-dir", str(out)])
+    with open(out / "audit.jsonl") as f:
+        inband = [json.loads(x) for x in f]
+    assert inband == read_audit(a.dir)

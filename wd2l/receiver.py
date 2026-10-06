@@ -136,6 +136,7 @@ class StreamTracker:
         self.delivered = 0
         self.boot: Optional[int] = None   # sender restart count, if the sender reports one
         self.linked = False               # its link to the previous stream has been checked
+        self.records = False   # the sender's records stream (flags bit 0)
         self.clock_offset: Optional[float] = None   # receiver minus sender clock, last heartbeat
 
     def needed(self, seq: int) -> bool:
@@ -229,7 +230,8 @@ class StreamTracker:
                 "marks": list(self.marks), "gaps": self.gaps.r, "first_seen": self.first_seen,
                 "last_seen": self.last_seen, "final": self.final,
                 "lost_reported": self.lost_reported, "hb": self.hb,
-                "delivered": self.delivered, "boot": self.boot, "linked": self.linked}
+                "delivered": self.delivered, "boot": self.boot, "linked": self.linked,
+                "records": self.records}
 
     @classmethod
     def from_json(cls, sid: int, d: Dict[str, Any]) -> "StreamTracker":
@@ -249,6 +251,7 @@ class StreamTracker:
         boot = d.get("boot")
         t.boot = int(boot) if isinstance(boot, int) else None
         t.linked = bool(d.get("linked", False))
+        t.records = bool(d.get("records", False))
         return t
 
 
@@ -372,7 +375,8 @@ class Receiver:
         self.counters = {"frames": 0, "other_packets": 0, "bad_frames": 0, "bad_events": 0,
                          "events_delivered": 0, "duplicates": 0, "late_fills": 0,
                          "gap_events": 0, "heartbeats": 0, "kernel_drops": 0,
-                         "uncommitted_at_start": 0, "output_dropped": 0}
+                         "uncommitted_at_start": 0, "output_dropped": 0,
+                         "records_delivered": 0, "records_bad": 0}
         self.other_reasons: Dict[str, int] = {}
         self.bad_reasons: Dict[str, int] = {}
         self.last_hb: Optional[float] = None
@@ -456,7 +460,7 @@ class Receiver:
             self.counters["bad_frames"] += 1
             self._bump(self.bad_reasons, str(e))
             return
-        t = self._stream(f.stream_id, now)
+        t = self._stream(f.stream_id, now, bool(f.flags & wire.FLAG_RECORDS))
         if f.type == wire.TYPE_HEARTBEAT:
             self._heartbeat(t, f, now)
             return
@@ -480,6 +484,10 @@ class Receiver:
             self.counters["late_fills"] += 1
             self.summary.note("gap_filled", {"stream": "%016x" % f.stream_id},
                               seq_first=f.seq, seq_last=f.seq)
+        if t.records:
+            self._deliver_record(evt, f.stream_id, f.seq)
+            self.dirty = True
+            return
         if self.rx_time:
             evt["fields"] = dict(evt.get("fields", {}), **{RX_TIME_FIELD: round(self._wall(now), 3)})
         self.out.event(evt, f.stream_id, f.seq)
@@ -488,18 +496,43 @@ class Receiver:
 
     # -- stream bookkeeping
 
-    def _stream(self, sid: int, now: float) -> StreamTracker:
+    @staticmethod
+    def _flag(t: StreamTracker) -> Dict[str, Any]:
+        return {"records": True} if t.records else {}
+
+    def _deliver_record(self, evt: Dict[str, Any], sid: int, seq: int) -> None:
+        """A record from the sender's records stream: re-serialized canonically (so a line can't
+        be smuggled into a file) and sent to the audit or health index."""
+        try:
+            rec = json.loads(evt["_raw"])
+            if not isinstance(rec, dict):
+                raise ValueError("not a JSON object")
+            raw = auditlog.canonical(rec).decode("utf-8")
+        except ValueError:
+            self.counters["records_bad"] += 1
+            return
+        kind = "audit" if evt.get("sourcetype") == "wd2l:sender:audit" else "health"
+        (self.audit_out if kind == "audit" else self.out).forwarded(dict(evt, _raw=raw), sid, seq, kind)
+        self.counters["records_delivered"] += 1
+
+    def _stream(self, sid: int, now: float, records: bool = False) -> StreamTracker:
         t = self.streams.get(sid)
         if t is not None:
             return t
         if sid in self.retired:
-            return self._restore(sid, now)
-        if self.streams or self.retired:
+            t = self._restore(sid, now)
+            t.records = records
+            return t
+        # Only data streams are history: a records stream must not make a new receiver report
+        # the runs before it as missing.
+        if not records and (any(not s.records for s in self.streams.values()) or self.retired):
             self.had_history = True
         t = StreamTracker(sid, now)
+        t.records = records
         self._add(t, now)
-        log.info("new stream %016x", sid, extra={"stream": "%016x" % sid})
-        self._health_record("stream_start", now, stream="%016x" % sid)
+        log.info("new %sstream %016x", "records " if records else "", sid,
+                 extra={"stream": "%016x" % sid})
+        self._health_record("stream_start", now, stream="%016x" % sid, **self._flag(t))
         return t
 
     def _add(self, t: StreamTracker, now: float) -> None:
@@ -534,7 +567,8 @@ class Receiver:
             log.warning("evicting stream %016x with %d open gap events",
                         victim.stream_id, victim.gaps.count())
             self._health_record("stream_evicted", now, stream="%016x" % victim.stream_id,
-                                open_gap_events=victim.gaps.count(), gaps=victim.gaps.r[:100])
+                                open_gap_events=victim.gaps.count(), gaps=victim.gaps.r[:100],
+                                **self._flag(victim))
         self._retire(victim)
 
     def _prune(self, now: float) -> None:
@@ -562,13 +596,13 @@ class Receiver:
         if isinstance(sent, (int, float)) and not isinstance(sent, bool):
             # Clock offset plus the one-way delay, which is well under 1 ms on a direct fiber.
             t.clock_offset = self.last_clock_offset = round(self._wall(now) - sent, 3)
-        if not t.linked:
+        if not t.linked and not t.records:
             self._link(t, info, prev, now)
         was_final = t.final
         t.on_heartbeat(f.seq, info, now)
         if t.final and not was_final:
             self._health_record("stream_end", now, stream="%016x" % t.stream_id,
-                                last_seq=f.seq, sender=info)
+                                last_seq=f.seq, sender=info, **self._flag(t))
         self.last_hb = now
         if self.hb_stale:
             self.hb_stale = False
@@ -636,7 +670,8 @@ class Receiver:
                     and now - t.last_seen > self.stream_lost_after):
                 t.lost_reported = True
                 self._health_record("stream_lost", now, stream="%016x" % t.stream_id,
-                                    last_seq=t.known, idle_s=round(now - t.last_seen, 1))
+                                    last_seq=t.known, idle_s=round(now - t.last_seen, 1),
+                                    **self._flag(t))
         self._prune(now)
         ref = self.last_hb if self.last_hb is not None else self.started
         if not self.hb_stale and now - ref > self.hb_timeout:
@@ -678,7 +713,8 @@ class Receiver:
             log.warning("GAP stream %016x seq %d-%d (%d events, %s)", t.stream_id, a, b, n, reason,
                         extra={"stream": "%016x" % t.stream_id, "seq": a})
             self._health_record("gap", now, stream="%016x" % t.stream_id,
-                                first_seq=a, last_seq=b, count=n, reason=reason)
+                                first_seq=a, last_seq=b, count=n, reason=reason,
+                                **self._flag(t))
             self.dirty = True
 
     def _wall(self, now: float) -> float:
@@ -709,11 +745,12 @@ class Receiver:
             streams["%016x" % t.stream_id] = {
                 "next_seq": t.lo, "known_seq": t.known, "open_gap_events": t.gaps.count(),
                 "final": t.final, "idle_s": round(now - t.last_seen, 1), "boot": t.boot,
-                "clock_offset_s": t.clock_offset, "sender": t.hb}
+                "clock_offset_s": t.clock_offset, "sender": t.hb, **self._flag(t)}
         ref = self.last_hb if self.last_hb is not None else self.started
         rec = dict(self.counters, **self.reasm.counters, **self._stats())
         # Flat totals so SIEM alerts don't have to dig into the per-stream map.
-        live = [t for t in self.streams.values() if "%016x" % t.stream_id in streams]
+        live = [t for t in self.streams.values()
+                if "%016x" % t.stream_id in streams and not t.records]
         rec.update(open_gap_events=sum(t.gaps.count() for t in self.streams.values()),
                    sender_drops=sum(int(t.hb.get("sender_drops", 0)) for t in live),
                    sender_truncated=sum(int(t.hb.get("truncated", 0)) for t in live),

@@ -43,6 +43,11 @@ class Output:
         """One of this host's audit records. Never dropped, like health records."""
         raise NotImplementedError
 
+    def forwarded(self, evt: Dict[str, Any], stream_id: int, seq: int, kind: str) -> None:
+        """An Enclave 1 record from the sender's records stream (kind "audit" or "health").
+        Tracked for durability like event()."""
+        raise NotImplementedError
+
     def flush(self) -> None:
         """Make everything handed over so far durable, where this output can do that itself."""
 
@@ -100,13 +105,22 @@ class FileOutput(Output):
         f.write(canonical(rec).decode("utf-8") + "\n")
         f.flush()
 
+    def forwarded(self, evt, stream_id, seq, kind):
+        f = self._file("audit.jsonl" if kind == "audit" else "e1-health.jsonl")
+        f.write(evt["_raw"] + "\n")
+        self._pending.setdefault(stream_id, set()).add(seq)
+
     def flush(self):
         if self.closed:
             return
         self.events.flush()
         self.healthf.flush()
+        for f in self._extra.values():
+            f.flush()
         if self._pending:
             os.fsync(self.events.fileno())
+            for f in self._extra.values():
+                os.fsync(f.fileno())
             self._pending = {}
 
     def pending(self):
@@ -141,6 +155,10 @@ class MultiOutput(Output):
     def audit(self, rec):
         for o in self.outputs:
             o.audit(rec)
+
+    def forwarded(self, evt, stream_id, seq, kind):
+        for o in self.outputs:
+            o.forwarded(evt, stream_id, seq, kind)
 
     def flush(self):
         for o in self.outputs:
@@ -381,6 +399,17 @@ class HecOutput(Output):
         t = ts_epoch(ts) if isinstance(ts, str) else time.time()
         self._record(canonical(rec).decode("utf-8"), "wd2l:audit",
                      "wd2l-%s" % rec.get("component", "receiver"), self.audit_index, t)
+
+    def forwarded(self, evt, stream_id, seq, kind):
+        rec: Dict[str, Any] = {"time": evt.get("_time", time.time()),
+                               "host": evt.get("host", self.hostname),
+                               "source": evt.get("source", "wd2l-sender"),
+                               "sourcetype": "wd2l:sender:" + kind, "event": evt["_raw"],
+                               "fields": {"wd2l_stream": "%016x" % stream_id, "wd2l_seq": seq}}
+        index = self.audit_index if kind == "audit" else self.health_index
+        if index:
+            rec["index"] = index
+        self._put(rec, (stream_id, seq))
 
     def stats(self):
         s = dict(self.counters)
