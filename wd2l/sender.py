@@ -14,10 +14,13 @@ from __future__ import annotations
 import argparse
 import errno
 import fcntl
+import hashlib
 import json
 import logging
 import os
+import platform
 import select
+import shlex
 import signal
 import socket
 import socketserver
@@ -27,9 +30,11 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from . import opaque, wire
+from . import audit as auditlog
+from . import hostinfo, logsetup, opaque, wire
 
 log = logging.getLogger("wd2l.sender")
+log_input = logging.getLogger("wd2l.sender.input")
 
 IP_MTU_DISCOVER = getattr(socket, "IP_MTU_DISCOVER", 10)
 IP_PMTUDISC_DO = getattr(socket, "IP_PMTUDISC_DO", 2)
@@ -39,6 +44,19 @@ OPAQUE_FIELD = "wd2l_opaque"
 OPAQUE_BYTES_FIELD = "wd2l_opaque_bytes"
 MAX_LINE = 16 * 1024 * 1024
 ERROR_LOG_EVERY = 10.0
+# Frequent events become one audit record per kind and key a minute (§6).
+SUMMARY_OUTCOME = {"auth_failure": "failure", "input_rejected": "failure",
+                   "send_failure": "failure", "truncated": "info", "opaque_content": "info"}
+SUMMARY_SEGMENT = {"auth_failure": "e1-input", "input_rejected": "e1-input"}
+
+
+def new_stream_id() -> int:
+    return int.from_bytes(os.urandom(8), "big") or 1
+
+
+def _key(v: Any) -> Optional[str]:
+    """A host or source as a summary key (the aggregator may send anything)."""
+    return None if v is None else str(v)[:256]
 
 
 class Sender:
@@ -48,7 +66,9 @@ class Sender:
                  rate_pps: float = 20000.0, extra_fields: Sequence[str] = (),
                  sock: Optional[socket.socket] = None, state_path: Optional[str] = None,
                  source_seq: bool = False, tx_time: bool = True, opaque_check: bool = True,
-                 bind_port: int = 0):
+                 bind_port: int = 0, stream_id: Optional[int] = None,
+                 audit: Optional[auditlog.AuditLog] = None,
+                 config_sha256: Optional[str] = None):
         if max_event < 1024:
             raise ValueError("max_event must be at least 1024")
         self.dst = dst
@@ -73,7 +93,7 @@ class Sender:
         if opaque_check:
             self.extra_fields += tuple(f for f in (OPAQUE_FIELD, OPAQUE_BYTES_FIELD)
                                        if f not in self.extra_fields)
-        self.stream_id = int.from_bytes(os.urandom(8), "big") or 1
+        self.stream_id = stream_id or new_stream_id()
         self.seq = 0
         self.started = time.time()
         self.counters = {"events_sent": 0, "datagrams_sent": 0, "sender_drops": 0,
@@ -85,6 +105,9 @@ class Sender:
         self.tokens = max(1.0, self.rate / 10)
         self.last_refill = time.monotonic()
         self._err_log: Dict[int, List[float]] = {}  # errno -> [last logged, suppressed since]
+        self.audit = audit
+        self.summary = auditlog.Summarizer()
+        self.config_sha256 = config_sha256
         self.state_path = state_path
         self.link: Dict[str, int] = {}
         if state_path:
@@ -101,17 +124,34 @@ class Sender:
 
     # -- restart chain
 
+    def _audit(self, event: str, outcome: str = "info", **fields: Any) -> None:
+        if self.audit is not None:
+            self.audit.write(event, outcome, **fields)
+
     def _start_state(self) -> None:
         """Read the previous run's record, then claim the next boot number for this run."""
         prev: Dict[str, Any] = {}
         try:
-            with open(self.state_path) as f:  # type: ignore[arg-type]
-                prev = json.load(f)
+            with open(self.state_path, "rb") as f:  # type: ignore[arg-type]
+                body = f.read()
+            prev = json.loads(body)
+            if not isinstance(prev, dict):
+                raise ValueError("not a JSON object")
         except FileNotFoundError:
-            pass
+            self._audit("state_reset", "info", path=self.state_path, reason="missing")
         except (OSError, ValueError) as e:
             # Starting over at boot 1 is visible on the receiver as sender_boot_reset.
             log.error("sender state %s unreadable (%s): restart count starts over", self.state_path, e)
+            prev = {}
+            self._audit("state_reset", "failure", path=self.state_path, reason="unreadable: %s" % e)
+        else:
+            self._audit("state_loaded", "success", path=self.state_path,
+                        file_sha256=hashlib.sha256(body).hexdigest(), boot=prev.get("boot"),
+                        prev_stream=prev.get("stream"), prev_last_seq=prev.get("last_seq"))
+        old_cfg = prev.get("config_sha256")
+        if self.config_sha256 and isinstance(old_cfg, str) and old_cfg != self.config_sha256:
+            self._audit("config_changed", "info", old_config_sha256=old_cfg,
+                        config_sha256=self.config_sha256)
         boot = prev.get("boot")
         self.link = {"boot": boot + 1 if isinstance(boot, int) and boot >= 1 else 1}
         stream = prev.get("stream")
@@ -130,8 +170,11 @@ class Sender:
         """Record this run's stream and progress. Called with the lock held (or at start)."""
         if not self.state_path:
             return
-        body = json.dumps({"boot": self.link["boot"], "stream": "%016x" % self.stream_id,
-                           "last_seq": self.seq})
+        st: Dict[str, Any] = {"boot": self.link["boot"], "stream": "%016x" % self.stream_id,
+                              "last_seq": self.seq}
+        if self.config_sha256:
+            st["config_sha256"] = self.config_sha256
+        body = json.dumps(st)
         tmp = self.state_path + ".tmp"
         try:
             with open(tmp, "w") as f:
@@ -170,18 +213,21 @@ class Sender:
 
     def _transmit(self, datagram: bytes) -> bool:
         self._pace()
+        code = errno.ENOBUFS
         for _ in range(100):
             try:
                 self.sock.sendto(datagram, self.dst)
                 self.counters["datagrams_sent"] += 1
                 return True
             except OSError as e:
+                code = e.errno or -1
                 if e.errno not in (errno.ENOBUFS, errno.EAGAIN, errno.EWOULDBLOCK):
                     self.counters["send_errors"] += 1
                     self._log_error(e.errno or -1, "send failed: %s" % e)
                     break
                 time.sleep(0.001)
         self.counters["sender_drops"] += 1
+        self.summary.note("send_failure", {"error": errno.errorcode.get(code, str(code))})
         return False
 
     def _fit(self, event: Dict[str, Any]) -> bytes:
@@ -208,6 +254,9 @@ class Sender:
             trimmed["_raw"] = raw_bytes[:max(0, keep)].decode("utf-8", "ignore")
             data = wire.serialize_event(trimmed, fields)
         self.counters["truncated"] += 1
+        self.summary.note("truncated", {"host": _key(event.get("host")),
+                                        "source": _key(event.get("source"))},
+                          max_original_bytes=len(raw_bytes))
         log.warning("truncated event host=%s source=%s from %d bytes",
                     event.get("host"), event.get("source"), len(raw_bytes))
         return data
@@ -236,6 +285,10 @@ class Sender:
                 stamps: Dict[str, Any] = dict(found)
                 if found.get(OPAQUE_FIELD):
                     self.counters["opaque_events"] += 1
+                    self.summary.note("opaque_content", {"host": _key(event.get("host")),
+                                                         "source": _key(event.get("source"))},
+                                      kinds=found[OPAQUE_FIELD],
+                                      max_blob_bytes=found[OPAQUE_BYTES_FIELD])
                 if self.source_seq:
                     key = (event.get("host"), event.get("source"))
                     n = self.src_counters.get(key, 0) + 1
@@ -266,13 +319,33 @@ class Sender:
             if final:
                 self.closed = True
 
-    def count_bad_input(self) -> None:
+    def count_bad_input(self, reason: str = "bad_json") -> None:
         with self.lock:
             self.counters["bad_input"] += 1
+        self.summary.note("input_rejected", {"reason": reason})
 
     def count_unread(self, nbytes: int) -> None:
         with self.lock:
             self.counters["shutdown_unread_bytes"] += nbytes
+
+    def flush_summaries(self) -> None:
+        """The last minute's frequent events, one audit record per kind and key."""
+        if self.audit is None:
+            return
+        for event, fields in self.summary.drain():
+            fields.setdefault("segment", SUMMARY_SEGMENT.get(event))
+            self.audit.write(event, SUMMARY_OUTCOME.get(event, "info"),
+                             stream="%016x" % self.stream_id, **fields)
+
+    def periodic(self) -> None:
+        """About once a minute, from the heartbeat thread: summaries, time quality, free space
+        and the daily self-check of the audit chain."""
+        if self.audit is None:
+            return
+        self.flush_summaries()
+        self.audit.check_time()
+        self.audit.check_space()
+        self.audit.maybe_verify()
 
 
 # ---------------------------------------------------------------- log aggregator input (JSON lines over TCP)
@@ -337,8 +410,10 @@ class CriblHandler(socketserver.BaseRequestHandler):
             if not started:
                 started = True
                 if chunk[:2] == b"\x1f\x8b":
-                    log.error("gzip data from %s: turn off compression on the log aggregator's "
-                              "output", self.client_address)
+                    log_input.error("gzip data from %s: turn off compression on the log "
+                                    "aggregator's output", self.client_address)
+                    srv.sender.summary.note("input_rejected", {"reason": "gzip"},
+                                            client=self.client_address[0])
                     return
             parts = (buf + chunk).split(b"\n")
             buf = parts.pop()
@@ -349,8 +424,8 @@ class CriblHandler(socketserver.BaseRequestHandler):
                 if not self._line(srv, line):
                     return
             if len(buf) > MAX_LINE:
-                srv.sender.count_bad_input()
-                log.warning("dropped input line over %d bytes", MAX_LINE)
+                srv.sender.count_bad_input("line_too_long")
+                log_input.warning("dropped input line over %d bytes", MAX_LINE)
                 buf = b""
                 skipping = True
                 self.first_line = False
@@ -358,7 +433,7 @@ class CriblHandler(socketserver.BaseRequestHandler):
         unread = len(buf) + _unread_bytes(sock)
         if unread:
             srv.sender.count_unread(unread)
-            log.warning("shutdown: %d bytes from %s left unread", unread, self.client_address)
+            log_input.warning("shutdown: %d bytes from %s left unread", unread, self.client_address)
 
     def _line(self, srv: "InputServer", line: bytes) -> bool:
         """Handle one input line. Returns False to close the connection."""
@@ -368,23 +443,27 @@ class CriblHandler(socketserver.BaseRequestHandler):
         try:
             obj = json.loads(line)
         except ValueError:
-            srv.sender.count_bad_input()
+            srv.sender.count_bad_input("bad_json")
             self.first_line = False
             return True
         if not isinstance(obj, dict):
-            srv.sender.count_bad_input()
+            srv.sender.count_bad_input("not_object")
             self.first_line = False
             return True
         if self.first_line and _is_header(obj):
             self.first_line = False
             if srv.auth_token is not None and obj.get("authToken") != srv.auth_token:
-                log.error("bad auth token from %s", self.client_address)
+                log_input.error("bad auth token from %s", self.client_address)
+                srv.sender.summary.note("auth_failure", {"client": self.client_address[0],
+                                                         "reason": "bad token"})
                 return False
             if isinstance(obj.get("fields"), dict):
                 self.defaults = obj["fields"]
             return True
         if self.first_line and srv.auth_token is not None:
-            log.error("no auth header from %s", self.client_address)
+            log_input.error("no auth header from %s", self.client_address)
+            srv.sender.summary.note("auth_failure", {"client": self.client_address[0],
+                                                     "reason": "no header"})
             return False
         self.first_line = False
         for k, v in self.defaults.items():
@@ -451,7 +530,9 @@ def _heartbeat_loop(sender: Sender, interval: float, stop: threading.Event,
             next_stats += stats_every
             with sender.lock:
                 counters = json.dumps(sender.counters, sort_keys=True)
-            log.info("stream=%016x last_seq=%d %s", sender.stream_id, sender.seq, counters)
+            log.info("stream=%016x last_seq=%d %s", sender.stream_id, sender.seq, counters,
+                     extra={"stream": "%016x" % sender.stream_id, "seq": sender.seq})
+            sender.periodic()
 
 
 def _hostport(s: str) -> Tuple[str, int]:
@@ -466,7 +547,7 @@ def _bind_addr(s: Optional[str]) -> Tuple[Optional[str], int]:
     return _hostport(s) if ":" in s else (s, 0)
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="wd2l-sender", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--listen", default="127.0.0.1:10070", help="TCP JSON listen address")
@@ -499,9 +580,44 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--input-rcvbuf", type=int, default=256 * 1024,
                    help="TCP receive buffer for aggregator connections (0 = system default)")
     p.add_argument("-v", "--verbose", action="store_true")
-    a = p.parse_args(argv)
-    logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    p.add_argument("--audit-dir", help="write hash-chained audit records here "
+                                       "(deployed: /var/log/wd2l)")
+    p.add_argument("--audit-min-free-mb", type=int, default=256,
+                   help="free space below this raises audit_failure")
+    p.add_argument("--chronyc", default="chronyc",
+                   help="chronyc command for time quality (\"-c tracking\" is added)")
+    p.add_argument("--log-format", choices=("text", "json"), default="text",
+                   help="operational log lines: text, or one JSON object per line")
+    return p
+
+
+def config_settings(a: argparse.Namespace) -> Dict[str, Any]:
+    """This run's settings for the config audit record. Token files appear as paths only."""
+    return {k: v for k, v in sorted(vars(a).items())}
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    a = build_parser().parse_args(argv)
+    logsetup.setup(a.log_format, a.verbose)
+    settings = config_settings(a)
+    cfg_sha = auditlog.sha256_hex(auditlog.canonical(settings))
+    tq = hostinfo.TimeQuality(shlex.split(a.chronyc) + ["-c", "tracking"])
+    audit = None
+    if a.audit_dir:
+        try:
+            audit = auditlog.AuditLog(a.audit_dir, "sender", 1, time_quality=tq, forward=False,
+                                      min_free_bytes=a.audit_min_free_mb * 1024 * 1024)
+        except auditlog.AuditLocked as e:
+            raise SystemExit(str(e))
+    # Before any other thread exists, so only the watcher thread receives SIGUSR1.
+    logsetup.SignalWatcher({signal.SIGUSR1: logsetup.debug_toggle_handler(audit)}).start()
+    sid = new_stream_id()
+    if audit:
+        audit.write("start", "success", pid=os.getpid(), stream="%016x" % sid,
+                    config_sha256=cfg_sha, code_sha256=hostinfo.code_sha256(),
+                    python=platform.python_version())
+        audit.write("config", "info", settings=settings, config_sha256=cfg_sha)
+        audit.check_time()
 
     token = None
     if a.auth_token_file:
@@ -510,14 +626,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     bind_ip, bind_port = _bind_addr(a.bind)
     sender = Sender(_hostport(a.dst), bind_ip, a.max_datagram, a.max_event, a.rate_pps,
                     a.extra_field, state_path=a.state, source_seq=a.source_seq,
-                    tx_time=a.tx_time, opaque_check=a.opaque_check, bind_port=bind_port)
+                    tx_time=a.tx_time, opaque_check=a.opaque_check, bind_port=bind_port,
+                    stream_id=sid, audit=audit, config_sha256=cfg_sha)
+    if audit:
+        audit.start_verify()
     server = InputServer(_hostport(a.listen), sender, token, a.input_rcvbuf, a.drain_timeout)
     stop = threading.Event()
     hb = threading.Thread(target=_heartbeat_loop,
                           args=(sender, a.heartbeat, stop, a.stats_interval), daemon=True)
     hb.start()
+    stopped_by: List[int] = []
 
     def _shutdown(signum, _frame):
+        stopped_by.append(signum)
         log.info("signal %d, shutting down", signum)
         threading.Thread(target=server.shutdown, daemon=True).start()
 
@@ -532,6 +653,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     hb.join()
     sender.send_heartbeat(final=True)
     log.info("final: last_seq=%d %s", sender.seq, json.dumps(sender.counters, sort_keys=True))
+    if audit:
+        sender.flush_summaries()
+        audit.write("stop", "success", stream="%016x" % sender.stream_id, last_seq=sender.seq,
+                    signal=signal.Signals(stopped_by[0]).name if stopped_by else None,
+                    counters=dict(sender.counters))
+        audit.close()
     return 0
 
 
