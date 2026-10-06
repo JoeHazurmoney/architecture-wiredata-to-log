@@ -345,7 +345,10 @@ class Receiver:
                  src_port: int = 0, audit: Optional[auditlog.AuditLog] = None,
                  audit_output: Optional[Output] = None, config_sha256: Optional[str] = None,
                  audit_interval: float = 60.0,
-                 component: str = "receiver", time_quality: Any = None):
+                 component: str = "receiver", time_quality: Any = None,
+                 nic_probe: Optional[Callable[[], Dict[str, Any]]] = None,
+                 archive_probe: Optional[Callable[[], Dict[str, Any]]] = None,
+                 sample_interval: float = 5.0):
         """`now` passed to handle_frame/tick drives every timer. Live capture passes a steady
         clock (immune to clock steps); pcap replay passes packet timestamps. `record_clock`,
         if given, supplies the wall-clock `time` written into health records, each event's
@@ -398,6 +401,14 @@ class Receiver:
         self.audit_interval = audit_interval
         self.last_audit: Optional[float] = None
         self._audit_prev: Dict[str, Any] = {}
+        self.nic_probe = nic_probe
+        self.archive_probe = archive_probe
+        self.sample_interval = sample_interval
+        self.proc = hostinfo.ProcStats()
+        self.sample: Dict[str, Any] = {}
+        self.last_sample: Optional[float] = None
+        self.last_packet: Optional[float] = None   # any frame on the capture NIC
+        self.last_wd2l: Optional[float] = None     # a valid wd2l frame
         if state_path and os.path.exists(state_path):
             self._load_state()
         elif state_path and audit is not None:
@@ -433,6 +444,7 @@ class Receiver:
         return s
 
     def handle_frame(self, frame: bytes, now: float) -> None:
+        self.last_packet = now
         self.counters["frames"] += 1
         try:
             udp = packets.parse_udp(frame)
@@ -460,6 +472,7 @@ class Receiver:
             self.counters["bad_frames"] += 1
             self._bump(self.bad_reasons, str(e))
             return
+        self.last_wd2l = now
         t = self._stream(f.stream_id, now, bool(f.flags & wire.FLAG_RECORDS))
         if f.type == wire.TYPE_HEARTBEAT:
             self._heartbeat(t, f, now)
@@ -673,7 +686,11 @@ class Receiver:
                                     last_seq=t.known, idle_s=round(now - t.last_seen, 1),
                                     **self._flag(t))
         self._prune(now)
-        ref = self.last_hb if self.last_hb is not None else self.started
+        if self.sample_interval and (self.last_sample is None
+                                     or now - self.last_sample >= self.sample_interval):
+            self.last_sample = now
+            self._take_sample()
+        ref =self.last_hb if self.last_hb is not None else self.started
         if not self.hb_stale and now - ref > self.hb_timeout:
             self.hb_stale = True
             log.warning("no heartbeat for %.1fs", now - ref)
@@ -693,6 +710,14 @@ class Receiver:
                 self.last_audit = now
                 self.audit_periodic()
             self._drain_audit()
+
+    def _take_sample(self) -> None:
+        s: Dict[str, Any] = dict(self.proc.read())
+        if self.nic_probe is not None:
+            s.update(("nic_" + k, v) for k, v in self.nic_probe().items())
+        if self.archive_probe is not None:
+            s.update(self.archive_probe())
+        self.sample = s
 
     def _apply_failed(self, now: float) -> None:
         by: Dict[int, List[int]] = {}
@@ -756,13 +781,17 @@ class Receiver:
                    sender_truncated=sum(int(t.hb.get("truncated", 0)) for t in live),
                    sender_opaque_events=sum(int(t.hb.get("opaque_events", 0)) for t in live),
                    sender_bad_input=sum(int(t.hb.get("bad_input", 0)) for t in live),
-                   sender_unread_bytes=sum(int(t.hb.get("shutdown_unread_bytes", 0)) for t in live))
+                   sender_unread_bytes=sum(int(t.hb.get("shutdown_unread_bytes", 0)) for t in live),
+                   sender_events_in=sum(int(t.hb.get("events_in", 0)) for t in live))
         rec.update(type="health", time=round(self._wall(now), 3),
                    streams=streams, retired_streams=len(self.retired),
                    clock_offset_s=self.last_clock_offset,
                    heartbeat_age_s=round(now - ref, 1) if ref is not None else None,
                    heartbeat_stale=self.hb_stale, other_reasons=self.other_reasons,
                    bad_reasons=self.bad_reasons, reasm_buffered=self.reasm.buffered)
+        rec.update(self.sample)
+        rec.update(packet_age_s=round(now - self.last_packet, 1) if self.last_packet is not None else None,
+                   frame_age_s=round(now - self.last_wd2l, 1) if self.last_wd2l is not None else None)
         rec.update(self._identity())
         if self.tq is not None:
             rec["time_quality"] = self.tq.read()
@@ -965,6 +994,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="free space below this raises audit_failure")
     p.add_argument("--chronyc", default="chronyc",
                    help="chronyc command for time quality (\"-c tracking\" is added)")
+    p.add_argument("--capture-iface", help="NIC whose carrier and receive counters are reported "
+                                           "(default: the --live interface)")
+    p.add_argument("--pcap-dir", help="capture archive directory, to check tcpdump is writing it "
+                                      "(deployed: /var/lib/wd2l/pcap)")
+    p.add_argument("--capture-rcvbuf", type=int, default=64 * 1024 * 1024,
+                   help="receive buffer of the capture socket, bytes")
     p.add_argument("--log-format", choices=("text", "json"), default="text",
                    help="operational log lines: text, or one JSON object per line")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -1073,13 +1108,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 0
 
         clock = steady_clock()
-        rx = Receiver(out, record_clock=time.time, **kw)
+        rx = Receiver(out, record_clock=time.time,
+                      nic_probe=(lambda: hostinfo.nic_stats(a.capture_iface or a.live)),
+                      archive_probe=(lambda: hostinfo.archive_status(a.pcap_dir))
+                      if a.pcap_dir else None, **kw)
         if audit:
             audit.start_verify()
         stopped_by: List[int] = []
         signal.signal(signal.SIGTERM, lambda s, _f: stopped_by.append(s))
         signal.signal(signal.SIGINT, lambda s, _f: stopped_by.append(s))
-        cap = packets.LiveCapture(a.live)
+        cap = packets.LiveCapture(a.live, rcvbuf=a.capture_rcvbuf)
         log.info("capturing on %s, dst %s:%d", a.live, a.dst_ip or "*", a.dst_port)
         last = 0.0
         while not stopped_by:
