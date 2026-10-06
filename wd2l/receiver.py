@@ -555,7 +555,6 @@ class Receiver:
         if sid in self.retired:
             t = self._restore(sid, now)
             t.records = records
-            t.rc.enabled = not records
             return t
         # Only data streams are history: a records stream must not make a new receiver report
         # the runs before it as missing.
@@ -730,7 +729,7 @@ class Receiver:
             self.emit_health(now)
         if (self.state_path and (self.dirty or self.saved_with_pending)
                 and time.monotonic() - self.last_save >= 1.0):
-            self.save_state()
+            self.save_state(now=now)
         if self.last_rc is None or now - self.last_rc >= 1.0:
             self.last_rc = now
             self._reconcile(now)
@@ -750,6 +749,7 @@ class Receiver:
         """Settle what the outputs made durable, compare at ready cuts, write reconcile records:
         for ended streams whenever (cut, balanced) changes, and hourly for the rest."""
         pending = self._pending()
+        self._apply_failed(now)   # snapshot first, then failures, then settle
         hourly = self.last_rc_hourly is not None and now - self.last_rc_hourly >= 3600
         if self.last_rc_hourly is None or hourly:
             self.last_rc_hourly = now
@@ -1009,11 +1009,14 @@ class Receiver:
 
     # -- state
 
-    def save_state(self, extra_uncommitted: Sequence[Tuple[int, int]] = ()) -> None:
+    def save_state(self, extra_uncommitted: Sequence[Tuple[int, int]] = (),
+                   now: Optional[float] = None) -> None:
         self.flush()
         pending = self._pending()
         for sid, seq in extra_uncommitted:
             pending.setdefault(sid, set()).add(seq)
+        if now is not None:
+            self._apply_failed(now)
         for sid, t in self.streams.items():
             t.rc.settle(pending.get(sid, set()))
         streams = {}

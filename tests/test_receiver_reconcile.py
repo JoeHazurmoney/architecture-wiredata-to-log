@@ -160,3 +160,50 @@ def test_hourly_reconcile_record_for_a_live_stream(tmp_path):
     feed(r, [sock.sent[-1]], 3600)
     r.tick(3601)
     assert [x["cut"] for x in read_audit(a.dir) if x["event"] == "reconcile"] == [1]
+
+
+def test_a_restored_retired_stream_is_not_reconciled():
+    s, data, hb = run()
+    r, out = rx(stream_retention=10)
+    feed(r, data + hb, 0)
+    r.tick(1)
+    r.tick(100)
+    assert s.stream_id in r.retired
+    feed(r, hb + data[:3], 101)
+    r.tick(102)
+    t = r.streams[s.stream_id]
+    assert t.rc.enabled is False and t.rc.last is None
+    assert len(out.kinds("reconcile")) == 1     # the one from before it was retired
+    assert r.emit_health(102)["reconcile_unbalanced"] == 0
+
+
+def _failed_after_snapshot(r, out, s, data, hb):
+    feed(r, data + hb, 0)
+    out.fail(s.stream_id, 7)
+    out.commit()
+
+
+def test_a_failure_the_output_reports_late_is_not_settled_as_durable():
+    s, data, hb = run()
+    out = SlowOutput()
+    r, _ = rx(out)
+    _failed_after_snapshot(r, out, s, data, hb)
+    r._reconcile(1)                 # the HEC-thread race: no tick has applied the failure yet
+    r.tick(2)
+    feed(r, data[6:7], 3)
+    out.commit()
+    r.tick(4)
+    assert last(r, s)["balanced"] is True
+
+
+def test_save_state_does_not_settle_a_failed_event(tmp_path):
+    s, data, hb = run()
+    state = str(tmp_path / "state.json")
+    out = SlowOutput()
+    r, _ = rx(out, state_path=state)
+    _failed_after_snapshot(r, out, s, data, hb)
+    r.save_state(now=1)
+    r2, out2 = rx(state_path=state)
+    feed(r2, data + hb, 10)
+    r2.tick(11)
+    assert last(r2, s)["balanced"] is True
