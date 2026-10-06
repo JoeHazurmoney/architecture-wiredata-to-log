@@ -11,15 +11,36 @@ canonical JSON (keys sorted, no spaces, UTF-8) without `hash`. The first record'
 from __future__ import annotations
 
 import argparse
+import calendar
+import errno
+import fcntl
 import glob
 import hashlib
 import json
+import logging
 import os
+import shutil
+import subprocess
+import sys
+import threading
+import time
+from collections import deque
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Tuple
+
+from . import __version__, hostinfo
+
+log = logging.getLogger("wd2l.audit")
 
 GENESIS = "0" * 64
 FILE_GLOB = "audit-*.jsonl"
+
+DEFAULT_MAX_BYTES = 64 * 1024 * 1024
+DEFAULT_MIN_FREE = 256 * 1024 * 1024
+TAIL_BYTES = 1024 * 1024
+OUTCOMES = ("success", "failure", "info")
+HOME_SEGMENT = {"sender": "e1-sender", "receiver": "e2-receiver", "replay": "e2-receiver"}
+_UNSET = object()
 
 
 def canonical(rec: Dict[str, Any]) -> bytes:
@@ -169,6 +190,327 @@ def verify_dir(directory: str, upto: Optional[int] = None,
             with open(path, "rb") as f:
                 yield os.path.basename(path), split_lines(f.read())
     return verify_lines(files(), upto, upto_hash)
+
+
+# ---------------------------------------------------------------- writing
+
+class AuditLocked(RuntimeError):
+    """Another process is writing to this audit directory."""
+
+
+def _file_us(path: str) -> int:
+    """Start time in microseconds from a name like audit-20261005T140322.418213Z.jsonl."""
+    stamp = os.path.basename(path)[len("audit-"):-len("Z.jsonl")]
+    try:
+        secs = calendar.timegm(time.strptime(stamp[:15], "%Y%m%dT%H%M%S"))
+        return secs * 1000000 + int(stamp[16:22])
+    except ValueError:
+        return 0
+
+
+def _last_record(path: str) -> Tuple[Optional[Dict[str, Any]], bool]:
+    """(last complete record, whether the file ends in a torn line)."""
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        f.seek(max(0, f.tell() - TAIL_BYTES))
+        tail = f.read()
+    torn = bool(tail) and not tail.endswith(b"\n")
+    for line in reversed(tail.split(b"\n")[:-1]):
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue    # the first line of the tail may be cut off by the seek
+        if isinstance(rec, dict) and isinstance(rec.get("n"), int) and isinstance(rec.get("hash"), str):
+            return rec, torn
+    return None, torn
+
+
+class AuditLog:
+    """This process's audit trail: <directory>/audit-<UTC start>.jsonl, hash-chained (§10).
+
+    * One record is one write() and one fsync(). Files are only ever appended to. Past
+      max_bytes the next record starts a new file and the chain carries on. Nothing is renamed
+      or truncated, so no log rotation tool is involved.
+    * A lock file keeps a second writer out, e.g. an archive replay while the live receiver runs.
+    * If a write fails (disk full, I/O error) the transfer keeps going: the record is still
+      queued for forwarding, with n/prev_hash/hash null; `ok` turns False (health shows
+      audit_ok=false); the first record written afterwards is an audit_failure saying how many
+      records the file missed. After a short write (a partial line on disk) writing resumes in a
+      new file, so nothing is ever appended to a partial line.
+    * Every record also goes to `outbox`, for the owner to forward (in-band, or to the SIEM).
+    """
+
+    def __init__(self, directory: str, component: str, enclave: int, *,
+                 segment: Optional[str] = None, host: Optional[str] = None,
+                 actor: Optional[str] = None, build: Optional[str] = None,
+                 time_quality: Optional[Any] = None, forward: bool = True,
+                 max_bytes: int = DEFAULT_MAX_BYTES, min_free_bytes: int = DEFAULT_MIN_FREE,
+                 outbox_max: int = 10000, clock: Callable[[], float] = time.time):
+        os.makedirs(directory, exist_ok=True)
+        self.dir = directory
+        self.component = component
+        self.enclave = enclave
+        self.segment = segment or HOME_SEGMENT.get(component, component)
+        self.host = host or hostinfo.hostname()
+        self.actor = actor or hostinfo.actor()
+        self.build = build or hostinfo.build_id()
+        self.tq = time_quality
+        self.forward = forward
+        self.max_bytes = max_bytes
+        self.min_free = min_free_bytes
+        self.outbox_max = outbox_max
+        self.clock = clock
+        self._write, self._fsync, self._disk_usage = os.write, os.fsync, shutil.disk_usage
+        self.lock = threading.Lock()
+        self.outbox: Deque[Dict[str, Any]] = deque()
+        self.outbox_dropped = 0
+        self.ok = True
+        self.error: Optional[str] = None
+        self.missed = 0
+        self.low_space = False
+        self.time_state: Any = _UNSET
+        self.verify_proc: Optional[subprocess.Popen] = None
+        self.verify_result: Optional[str] = None
+        self.verify_upto = 0
+        self.last_verify: Optional[float] = None
+        self.fd: Optional[int] = None
+        self.path: Optional[str] = None
+        self.size = 0
+        self.last_file_us = 0
+        self._lockfd: Optional[int] = self._take_lock()
+        self.n, self.last_hash, torn = self._recover()
+        if torn:
+            self.write("audit_failure", "failure", reason="torn_write", file=torn)
+
+    # -- setup
+
+    def _take_lock(self) -> int:
+        fd = os.open(os.path.join(self.dir, ".lock"), os.O_RDWR | os.O_CREAT, 0o640)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            raise AuditLocked("audit directory %s is in use by another wd2l process (stop "
+                              "wd2l-receiver before an archive replay)" % self.dir)
+        return fd
+
+    def _recover(self) -> Tuple[int, str, Optional[str]]:
+        """Where the chain stands: the last complete record of the newest file holding one. The
+        newest file is appended to unless it ends in a torn line or is full."""
+        files = audit_files(self.dir)
+        if files:
+            self.last_file_us = _file_us(files[-1])
+        torn = None
+        for i, path in enumerate(reversed(files)):
+            rec, is_torn = _last_record(path)
+            if i == 0:
+                if is_torn:
+                    torn = os.path.basename(path)
+                elif os.path.getsize(path) < self.max_bytes:
+                    self.fd = os.open(path, os.O_WRONLY | os.O_APPEND)
+                    self.path, self.size = path, os.path.getsize(path)
+            if rec is not None:
+                return rec["n"], rec["hash"], torn
+        return 0, GENESIS, torn
+
+    # -- writing
+
+    def _base(self, event: str, outcome: str) -> Dict[str, Any]:
+        rec: Dict[str, Any] = {
+            "ts": utc_ts(self.clock()), "host": self.host, "enclave": self.enclave,
+            "component": self.component, "segment": self.segment, "version": __version__,
+            "build": self.build, "event": event, "outcome": outcome, "actor": self.actor}
+        if self.tq is not None:
+            rec["time_quality"] = self.tq.read()
+        return rec
+
+    def write(self, event: str, outcome: str = "info", **fields: Any) -> Dict[str, Any]:
+        """Write one record (the common fields plus `fields`; None values are left out), queue
+        it for forwarding, and return it."""
+        if outcome not in OUTCOMES:
+            raise ValueError("outcome must be one of %s" % (OUTCOMES,))
+        with self.lock:
+            rec = self._base(event, outcome)
+            rec.update((k, v) for k, v in fields.items() if v is not None)
+            if not self.ok:
+                note = self._base("audit_failure", "info")
+                note.update(reason="recovered", error=self.error, missed=self.missed)
+                if self._append(note):
+                    log.warning("audit file writable again; %d records exist only in forwarded "
+                                "copies", self.missed)
+                    self.ok, self.error, self.missed = True, None, 0
+                    self._queue(note)
+            if not self._append(rec):
+                self.missed += 1
+            self._queue(rec)
+            return rec
+
+    def _append(self, rec: Dict[str, Any]) -> bool:
+        """Chain the record and append it to the file. Returns False if it isn't in the file."""
+        rec["n"], rec["prev_hash"] = self.n + 1, self.last_hash
+        rec["hash"] = record_hash(rec)
+        line = canonical(rec) + b"\n"
+        try:
+            if self.fd is None or (self.size and self.size + len(line) > self.max_bytes):
+                self._new_file()
+            written = self._write(self.fd, line)
+        except OSError as e:
+            return self._failed(rec, e)
+        if written != len(line):
+            self._close_file()      # a partial line is on disk: never append after it
+            return self._failed(rec, OSError(errno.EIO, "short write: %d of %d bytes"
+                                             % (written, len(line))))
+        self.n, self.last_hash = rec["n"], rec["hash"]
+        self.size += len(line)
+        try:
+            self._fsync(self.fd)
+        except OSError as e:
+            self._failed(None, e)   # the line is written but may not be on disk
+        return True
+
+    def _failed(self, rec: Optional[Dict[str, Any]], e: OSError) -> bool:
+        if rec is not None:
+            rec["n"] = rec["prev_hash"] = rec["hash"] = None
+        if self.ok:
+            self.ok, self.error = False, str(e)
+            log.error("audit file write failed (%s); the transfer continues and records are "
+                      "still forwarded", e)
+            fail = self._base("audit_failure", "failure")
+            fail.update(reason="write_failed", error=str(e), n=None, prev_hash=None, hash=None)
+            self._queue(fail)
+        return False
+
+    def _new_file(self) -> None:
+        self._close_file()
+        us = max(int(self.clock() * 1e6), self.last_file_us + 1)
+        while True:
+            name = "audit-%s.%06dZ.jsonl" % (
+                datetime.fromtimestamp(us // 1000000, timezone.utc).strftime("%Y%m%dT%H%M%S"),
+                us % 1000000)
+            path = os.path.join(self.dir, name)
+            try:
+                self.fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_EXCL, 0o640)
+                break
+            except FileExistsError:
+                us += 1
+        os.chmod(path, 0o640)   # whatever the umask
+        self.path, self.size, self.last_file_us = path, 0, us
+
+    def _close_file(self) -> None:
+        if self.fd is not None:
+            try:
+                os.close(self.fd)
+            except OSError:
+                pass
+            self.fd = None
+
+    def _queue(self, rec: Dict[str, Any]) -> None:
+        if not self.forward:
+            return
+        if len(self.outbox) >= self.outbox_max:
+            self.outbox.popleft()
+            self.outbox_dropped += 1
+        self.outbox.append(rec)
+
+    def take_outbox(self) -> List[Dict[str, Any]]:
+        with self.lock:
+            out = list(self.outbox)
+            self.outbox.clear()
+        return out
+
+    def status(self) -> Dict[str, Any]:
+        """For health records: is the trail being written, and where does the chain stand."""
+        with self.lock:
+            return {"audit_ok": self.ok and not self.low_space, "audit_n": self.n,
+                    "audit_hash": self.last_hash, "audit_verify": self.verify_result}
+
+    # -- checks the owner calls about once a minute
+
+    def check_time(self) -> None:
+        """A time_quality record at the first call, then whenever the alarm state changes."""
+        if self.tq is None:
+            return
+        alarm = self.tq.alarm()
+        if alarm != self.time_state:
+            self.time_state = alarm
+            self.write("time_quality", "failure" if alarm else "success", reason=alarm or "ok")
+
+    def check_space(self) -> None:
+        try:
+            free = self._disk_usage(self.dir).free
+        except OSError:
+            return
+        low = free < self.min_free
+        if low != self.low_space:
+            self.low_space = low
+            if low:
+                log.error("audit directory %s: %d bytes free, below %d", self.dir, free, self.min_free)
+                self.write("audit_failure", "failure", reason="low_space", free_bytes=free,
+                           min_free_bytes=self.min_free)
+            else:
+                self.write("audit_failure", "info", reason="space_ok", free_bytes=free)
+
+    def start_verify(self) -> None:
+        """Check the chain in a child process (`python3 -m wd2l.audit verify`), up to where it
+        stands now. A child keeps the capture loop's interpreter free."""
+        if self.verify_proc is not None:
+            return
+        with self.lock:
+            n, h = self.n, self.last_hash
+        self.last_verify = self.clock()
+        if n == 0:
+            return
+        env = dict(os.environ)
+        root = os.path.dirname(hostinfo.PKG_DIR)
+        env["PYTHONPATH"] = root + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        self.verify_upto = n
+        self.verify_proc = subprocess.Popen(
+            [sys.executable, "-m", "wd2l.audit", "verify", self.dir, "--upto", str(n),
+             "--upto-hash", h], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+
+    def poll_verify(self, wait: bool = False) -> Optional[Dict[str, Any]]:
+        """Collect a finished self-check and record it as audit_verify."""
+        p = self.verify_proc
+        if p is None or (not wait and p.poll() is None):
+            return None
+        out, err = p.communicate()
+        self.verify_proc = None
+        try:
+            res = json.loads(out)
+        except ValueError:
+            res = {"result": "failed", "files": [], "problems": [
+                "verifier failed: %s" % err.decode("utf-8", "replace")[-300:]]}
+        ok = res.get("result") == "ok"
+        self.verify_result = "ok" if ok else "failed"
+        if not ok:
+            log.error("audit chain self-check failed: %s", res.get("problems", [])[:3])
+        self.write("audit_verify", "success" if ok else "failure", upto=self.verify_upto,
+                   files=len(res.get("files", [])), records=res.get("records"),
+                   first_n=res.get("first_n"), torn=res.get("torn") or None,
+                   problems=res.get("problems", [])[:10] or None)
+        return res
+
+    def maybe_verify(self, every: float = 86400.0) -> None:
+        """Collect a finished self-check; start one at the first call and then once a day."""
+        self.poll_verify()
+        if self.verify_proc is None and (self.last_verify is None
+                                         or self.clock() - self.last_verify >= every):
+            self.start_verify()
+
+    def close(self) -> None:
+        with self.lock:
+            p = self.verify_proc
+            if p is not None and p.poll() is None:
+                p.terminate()
+                try:
+                    p.wait(5)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+            self.verify_proc = None
+            self._close_file()
+            if self._lockfd is not None:
+                os.close(self._lockfd)
+                self._lockfd = None
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

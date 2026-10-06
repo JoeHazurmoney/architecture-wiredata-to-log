@@ -157,3 +157,259 @@ def test_deeply_nested_json_is_reported_not_crash():
     res = audit.verify_lines([("f", [deep])])
     assert any("f:1: not JSON" in p for p in res.problems)
     # should complete normally and report as junk, not crash
+
+
+import collections
+import errno
+import os
+import re
+
+import wd2l
+from wd2l import hostinfo
+
+from helpers import read_audit
+
+Usage = collections.namedtuple("Usage", "total used free")
+
+
+def new_log(tmp_path, **kw):
+    kw.setdefault("host", "logsrv01")
+    kw.setdefault("actor", "uid=987(wd2l) unit=wd2l-sender.service")
+    kw.setdefault("build", "abc123")
+    return audit.AuditLog(str(tmp_path / "a"), "sender", 1, **kw)
+
+
+class FakeTQ:
+    def __init__(self):
+        self.q = {"stratum": 3, "offset_ms": 0.2, "synced": True, "source": "gps"}
+
+    def read(self):
+        return dict(self.q)
+
+    def alarm(self, q=None):
+        return hostinfo.time_alarm(self.read() if q is None else q)
+
+
+def test_records_carry_the_common_fields_and_chain(tmp_path):
+    a = new_log(tmp_path, clock=lambda: 1791209002.5, time_quality=FakeTQ())
+    r1 = a.write("start", "success", pid=42, absent=None)
+    r2 = a.write("config", settings={"listen": "127.0.0.1:10070"})
+    assert r1["ts"] == "2026-10-05T14:03:22.500000Z"
+    assert {k: r1[k] for k in ("host", "enclave", "component", "segment", "version", "build",
+                               "event", "outcome", "actor", "pid")} == {
+        "host": "logsrv01", "enclave": 1, "component": "sender", "segment": "e1-sender",
+        "version": wd2l.__version__, "build": "abc123", "event": "start", "outcome": "success",
+        "actor": "uid=987(wd2l) unit=wd2l-sender.service", "pid": 42}
+    assert r1["time_quality"] == {"stratum": 3, "offset_ms": 0.2, "synced": True, "source": "gps"}
+    assert "absent" not in r1
+    assert (r1["n"], r1["prev_hash"], r2["n"], r2["prev_hash"]) == (1, audit.GENESIS, 2, r1["hash"])
+    assert read_audit(tmp_path / "a") == [r1, r2]
+    a.close()
+    assert audit.verify_dir(str(tmp_path / "a")).ok
+
+
+def test_one_canonical_line_per_record_in_a_0640_file(tmp_path):
+    a = new_log(tmp_path)
+    r = a.write("start", "success")
+    [path] = audit.audit_files(a.dir)
+    assert re.fullmatch(r"audit-\d{8}T\d{6}\.\d{6}Z\.jsonl", os.path.basename(path))
+    assert os.stat(path).st_mode & 0o777 == 0o640
+    with open(path, "rb") as f:
+        assert f.read() == audit.canonical(r) + b"\n"
+
+
+def test_bad_outcome_is_refused(tmp_path):
+    with pytest.raises(ValueError):
+        new_log(tmp_path).write("start", "maybe")
+
+
+def test_restart_continues_the_chain_in_the_same_file(tmp_path):
+    a = new_log(tmp_path)
+    r1 = a.write("start", "success")
+    a.close()
+    b = new_log(tmp_path)
+    r2 = b.write("start", "success")
+    assert (r2["n"], r2["prev_hash"]) == (2, r1["hash"])
+    assert len(audit.audit_files(b.dir)) == 1
+
+
+def test_a_full_file_continues_the_chain_in_a_new_file(tmp_path):
+    a = new_log(tmp_path, max_bytes=900)
+    for i in range(6):
+        a.write("gap", "failure", count=i)
+    files = audit.audit_files(a.dir)
+    assert len(files) >= 2 and all(os.path.getsize(f) <= 900 for f in files)
+    res = audit.verify_dir(a.dir)
+    assert res.ok and res.records == 6
+
+
+def test_new_files_sort_after_old_ones_even_if_the_clock_goes_back(tmp_path):
+    t = [1791209002.5]
+    a = new_log(tmp_path, max_bytes=500, clock=lambda: t[0])
+    a.write("start", "success")
+    t[0] -= 3600
+    for _ in range(3):
+        a.write("gap", "failure")
+    assert audit.verify_dir(a.dir).ok
+
+
+def test_a_second_writer_is_locked_out(tmp_path):
+    a = new_log(tmp_path)
+    with pytest.raises(audit.AuditLocked, match="in use by another wd2l process"):
+        new_log(tmp_path)
+    a.close()
+    new_log(tmp_path).close()
+
+
+def test_torn_last_line_starts_a_new_file_and_is_recorded(tmp_path):
+    a = new_log(tmp_path)
+    r1 = a.write("start", "success")
+    a.close()
+    [path] = audit.audit_files(str(tmp_path / "a"))
+    with open(path, "ab") as f:
+        f.write(b'{"event":"gap","n":2,"pre')          # power lost mid-write
+    b = new_log(tmp_path)
+    note = read_audit(tmp_path / "a")[-1]
+    assert note["event"] == "audit_failure" and note["reason"] == "torn_write"
+    assert (note["n"], note["prev_hash"]) == (2, r1["hash"])
+    assert len(audit.audit_files(b.dir)) == 2
+    res = audit.verify_dir(b.dir)
+    assert res.ok and len(res.torn) == 1
+
+
+def test_write_failure_keeps_going_and_chain_still_verifies(tmp_path):
+    """Review focus 1: a full disk must not stop anything or break the chain."""
+    a = new_log(tmp_path)
+    a.write("start", "success")
+    real = a._write
+
+    def full(fd, data):
+        raise OSError(errno.ENOSPC, "No space left on device")
+    a._write = full
+    r2 = a.write("gap", "failure", count=3)
+    r3 = a.write("gap", "failure", count=4)
+    assert r2["n"] is None and r2["hash"] is None and r3["n"] is None
+    assert a.status()["audit_ok"] is False and a.missed == 2
+    a._write = real
+    r4 = a.write("stop", "success")
+    assert a.ok and r4["n"] == 3
+    on_disk = read_audit(tmp_path / "a")
+    assert [r["event"] for r in on_disk] == ["start", "audit_failure", "stop"]
+    assert on_disk[1]["reason"] == "recovered" and on_disk[1]["missed"] == 2
+    assert [(r["event"], r.get("reason")) for r in a.take_outbox()] == [
+        ("start", None), ("audit_failure", "write_failed"), ("gap", None), ("gap", None),
+        ("audit_failure", "recovered"), ("stop", None)]
+    assert audit.verify_dir(a.dir).ok
+
+
+def test_a_short_write_moves_on_to_a_new_file(tmp_path):
+    a = new_log(tmp_path)
+    a.write("start", "success")
+    real = a._write
+    a._write = lambda fd, data: real(fd, data[:10])     # the disk filled part way
+    assert a.write("gap", "failure")["n"] is None
+    a._write = real
+    a.write("stop", "success")
+    res = audit.verify_dir(a.dir)
+    assert res.ok and len(res.torn) == 1 and res.last_n == 3
+    assert len(audit.audit_files(a.dir)) == 2
+
+
+def test_fsync_failure_keeps_the_record_but_flags_the_trail(tmp_path):
+    a = new_log(tmp_path)
+
+    def bad_fsync(fd):
+        raise OSError(errno.EIO, "I/O error")
+    a._fsync = bad_fsync
+    assert a.write("start", "success")["n"] == 1
+    assert not a.ok
+    a._fsync = os.fsync
+    a.write("stop", "success")
+    assert [r["event"] for r in read_audit(a.dir)] == ["start", "audit_failure", "stop"]
+    assert a.ok
+
+
+def test_outbox_is_bounded_and_off_when_not_forwarding(tmp_path):
+    a = new_log(tmp_path, outbox_max=2)
+    for _ in range(3):
+        a.write("gap", "failure")
+    assert len(a.take_outbox()) == 2 and a.outbox_dropped == 1 and a.take_outbox() == []
+    a.close()
+    b = new_log(tmp_path, forward=False)
+    b.write("gap", "failure")
+    assert b.take_outbox() == []
+
+
+def test_low_space_is_reported_once_and_clears(tmp_path):
+    a = new_log(tmp_path, min_free_bytes=1000)
+    free = [10 ** 9]
+    a._disk_usage = lambda path: Usage(0, 0, free[0])
+    a.check_space()
+    free[0] = 10
+    a.check_space()
+    a.check_space()
+    assert a.status()["audit_ok"] is False
+    free[0] = 10 ** 9
+    a.check_space()
+    notes = [(r["reason"], r["outcome"]) for r in read_audit(a.dir) if r["event"] == "audit_failure"]
+    assert notes == [("low_space", "failure"), ("space_ok", "info")]
+    assert a.status()["audit_ok"] is True
+
+
+def test_time_quality_is_recorded_first_and_on_each_change(tmp_path):
+    tq = FakeTQ()
+    a = new_log(tmp_path, time_quality=tq)
+    a.check_time()
+    a.check_time()
+    tq.q = {"stratum": 0, "offset_ms": 0.0, "synced": False, "source": ""}
+    a.check_time()
+    got = [(r["outcome"], r["reason"]) for r in read_audit(a.dir) if r["event"] == "time_quality"]
+    assert got == [("success", "ok"), ("failure", "unsynced")]
+
+
+def test_self_check_passes_on_a_good_chain(tmp_path):
+    a = new_log(tmp_path)
+    for e in ("start", "config", "state_loaded"):
+        a.write(e)
+    assert a.status()["audit_verify"] is None
+    a.start_verify()
+    res = a.poll_verify(wait=True)
+    assert res["result"] == "ok" and a.status()["audit_verify"] == "ok"
+    last = read_audit(a.dir)[-1]
+    assert (last["event"], last["outcome"], last["records"], last["upto"]) == \
+        ("audit_verify", "success", 3, 3)
+
+
+def test_self_check_fails_on_an_edited_file(tmp_path):
+    a = new_log(tmp_path)
+    for e in ("start", "config", "stop"):
+        a.write(e)
+    a.close()
+    [path] = audit.audit_files(str(tmp_path / "a"))
+    with open(path, "rb") as f:
+        data = f.read()
+    with open(path, "wb") as f:
+        f.write(data.replace(b'"event":"config"', b'"event":"c0nfig"'))
+    b = new_log(tmp_path)
+    b.start_verify()
+    assert b.poll_verify(wait=True)["result"] == "failed"
+    assert b.status()["audit_verify"] == "failed"
+    last = read_audit(b.dir)[-1]
+    assert last["event"] == "audit_verify" and last["outcome"] == "failure"
+    assert any("edited" in p for p in last["problems"])
+
+
+def test_self_check_runs_at_start_then_daily(tmp_path):
+    t = [1000.0]
+    a = new_log(tmp_path, clock=lambda: t[0])
+    a.write("start", "success")
+    a.maybe_verify()
+    assert a.verify_proc is not None
+    a.poll_verify(wait=True)
+    t[0] += 3600
+    a.maybe_verify()
+    assert a.verify_proc is None
+    t[0] += 86400
+    a.maybe_verify()
+    assert a.verify_proc is not None
+    a.close()

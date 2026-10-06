@@ -104,3 +104,16 @@ class SlowOutput(MemOutput):
     def take_failed(self):
         f, self.failed = self.failed, []
         return f
+
+
+def read_audit(directory):
+    """Every audit record on disk in this directory, oldest first (torn lines skipped)."""
+    import json as _json
+    from wd2l import audit as _audit
+    out = []
+    for path in _audit.audit_files(str(directory)):
+        with open(path, "rb") as f:
+            for line in _audit.split_lines(f.read()):
+                if line.endswith(b"\n"):
+                    out.append(_json.loads(line))
+    return out
