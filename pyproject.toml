@@ -16,6 +16,7 @@ test = ["pytest"]
 [project.scripts]
 wd2l-sender = "wd2l.sender:main"
 wd2l-receiver = "wd2l.receiver:main"
+wd2l-audit-report = "wd2l.audit_report:main"
 
 [tool.setuptools]
 packages = ["wd2l"]
