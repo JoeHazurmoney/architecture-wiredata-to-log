@@ -38,12 +38,16 @@ class MemOutput(Output):
     def __init__(self):
         self.events = []
         self.records = []
+        self.audits = []
 
     def event(self, evt, stream_id, seq):
         self.events.append((stream_id, seq, evt))
 
     def health(self, rec):
         self.records.append(rec)
+
+    def audit(self, rec):
+        self.audits.append(rec)
 
     def kinds(self, kind):
         return [r for r in self.records if r["type"] == kind]
