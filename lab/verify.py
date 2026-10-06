@@ -65,6 +65,7 @@ def main():
                    help="an audit directory whose hash chain must verify (repeatable)")
     p.add_argument("--e1-audit-dir", help="Enclave 1's audit directory: the in-band copy in "
                    "<received>/audit.jsonl must match it")
+    p.add_argument("--reconcile-dir", help="Enclave 2's audit directory: each data stream's last reconcile record must be balanced (with --expect-gaps: at least one must not be)")
     a = p.parse_args()
     if a.sender_runs > 1 and a.source_seq:
         p.error("--sender-runs can't be combined with --source-seq (line numbers restart "
@@ -228,6 +229,28 @@ def main():
                             % (len(missing), sorted(missing)[:10]))
         print("sender audit:    %d of %d records arrived in-band" % (len(official) - len(missing),
                                                                      len(official)))
+
+    if a.reconcile_dir:
+        last_rc = {}
+        for path in auditlog.audit_files(a.reconcile_dir):
+            with open(path, "rb") as f:
+                for line in auditlog.split_lines(f.read()):
+                    if line.endswith(b"\n"):
+                        r = json.loads(line)
+                        if r["event"] == "reconcile" and r["component"] in ("receiver", "replay"):
+                            last_rc[r["stream"]] = r
+        for s in sorted(set(runs) | streams):
+            r = last_rc.get(s)
+            if r is None:
+                problems.append("no reconcile record for stream %s" % s)
+            elif not r["balanced"] and not a.expect_gaps:
+                problems.append("stream %s not balanced at cut %s (%s open gap events)"
+                                % (s, r["cut"], r["gaps_open"]))
+        if a.expect_gaps and last_rc and all(r["balanced"] for r in last_rc.values()):
+            problems.append("events were lost but every reconcile record says balanced")
+        print("reconcile:       %s" % "; ".join(
+            "%s cut %s %s" % (s, r["cut"], "balanced" if r["balanced"] else "NOT balanced")
+            for s, r in sorted(last_rc.items())))
 
     print("sent:            %d" % len(sent_by_seq))
     if a.sender_runs > 1:

@@ -331,7 +331,7 @@ echo "== frames sent back toward Enclave 1 from Enclave 2: $BACK"
 echo "== verifying"
 VERIFY_ARGS=("$OUT/sent.jsonl" "$OUT/received" --max-event "$MAX_EVENT" "${SENDER_EXTRA[@]}"
              --audit-dir "$OUT/audit-e1" --audit-dir "$OUT/audit-e2"
-             --e1-audit-dir "$OUT/audit-e1")
+             --e1-audit-dir "$OUT/audit-e1" --reconcile-dir "$OUT/audit-e2")
 if [ -n "$LOSS" ]; then VERIFY_ARGS+=(--expect-gaps); fi
 if [ "$OUTAGE" = 1 ]; then VERIFY_ARGS+=(--state "$OUT/state.json"); fi
 if [ "$KILLSIG" = KILL ]; then VERIFY_ARGS+=(--allow-duplicates); fi
