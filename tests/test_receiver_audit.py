@@ -157,3 +157,35 @@ def test_replay_refuses_while_another_process_holds_the_audit_dir(tmp_path):
                            "--audit-dir", str(tmp_path / "audit"), "--chronyc", "/bin/false"])
     finally:
         held.close()
+
+
+def test_replay_leaves_the_saved_config_hash_alone(tmp_path):
+    state = str(tmp_path / "state.json")
+    r, _, a = make(tmp_path, state_path=state, config_sha256="a" * 64)
+    feed(r, ev(1), 0)
+    r.save_state()
+    a.close()
+    # A replay (no config hash) shares the state file and saves it again.
+    r2, _, a2 = make(tmp_path, state_path=state)
+    r2.save_state()
+    a2.close()
+    with open(state) as f:
+        assert json.load(f)["config_sha256"] == "a" * 64
+    assert events(a2, "config_changed") == []
+    # The live receiver, restarted with the same config, sees no change.
+    _, _, a3 = make(tmp_path, state_path=state, config_sha256="a" * 64)
+    assert events(a3, "config_changed") == []
+
+
+def test_replay_main_does_not_touch_config_hash_in_state(tmp_path):
+    p = replay_pcap(tmp_path)
+    state = str(tmp_path / "state.json")
+    r, _, a = make(tmp_path, state_path=state, config_sha256="a" * 64)
+    r.save_state()
+    a.close()
+    adir = str(tmp_path / "audit2")
+    receiver.main(["--pcap", p, "--out-dir", str(tmp_path / "out"), "--state", state,
+                   "--audit-dir", adir, "--chronyc", "/bin/false"])
+    with open(state) as f:
+        assert json.load(f)["config_sha256"] == "a" * 64
+    assert [x for x in read_audit(adir) if x["event"] == "config_changed"] == []

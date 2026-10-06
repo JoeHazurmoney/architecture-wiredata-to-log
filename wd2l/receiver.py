@@ -385,6 +385,7 @@ class Receiver:
         self.audit_out = audit_output or output
         self.outputs: List[Output] = [output] if self.audit_out is output else [output, self.audit_out]
         self.config_sha256 = config_sha256
+        self.loaded_config_sha256: Optional[str] = None
         self.summary = Summarizer()
         self.audit_interval = audit_interval
         self.last_audit: Optional[float] = None
@@ -797,8 +798,9 @@ class Receiver:
             streams["%016x" % sid] = d
         state = {"version": STATE_VERSION, "last_boot": self.last_boot, "streams": streams,
                  "retired": [["%016x" % sid, k, f] for sid, (k, f) in self.retired.items()]}
-        if self.config_sha256:
-            state["config_sha256"] = self.config_sha256
+        saved_hash = self.config_sha256 or self.loaded_config_sha256
+        if saved_hash:
+            state["config_sha256"] = saved_hash
         tmp = self.state_path + ".tmp"  # type: ignore[operator]
         with open(tmp, "w") as f:
             json.dump(state, f, separators=(",", ":"))
@@ -825,12 +827,14 @@ class Receiver:
         if state.get("version", 1) not in (1, STATE_VERSION):
             raise SystemExit("state file %s has unknown version %r"
                              % (self.state_path, state.get("version")))
+        old_hash = state.get("config_sha256")
+        self.loaded_config_sha256 = old_hash if isinstance(old_hash, str) else None
         if self.audit is not None:
             self.audit.write("state_loaded", "success", path=self.state_path,
                              file_sha256=hashlib.sha256(body).hexdigest(),
                              streams=len(state.get("streams", {})),
                              retired=len(state.get("retired", [])))
-            old = state.get("config_sha256")
+            old = self.loaded_config_sha256
             if self.config_sha256 and isinstance(old, str) and old != self.config_sha256:
                 self.audit.write("config_changed", "info", old_config_sha256=old,
                                  config_sha256=self.config_sha256)
@@ -987,7 +991,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
               reasm_timeout=a.reasm_timeout, gap_window=a.gap_window, hb_timeout=a.hb_timeout,
               health_interval=a.health_interval, stream_lost_after=a.stream_lost_after,
               stream_retention=a.stream_retention, rx_time=a.rx_time, src_port=a.src_port,
-              audit=audit, audit_output=audit_out, config_sha256=cfg_sha)
+              audit=audit, audit_output=audit_out,
+              config_sha256=None if a.pcap else cfg_sha)
     try:
         if a.pcap:
             if audit:
