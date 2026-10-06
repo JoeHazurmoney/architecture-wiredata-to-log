@@ -228,12 +228,21 @@ def nic_stats(iface: str, sysfs: str = "/sys/class/net") -> Dict[str, Any]:
 def archive_status(pcap_dir: str, now: Optional[float] = None,
                    pattern: str = "cap-*.pcap") -> Dict[str, Any]:
     """The newest capture file: name, seconds since it was last written, size. tcpdump -U
-    writes every packet as it arrives, so with packets arriving the age stays near 0."""
+    writes every packet as it arrives, so with packets arriving the age stays near 0.
+    Files may be deleted by pruning while this function runs; survivors are returned."""
     files = glob.glob(os.path.join(pcap_dir, pattern))
     if not files:
         return {"archive_file": None, "archive_age_s": None, "archive_bytes": None}
-    newest = max(files, key=os.path.getmtime)
-    st = os.stat(newest)
+    candidates = []
+    for f in files:
+        try:
+            st = os.stat(f)
+            candidates.append((st.st_mtime, f, st.st_size))
+        except OSError:
+            continue
+    if not candidates:
+        return {"archive_file": None, "archive_age_s": None, "archive_bytes": None}
+    mtime, newest, size = max(candidates)
     now = time.time() if now is None else now
-    return {"archive_file": os.path.basename(newest), "archive_age_s": round(now - st.st_mtime, 1),
-            "archive_bytes": st.st_size}
+    return {"archive_file": os.path.basename(newest), "archive_age_s": round(now - mtime, 1),
+            "archive_bytes": size}

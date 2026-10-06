@@ -171,3 +171,31 @@ def test_archive_status_reports_the_newest_file(tmp_path):
     os.utime(new, (2000, 2000))
     assert hostinfo.archive_status(str(tmp_path), now=2030.0) == {
         "archive_file": "cap-2.pcap", "archive_age_s": 30.0, "archive_bytes": 20}
+
+
+def test_archive_status_survives_missing_files_from_pruning(tmp_path, monkeypatch):
+    """When glob returns files but one is deleted before stat, the surviving file is returned."""
+    real_file = tmp_path / "cap-keep.pcap"
+    real_file.write_bytes(b"z" * 15)
+    os.utime(real_file, (3000, 3000))
+    missing_file = str(tmp_path / "cap-deleted.pcap")
+
+    # Monkeypatch glob.glob to return both real and missing files
+    monkeypatch.setattr(hostinfo.glob, "glob", lambda p: [missing_file, str(real_file)])
+
+    result = hostinfo.archive_status(str(tmp_path), now=3030.0)
+    assert result == {
+        "archive_file": "cap-keep.pcap", "archive_age_s": 30.0, "archive_bytes": 15}
+
+
+def test_archive_status_all_none_when_all_files_pruned(tmp_path, monkeypatch):
+    """When all files listed by glob are deleted before stat, return all-None dict."""
+    missing1 = str(tmp_path / "cap-1.pcap")
+    missing2 = str(tmp_path / "cap-2.pcap")
+
+    # Monkeypatch glob.glob to return non-existent files
+    monkeypatch.setattr(hostinfo.glob, "glob", lambda p: [missing1, missing2])
+
+    result = hostinfo.archive_status(str(tmp_path), now=3000.0)
+    assert result == {
+        "archive_file": None, "archive_age_s": None, "archive_bytes": None}
