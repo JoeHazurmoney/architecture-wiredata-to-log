@@ -15,7 +15,7 @@ annotated captures, written for the interface control document, see
 | 0 | 4 | `magic` | ASCII `WD2L` |
 | 4 | 1 | `version` | `1` |
 | 5 | 1 | `type` | `1` = DATA, `2` = HEARTBEAT |
-| 6 | 2 | `flags` | reserved, `0` |
+| 6 | 2 | `flags` | bit 0 = records stream (below); other bits `0` |
 | 8 | 8 | `stream_id` | random, new every time the sender starts |
 | 16 | 8 | `seq` | DATA: event number in this stream, starting at 1. HEARTBEAT: last event number sent |
 | 24 | 2 | `chunk_idx` | 0-based piece number |
@@ -85,6 +85,22 @@ fiber.
 * `boot` counts sender runs (1, 2, 3, …). It lives in the sender's state file.
 * `prev_stream` / `prev_last_seq` name the run before this one and the last event number it
   recorded (saved at every heartbeat, so after a crash it can be up to one heartbeat behind).
+
+## Records stream
+
+With `--audit-dir`, the sender runs a second stream beside the data stream. It carries the
+sender's own audit and health records. It has its own random `stream_id`, its own `seq` from 1 and
+its own heartbeat, and every frame has `flags` bit 0 set. Its DATA bodies use the same event
+layout, but they are records, not logs: `host` is the log server, `source` is `wd2l-sender`,
+`sourcetype` is `wd2l:sender:audit` or `wd2l:sender:health`, and `_raw` is the record as canonical
+JSON. There is no `index`.
+
+The heartbeat has `events_sent`, `records_too_big`, `outbox_dropped`, `sender_time`, `uptime` and
+`final`. It has no `boot` or `prev_*`: records streams aren't linked across runs. Receivers older
+than wd2l 0.2.0 ignore `flags`, so **update the receiver first**.
+
+Receiver rule: frames with `flags` bit 0 set are tracked as their own stream, delivered to the
+audit or health index, and never linked to the run chain.
 
 ## Why the sequence number never resets
 

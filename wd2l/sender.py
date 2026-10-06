@@ -28,8 +28,10 @@ import struct
 import termios
 import threading
 import time
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from collections import deque
+from typing import Any, Deque, Dict, List, Optional, Sequence, Set, Tuple
 
+from . import __version__
 from . import audit as auditlog
 from . import hostinfo, logsetup, opaque, wire
 
@@ -68,7 +70,7 @@ class Sender:
                  source_seq: bool = False, tx_time: bool = True, opaque_check: bool = True,
                  bind_port: int = 0, stream_id: Optional[int] = None,
                  audit: Optional[auditlog.AuditLog] = None,
-                 config_sha256: Optional[str] = None):
+                 config_sha256: Optional[str] = None, time_quality: Any = None):
         if max_event < 1024:
             raise ValueError("max_event must be at least 1024")
         self.dst = dst
@@ -108,6 +110,19 @@ class Sender:
         self.audit = audit
         self.summary = auditlog.Summarizer()
         self.config_sha256 = config_sha256
+        self.tq = time_quality
+        self.hostname = audit.host if audit is not None else hostinfo.hostname()
+        self.last_snapshot: Dict[str, Any] = {}
+        # The records stream (§7): this sender's own audit and health records, in-band, as a
+        # second stream with its own id, numbers and heartbeat, marked by flags bit 0.
+        self.records = audit is not None and audit.forward
+        self.rec_stream_id = new_stream_id()
+        while self.rec_stream_id == self.stream_id:
+            self.rec_stream_id = new_stream_id()
+        self.rec_seq = 0
+        self.rec_counters = {"events_sent": 0, "records_too_big": 0}
+        self.rec_closed = False
+        self.health_outbox: Deque[Dict[str, Any]] = deque(maxlen=100)
         self.state_path = state_path
         self.link: Dict[str, int] = {}
         if state_path:
@@ -346,6 +361,66 @@ class Sender:
         self.audit.check_time()
         self.audit.check_space()
         self.audit.maybe_verify()
+        if self.records:
+            self.health_outbox.append(self.health_record())
+
+    def health_record(self) -> Dict[str, Any]:
+        """The sender's per-minute health summary (§4): counters, the latest snapshot, where the
+        audit chain stands, and time quality."""
+        with self.lock:
+            rec: Dict[str, Any] = dict(self.counters, stream="%016x" % self.stream_id,
+                                       last_seq=self.seq)
+        rec.update(type="health", time=round(time.time(), 3), host=self.hostname, enclave=1,
+                   component="sender", segment="e1-sender", version=__version__)
+        rec.update(self.last_snapshot)
+        if self.audit is not None:
+            rec.update(self.audit.status())
+        if self.tq is not None:
+            rec["time_quality"] = self.tq.read()
+        return rec
+
+    def _record_body(self, kind: str, rec: Dict[str, Any]) -> bytes:
+        t = rec.get("time")
+        if not isinstance(t, (int, float)):
+            t = auditlog.ts_epoch(rec["ts"]) if isinstance(rec.get("ts"), str) else time.time()
+        return wire.serialize_event({"_time": t, "host": self.hostname, "source": "wd2l-sender",
+                                     "sourcetype": "wd2l:sender:" + kind,
+                                     "_raw": auditlog.canonical(rec).decode("utf-8")})
+
+    def flush_records(self, final: bool = False) -> None:
+        """Every heartbeat: send queued audit and health records on the records stream, then
+        its heartbeat. The local audit files stay the official copy; these are for Enclave 2."""
+        if not self.records:
+            return
+        items = [("audit", r) for r in self.audit.take_outbox()]  # type: ignore[union-attr]
+        while self.health_outbox:
+            items.append(("health", self.health_outbox.popleft()))
+        bodies = []
+        for kind, rec in items:
+            body = self._record_body(kind, rec)
+            if len(body) > self.max_event:
+                self.rec_counters["records_too_big"] += 1
+                log.warning("%s record %s too big to send in-band (%d bytes); it is in the "
+                            "local audit file", kind, rec.get("event", rec.get("type")), len(body))
+                continue
+            bodies.append(body)
+        with self.lock:
+            if self.rec_closed:
+                return
+            for body in bodies:
+                self.rec_seq += 1
+                for dg in wire.encode_event(self.rec_stream_id, self.rec_seq, body,
+                                            self.max_datagram, flags=wire.FLAG_RECORDS):
+                    self._transmit(dg)
+                self.rec_counters["events_sent"] += 1
+            info: Dict[str, Any] = dict(self.rec_counters, sender_time=round(time.time(), 3),
+                                        uptime=round(time.time() - self.started, 1),
+                                        outbox_dropped=self.audit.outbox_dropped)  # type: ignore[union-attr]
+            if final:
+                info["final"] = True
+                self.rec_closed = True
+            self._transmit(wire.encode_heartbeat(self.rec_stream_id, self.rec_seq, info,
+                                                 flags=wire.FLAG_RECORDS))
 
 
 # ---------------------------------------------------------------- log aggregator input (JSON lines over TCP)
@@ -533,6 +608,7 @@ def _heartbeat_loop(sender: Sender, interval: float, stop: threading.Event,
             log.info("stream=%016x last_seq=%d %s", sender.stream_id, sender.seq, counters,
                      extra={"stream": "%016x" % sender.stream_id, "seq": sender.seq})
             sender.periodic()
+        sender.flush_records()
 
 
 def _hostport(s: str) -> Tuple[str, int]:
@@ -605,7 +681,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     audit = None
     if a.audit_dir:
         try:
-            audit = auditlog.AuditLog(a.audit_dir, "sender", 1, time_quality=tq, forward=False,
+            audit = auditlog.AuditLog(a.audit_dir, "sender", 1, time_quality=tq, forward=True,
                                       min_free_bytes=a.audit_min_free_mb * 1024 * 1024)
         except auditlog.AuditLocked as e:
             raise SystemExit(str(e))
@@ -627,7 +703,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sender = Sender(_hostport(a.dst), bind_ip, a.max_datagram, a.max_event, a.rate_pps,
                     a.extra_field, state_path=a.state, source_seq=a.source_seq,
                     tx_time=a.tx_time, opaque_check=a.opaque_check, bind_port=bind_port,
-                    stream_id=sid, audit=audit, config_sha256=cfg_sha)
+                    stream_id=sid, audit=audit, config_sha256=cfg_sha, time_quality=tq)
     if audit:
         audit.start_verify()
     server = InputServer(_hostport(a.listen), sender, token, a.input_rcvbuf, a.drain_timeout)
@@ -658,6 +734,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         audit.write("stop", "success", stream="%016x" % sender.stream_id, last_seq=sender.seq,
                     signal=signal.Signals(stopped_by[0]).name if stopped_by else None,
                     counters=dict(sender.counters))
+        sender.flush_records(final=True)
         audit.close()
     return 0
 

@@ -24,7 +24,7 @@ developer reference and holds the receiver's sequencing rules.
 | Sender | `wd2l-sender` on the central log server, egress NIC, `10.255.255.1`, UDP port `5514` |
 | Addressed to | `10.255.255.2`, UDP port `5514`: a "black hole" address that exists nowhere (static ARP) |
 | Actual consumer | Enclave 2 capture NIC (no IP address, receive only) → `wd2l-receiver` |
-| Messages | DATA (one log event, split over several packets if needed); HEARTBEAT (sender status, every second) |
+| Messages | DATA (one log event, split over several packets if needed); HEARTBEAT (sender status, every second). With `--audit-dir` (deployed: yes), each sender run has a second stream, the **records stream**, carrying the sender's own audit and health records ([§9](#9-streams-and-sequence-numbers)). |
 | Sessions, handshakes, acknowledgements | None. Nothing is ever resent |
 | Data carried | Log events collected in Enclave 1, chosen by the log aggregator. Each one keeps its original text and its time, host, source, source type and index |
 | Expected volume | Under 1,000 events/s, about 8 Mbit/s |
@@ -132,7 +132,7 @@ VLAN tag is present.
 | 0 | 4 | `magic` | ASCII | `WD2L` (`57 44 32 4C`) | |
 | 4 | 1 | `version` | uint8 | `1` | Any other value is dropped (`bad_frames`) |
 | 5 | 1 | `type` | uint8 | `1` DATA, `2` HEARTBEAT | Any other value is dropped |
-| 6 | 2 | `flags` | uint16 | `0` | Reserved. Sent as 0, ignored by the receiver |
+| 6 | 2 | `flags` | uint16 | `0` (data stream) or `1` (records stream) | Bit 0 marks the records stream. The other bits are reserved: sent as 0, ignored by the receiver |
 | 8 | 8 | `stream_id` | uint64 | random, never 0 | New every time the sender starts. Identifies one sender run |
 | 16 | 8 | `seq` | uint64 | DATA: 1, 2, 3, … HEARTBEAT: last DATA `seq` sent (0 before the first) | Never wraps within a run (see [§9](#9-streams-and-sequence-numbers)) |
 | 24 | 2 | `chunk_idx` | uint16 | 0 … `chunk_count` − 1 | |
@@ -246,6 +246,21 @@ datagram is about 270–370 bytes. Numbers are cumulative for this sender run un
 | `truncated` | integer | events | always | Events cut to fit the size limit |
 | `uptime` | number, 1 decimal | seconds | always | Time since this run started |
 
+### Records stream heartbeat
+
+Same frame, with `flags` bit 0 set. Sent every second and once more at shutdown. Its keys:
+
+| Name | Type | Meaning |
+|---|---|---|
+| `events_sent` | integer | Records sent on the records stream |
+| `records_too_big` | integer | Records kept out of the stream because they don't fit one event. They are still in the local audit file |
+| `outbox_dropped` | integer | Records not queued for sending because more than 10,000 were waiting |
+| `sender_time` | number, 3 decimals | Sender's clock, seconds since 1970-01-01 UTC |
+| `uptime` | number, 1 decimal | Seconds since this run started |
+| `final` | `true` | Last heartbeat only. Clean shutdown |
+
+There is no `boot` and there are no `prev_*` keys. Records streams aren't linked across runs.
+
 ## 9. Streams and sequence numbers
 
 * A **stream** is one sender run. Its `stream_id` is drawn at random when the sender starts.
@@ -255,6 +270,19 @@ datagram is about 270–370 bytes. Numbers are cumulative for this sender run un
   lost tail of one run, or a whole run it never saw.
 * The receiver's rules for gaps, duplicates and links are in
   [wire-format.md](wire-format.md#receiver-rules).
+
+**Records stream**
+
+* It has its own random `stream_id`, its own `seq` from 1 and its own heartbeat.
+* Its DATA bodies are records, not logs. `host` is the log server, `source` is `wd2l-sender`, and
+  `sourcetype` is `wd2l:sender:audit` or `wd2l:sender:health`. `_raw` is the record as canonical
+  JSON, the same bytes as the line in the local audit file. There is no `index`: Enclave 2
+  chooses it.
+* The receiver routes by the flag, never by `sourcetype`.
+* Volume is bounded: summaries, about one record a minute, plus events.
+* Loss shows up as a gap marked `records: true`.
+* Receivers older than wd2l 0.2.0 ignore `flags` and would treat the records stream as one more
+  data stream. **Update the receiver first.**
 
 ## 10. Rates and timing
 
@@ -436,6 +464,9 @@ collector the same top-level values (`index` can be filled in or overridden with
 | `wd2l_seq` | integer | `seq` |
 | `wd2l_rx_time` | number, seconds since 1970-01-01 UTC, 3 decimals | Receiver's clock when the event arrived (for an archive replay: when it was captured) |
 
+Records-stream events go to the audit index (`wd2l_audit`, its own token) or the health index,
+never to the data index.
+
 It also writes its own status records (`sourcetype=wd2l:health`) to a separate index. See
 [deployment/receiver.md](deployment/receiver.md) and [operations.md](operations.md).
 
@@ -464,13 +495,14 @@ It also writes its own status records (`sourcetype=wd2l:health`) to a separate i
 | `--heartbeat`, `--rate-pps` (sender) | Heartbeat interval, packet rate cap |
 | `--no-tx-time`, `--no-opaque-check`, `--source-seq`, `--extra-field` (sender) | Which `fields` are present |
 | `--state` (sender) | Whether heartbeats carry `boot`, `prev_stream`, `prev_last_seq` |
+| `--audit-dir` (sender) | Adds the records stream (flags bit 0) |
 
 ## 17. Changing the format
 
 * `version` (now 1) changes only for a change the current receiver can't read: a different header
   layout, or a different meaning for a field. The receiver drops frames of a version it doesn't
   know (`bad_frames`, reason `unsupported version`), so **update the receiver first**.
-* `flags` is reserved for future use and is sent as 0.
+* `flags` bit 0 marks the records stream. The other bits are reserved and sent as 0.
 * New optional keys in the event body or the heartbeat don't need a new version. The receiver
   ignores top-level keys it doesn't know. New string or number `fields` pass through to the
   SIEM.
