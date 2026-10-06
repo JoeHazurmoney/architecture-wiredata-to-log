@@ -1,6 +1,7 @@
 """Facts about this host and process for audit and health records: who runs us or signals us,
 which build, chrony's view of the clock, and CPU and memory. Anything that can't be read comes
-back as None or "unavailable"; nothing here raises."""
+back as None or "unavailable"; nothing here raises, except parse_chronyc_tracking, which raises
+ValueError for TimeQuality to catch."""
 
 from __future__ import annotations
 
@@ -94,12 +95,15 @@ def build_id(environ: Optional[Dict[str, str]] = None, pkg_dir: str = PKG_DIR) -
 
 def code_sha256(pkg_dir: str = PKG_DIR) -> str:
     """One SHA-256 over the package's .py files (names and contents): which code is running."""
-    h = hashlib.sha256()
-    for name in sorted(os.listdir(pkg_dir)):
-        if name.endswith(".py"):
-            with open(os.path.join(pkg_dir, name), "rb") as f:
-                h.update(name.encode() + b"\0" + hashlib.sha256(f.read()).digest())
-    return h.hexdigest()
+    try:
+        h = hashlib.sha256()
+        for name in sorted(os.listdir(pkg_dir)):
+            if name.endswith(".py"):
+                with open(os.path.join(pkg_dir, name), "rb") as f:
+                    h.update(name.encode() + b"\0" + hashlib.sha256(f.read()).digest())
+        return h.hexdigest()
+    except OSError:
+        return "unavailable"
 
 
 # ---------------------------------------------------------------- time quality (chrony)
@@ -187,5 +191,8 @@ class ProcStats:
         rss = None
         v = _read(self.statm)
         if v:
-            rss = round(int(v.split()[1]) * os.sysconf("SC_PAGE_SIZE") / 1048576.0, 1)
+            try:
+                rss = round(int(v.split()[1]) * os.sysconf("SC_PAGE_SIZE") / 1048576.0, 1)
+            except (IndexError, ValueError):
+                rss = None
         return {"cpu_pct": pct, "rss_mb": rss}

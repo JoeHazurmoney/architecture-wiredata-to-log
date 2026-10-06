@@ -112,3 +112,24 @@ def test_proc_stats():
     sum(range(10 ** 6))
     r = ps.read()
     assert r["cpu_pct"] >= 0 and r["rss_mb"] > 1
+
+
+def test_code_sha256_missing_directory(tmp_path):
+    missing = str(tmp_path / "nonexistent")
+    assert hostinfo.code_sha256(missing) == "unavailable"
+
+
+def test_proc_stats_with_empty_statm(tmp_path):
+    statm = tmp_path / "statm"
+    statm.write_text("")
+    ps = hostinfo.ProcStats(statm=str(statm))
+    r = ps.read()
+    assert isinstance(r["cpu_pct"], (int, float)) and r["rss_mb"] is None
+
+
+def test_proc_stats_with_garbage_statm(tmp_path):
+    statm = tmp_path / "statm"
+    statm.write_text("not a number at all")
+    ps = hostinfo.ProcStats(statm=str(statm))
+    r = ps.read()
+    assert isinstance(r["cpu_pct"], (int, float)) and r["rss_mb"] is None
