@@ -121,3 +121,10 @@ def read_audit(directory):
                 if line.endswith(b"\n"):
                     out.append(_json.loads(line))
     return out
+
+
+def write_pcap(path, datagrams, t0=1000.0):
+    with open(path, "wb") as f:
+        w = packets.PcapWriter(f)
+        for i, d in enumerate(datagrams):
+            w.write(t0 + i * 0.0005, eth(d, i))

@@ -6,10 +6,11 @@ that is not IPv4/UDP (or is an IP fragment) is reported as such and skipped.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import socket
 import struct
-from typing import BinaryIO, Iterator, NamedTuple, Optional, Tuple
+from typing import Any, BinaryIO, Dict, Iterator, List, NamedTuple, Optional, Tuple
 
 ETH_P_ALL = 0x0003
 ETH_P_IP = 0x0800
@@ -179,8 +180,27 @@ class LiveCapture:
         self.sock.close()
 
 
-def iter_pcap_paths(paths) -> Iterator[Tuple[float, bytes]]:
-    """Frames from several pcap files, oldest file first (by mtime)."""
+class _Hashing:
+    """A file wrapper that hashes what is read through it."""
+
+    def __init__(self, f: BinaryIO):
+        self.f, self.h, self.n = f, hashlib.sha256(), 0
+
+    def read(self, size: int = -1) -> bytes:
+        b = self.f.read(size)
+        self.h.update(b)
+        self.n += len(b)
+        return b
+
+
+def iter_pcap_paths(paths, digests: Optional[List[Dict[str, Any]]] = None
+                    ) -> Iterator[Tuple[float, bytes]]:
+    """Frames from several pcap files, oldest file first (by mtime). With `digests`, each
+    file's SHA-256 and size, computed while reading it, is appended once it has been read."""
     for p in sorted(paths, key=lambda p: (os.path.getmtime(p), p)):
         with open(p, "rb") as f:
-            yield from read_pcap(f)
+            src = _Hashing(f) if digests is not None else f
+            yield from read_pcap(src)  # type: ignore[arg-type]
+            if digests is not None:
+                digests.append({"file": os.path.basename(p), "sha256": src.h.hexdigest(),
+                                "bytes": src.n})

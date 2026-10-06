@@ -16,12 +16,16 @@ import hashlib
 import json
 import logging
 import os
+import platform
+import shlex
 import signal
 import time
 from collections import OrderedDict, deque
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from . import packets, wire
+from . import hostinfo, logsetup, packets, wire
+from . import audit as auditlog
+from .audit import Summarizer
 from .outputs import FileOutput, HecOutput, MultiOutput, Output
 
 log = logging.getLogger("wd2l.receiver")
@@ -32,6 +36,18 @@ MAX_RETIRED = 10000
 MAX_REASONS = 32
 STATE_VERSION = 2
 RX_TIME_FIELD = "wd2l_rx_time"
+
+# Health records that are also audit events (§6), with their outcome.
+AUDITED_HEALTH = {"gap": "failure", "stream_start": "info", "stream_end": "success",
+                  "stream_lost": "failure", "stream_missing": "failure",
+                  "sender_boot_reset": "failure", "stream_evicted": "failure"}
+# Counters whose growth is written once a minute as boundary_anomaly / output_failure.
+BOUNDARY_COUNTERS = ("other_packets", "bad_frames", "bad_events", "digest_mismatch",
+                     "event_too_big", "reasm_inconsistent")
+OUTPUT_COUNTERS = ("output_dropped", "hec_rejected_events", "hec_queue_overflow_events",
+                   "hec_spool_overflow_events", "hec_records_lost",
+                   "audit_hec_rejected_events", "audit_hec_spool_overflow_events",
+                   "audit_hec_records_lost")
 
 
 def to_ranges(seqs: Iterable[int]) -> List[List[int]]:
@@ -323,7 +339,9 @@ class Receiver:
                  health_interval: float = 60.0, stream_lost_after: float = 60.0,
                  stream_retention: float = 7 * 86400.0,
                  record_clock: Optional[Callable[[], float]] = None, rx_time: bool = True,
-                 src_port: int = 0):
+                 src_port: int = 0, audit: Optional[auditlog.AuditLog] = None,
+                 audit_output: Optional[Output] = None, config_sha256: Optional[str] = None,
+                 audit_interval: float = 60.0):
         """`now` passed to handle_frame/tick drives every timer. Live capture passes a steady
         clock (immune to clock steps); pcap replay passes packet timestamps. `record_clock`,
         if given, supplies the wall-clock `time` written into health records, each event's
@@ -363,8 +381,18 @@ class Receiver:
         self.last_save = 0.0
         self.dirty = False
         self.saved_with_pending = False
+        self.audit = audit
+        self.audit_out = audit_output or output
+        self.outputs: List[Output] = [output] if self.audit_out is output else [output, self.audit_out]
+        self.config_sha256 = config_sha256
+        self.summary = Summarizer()
+        self.audit_interval = audit_interval
+        self.last_audit: Optional[float] = None
+        self._audit_prev: Dict[str, Any] = {}
         if state_path and os.path.exists(state_path):
             self._load_state()
+        elif state_path and audit is not None:
+            audit.write("state_reset", "info", path=state_path, reason="missing")
 
     # -- input
 
@@ -374,6 +402,26 @@ class Receiver:
             d[reason] = d.get(reason, 0) + 1
         else:
             d["other"] = d.get("other", 0) + 1
+
+    def flush(self) -> None:
+        for o in self.outputs:
+            o.flush()
+
+    def _pending(self) -> Dict[int, Set[int]]:
+        out: Dict[int, Set[int]] = {}
+        for o in self.outputs:
+            for sid, seqs in o.pending().items():
+                out.setdefault(sid, set()).update(seqs)
+        return out
+
+    def _take_failed(self) -> List[Tuple[int, int]]:
+        return [k for o in self.outputs for k in o.take_failed()]
+
+    def _stats(self) -> Dict[str, Any]:
+        s: Dict[str, Any] = {}
+        for o in self.outputs:
+            s.update(o.stats())
+        return s
 
     def handle_frame(self, frame: bytes, now: float) -> None:
         self.counters["frames"] += 1
@@ -425,6 +473,8 @@ class Receiver:
             return
         if res == "late":
             self.counters["late_fills"] += 1
+            self.summary.note("gap_filled", {"stream": "%016x" % f.stream_id},
+                              seq_first=f.seq, seq_last=f.seq)
         if self.rx_time:
             evt["fields"] = dict(evt.get("fields", {}), **{RX_TIME_FIELD: round(self._wall(now), 3)})
         self.out.event(evt, f.stream_id, f.seq)
@@ -443,7 +493,7 @@ class Receiver:
             self.had_history = True
         t = StreamTracker(sid, now)
         self._add(t, now)
-        log.info("new stream %016x", sid)
+        log.info("new stream %016x", sid, extra={"stream": "%016x" % sid})
         self._health_record("stream_start", now, stream="%016x" % sid)
         return t
 
@@ -596,10 +646,17 @@ class Receiver:
         if (self.state_path and (self.dirty or self.saved_with_pending)
                 and time.monotonic() - self.last_save >= 1.0):
             self.save_state()
+        if self.audit is not None:
+            if self.last_audit is None:
+                self.last_audit = now
+            elif now - self.last_audit >= self.audit_interval:
+                self.last_audit = now
+                self.audit_periodic()
+            self._drain_audit()
 
     def _apply_failed(self, now: float) -> None:
         by: Dict[int, List[int]] = {}
-        for sid, seq in self.out.take_failed():
+        for sid, seq in self._take_failed():
             by.setdefault(sid, []).append(seq)
         for sid, seqs in by.items():
             self.counters["output_dropped"] += len(seqs)
@@ -613,7 +670,8 @@ class Receiver:
         for a, b in declared:
             n = b - a + 1
             self.counters["gap_events"] += n
-            log.warning("GAP stream %016x seq %d-%d (%d events, %s)", t.stream_id, a, b, n, reason)
+            log.warning("GAP stream %016x seq %d-%d (%d events, %s)", t.stream_id, a, b, n, reason,
+                        extra={"stream": "%016x" % t.stream_id, "seq": a})
             self._health_record("gap", now, stream="%016x" % t.stream_id,
                                 first_seq=a, last_seq=b, count=n, reason=reason)
             self.dirty = True
@@ -626,6 +684,13 @@ class Receiver:
         rec = {"type": kind, "time": round(self._wall(now), 3)}
         rec.update(kw)
         self.out.health(rec)
+        if self.audit is not None and kind in AUDITED_HEALTH:
+            fields = dict(kw)
+            if "first_seq" in fields:
+                fields["seq_first"] = fields.pop("first_seq")
+            if "last_seq" in fields:
+                fields["seq_last"] = fields.pop("last_seq")
+            self.audit.write(kind, AUDITED_HEALTH[kind], **fields)
 
     def emit_health(self, now: float) -> Dict[str, Any]:
         streams = {}
@@ -637,7 +702,7 @@ class Receiver:
                 "final": t.final, "idle_s": round(now - t.last_seen, 1), "boot": t.boot,
                 "clock_offset_s": t.clock_offset, "sender": t.hb}
         ref = self.last_hb if self.last_hb is not None else self.started
-        rec = dict(self.counters, **self.reasm.counters, **self.out.stats())
+        rec = dict(self.counters, **self.reasm.counters, **self._stats())
         # Flat totals so SIEM alerts don't have to dig into the per-stream map.
         live = [t for t in self.streams.values() if "%016x" % t.stream_id in streams]
         rec.update(open_gap_events=sum(t.gaps.count() for t in self.streams.values()),
@@ -655,14 +720,54 @@ class Receiver:
         self.out.health(rec)
         return rec
 
-    def finish(self, now: float) -> Dict[str, Any]:
+    def _drain_audit(self) -> None:
+        if self.audit is not None:
+            for rec in self.audit.take_outbox():
+                self.audit_out.audit(rec)
+
+    def audit_periodic(self) -> None:
+        """Once a minute: summaries, counter growth, time quality, free space, self-check."""
+        if self.audit is None:
+            return
+        for event, fields in self.summary.drain():
+            self.audit.write(event, "success" if event == "gap_filled" else "info", **fields)
+        self._audit_deltas()
+        self.audit.check_time()
+        self.audit.check_space()
+        self.audit.maybe_verify()
+        self._drain_audit()
+
+    def _audit_deltas(self) -> None:
+        cur: Dict[str, Any] = dict(self.counters, **self.reasm.counters, **self._stats())
+        reasons = {"other_packets": dict(self.other_reasons), "bad_frames": dict(self.bad_reasons)}
+        prev = self._audit_prev
+        for name in BOUNDARY_COUNTERS:
+            d = cur.get(name, 0) - prev.get(name, 0)
+            if d > 0:
+                old = prev.get("reasons:" + name, {})
+                why = {k: v - old.get(k, 0) for k, v in reasons.get(name, {}).items()
+                       if v > old.get(k, 0)}
+                self.audit.write("boundary_anomaly", "failure", segment="boundary", reason=name,
+                                 count=d, reasons=why or None)
+        for name in OUTPUT_COUNTERS:
+            d = cur.get(name, 0) - prev.get(name, 0)
+            if d > 0:
+                self.audit.write("output_failure", "failure", segment="e2-siem", reason=name,
+                                 count=d)
+        cur.update(("reasons:" + k, v) for k, v in reasons.items())
+        self._audit_prev = cur
+
+    def finish(self, now: float, on_end: Optional[Callable[[Dict[str, Any]], None]] = None
+               ) -> Dict[str, Any]:
         """End of input (pcap replay): give up on partial events, declare every remaining hole
-        a gap, then close the output and save state."""
+        a gap, then close the output and save state. `on_end` runs before the outputs close."""
         self._apply_failed(now)
         self.reasm.expire(now, force=True)
         for t in self.streams.values():
             self._report_gaps(t, t.declare(now, self.gap_window, force=True), now)
         rec = self.emit_health(now)
+        if on_end is not None:
+            on_end(rec)
         self.close(now, health=False)
         return rec
 
@@ -671,15 +776,17 @@ class Receiver:
         output could not make durable is saved as uncommitted and reported on the next start."""
         if health:
             self.emit_health(now)
-        self.out.close()
+        self._drain_audit()
+        for o in self.outputs:
+            o.close()
         if self.state_path:
-            self.save_state(extra_uncommitted=self.out.take_failed())
+            self.save_state(extra_uncommitted=self._take_failed())
 
     # -- state
 
     def save_state(self, extra_uncommitted: Sequence[Tuple[int, int]] = ()) -> None:
-        self.out.flush()
-        pending = self.out.pending()
+        self.flush()
+        pending = self._pending()
         for sid, seq in extra_uncommitted:
             pending.setdefault(sid, set()).add(seq)
         streams = {}
@@ -690,6 +797,8 @@ class Receiver:
             streams["%016x" % sid] = d
         state = {"version": STATE_VERSION, "last_boot": self.last_boot, "streams": streams,
                  "retired": [["%016x" % sid, k, f] for sid, (k, f) in self.retired.items()]}
+        if self.config_sha256:
+            state["config_sha256"] = self.config_sha256
         tmp = self.state_path + ".tmp"  # type: ignore[operator]
         with open(tmp, "w") as f:
             json.dump(state, f, separators=(",", ":"))
@@ -701,11 +810,30 @@ class Receiver:
         self.saved_with_pending = any(pending.values())
 
     def _load_state(self) -> None:
-        with open(self.state_path) as f:  # type: ignore[arg-type]
-            state = json.load(f)
+        with open(self.state_path, "rb") as f:  # type: ignore[arg-type]
+            body = f.read()
+        try:
+            state = json.loads(body)
+            if not isinstance(state, dict):
+                raise ValueError("not a JSON object")
+        except ValueError as e:
+            if self.audit is not None:
+                self.audit.write("state_reset", "failure", path=self.state_path,
+                                 reason="unreadable: %s" % e)
+            raise SystemExit("state file %s is unreadable (%s); move it aside to start over"
+                             % (self.state_path, e))
         if state.get("version", 1) not in (1, STATE_VERSION):
             raise SystemExit("state file %s has unknown version %r"
                              % (self.state_path, state.get("version")))
+        if self.audit is not None:
+            self.audit.write("state_loaded", "success", path=self.state_path,
+                             file_sha256=hashlib.sha256(body).hexdigest(),
+                             streams=len(state.get("streams", {})),
+                             retired=len(state.get("retired", [])))
+            old = state.get("config_sha256")
+            if self.config_sha256 and isinstance(old, str) and old != self.config_sha256:
+                self.audit.write("config_changed", "info", old_config_sha256=old,
+                                 config_sha256=self.config_sha256)
         # Everything left unresolved by the last run is reported now, before any new input:
         # events it handed to the output that were never confirmed, and holes still open.
         # Both can be filled by replaying the archive.
@@ -734,31 +862,7 @@ class Receiver:
 
 # ---------------------------------------------------------------- main
 
-def build_output(a: argparse.Namespace) -> Output:
-    outs: List[Output] = []
-    if a.out_dir:
-        outs.append(FileOutput(a.out_dir))
-    if a.hec_url:
-        if not a.hec_token_file:
-            raise SystemExit("--hec-url needs --hec-token-file")
-        with open(a.hec_token_file) as f:
-            token = f.read().strip()
-        outs.append(HecOutput(a.hec_url, token, a.spool_dir, a.hec_ca, a.hec_insecure,
-                              a.default_index, a.health_index, a.force_index,
-                              queue_size=a.hec_queue))
-    if not outs:
-        raise SystemExit("need at least one output: --out-dir and/or --hec-url")
-    return outs[0] if len(outs) == 1 else MultiOutput(outs)
-
-
-def steady_clock() -> Callable[[], float]:
-    """Wall-clock time at start plus monotonic time since: it reads like wall time but a clock
-    step (NTP correction, operator change) can't make timers fire early or stall."""
-    wall0, mono0 = time.time(), time.monotonic()
-    return lambda: wall0 + (time.monotonic() - mono0)
-
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="wd2l-receiver", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     src = p.add_mutually_exclusive_group(required=True)
@@ -797,39 +901,132 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         "keep it at least as long as the pcap archive")
     p.add_argument("--no-rx-time", dest="rx_time", action="store_false",
                    help="don't stamp each event's arrival time in indexed field wd2l_rx_time")
+    p.add_argument("--hec-audit-token-file",
+                   help="token for audit records (their own token, so it can be limited to the "
+                        "audit index)")
+    p.add_argument("--audit-index", default="wd2l_audit", help="index for audit records")
+    p.add_argument("--audit-dir", help="write hash-chained audit records here "
+                                       "(deployed: /var/log/wd2l)")
+    p.add_argument("--audit-min-free-mb", type=int, default=256,
+                   help="free space below this raises audit_failure")
+    p.add_argument("--chronyc", default="chronyc",
+                   help="chronyc command for time quality (\"-c tracking\" is added)")
+    p.add_argument("--log-format", choices=("text", "json"), default="text",
+                   help="operational log lines: text, or one JSON object per line")
     p.add_argument("-v", "--verbose", action="store_true")
-    a = p.parse_args(argv)
-    logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
-                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    return p
 
-    out = build_output(a)
+
+def _token(path: str) -> str:
+    with open(path) as f:
+        return f.read().strip()
+
+
+def build_outputs(a: argparse.Namespace) -> Tuple[Output, Output]:
+    """(output for events and health, output for audit records). They are the same object
+    unless --hec-audit-token-file gives audit records their own token."""
+    file_out = FileOutput(a.out_dir) if a.out_dir else None
+    hec = audit_hec = None
+    if a.hec_url:
+        if not a.hec_token_file:
+            raise SystemExit("--hec-url needs --hec-token-file")
+        hec = HecOutput(a.hec_url, _token(a.hec_token_file), a.spool_dir, a.hec_ca,
+                        a.hec_insecure, a.default_index, a.health_index, a.force_index,
+                        queue_size=a.hec_queue, audit_index=a.audit_index)
+        if a.hec_audit_token_file:
+            audit_hec = HecOutput(a.hec_url, _token(a.hec_audit_token_file),
+                                  os.path.join(a.spool_dir, "audit"), a.hec_ca, a.hec_insecure,
+                                  audit_index=a.audit_index, stat_prefix="audit_",
+                                  queue_size=10000)
+    outs: List[Output] = [o for o in (file_out, hec) if o is not None]
+    if not outs:
+        raise SystemExit("need at least one output: --out-dir and/or --hec-url")
+    out = outs[0] if len(outs) == 1 else MultiOutput(outs)
+    if audit_hec is None:
+        return out, out
+    return out, (MultiOutput([file_out, audit_hec]) if file_out else audit_hec)
+
+
+def steady_clock() -> Callable[[], float]:
+    """Wall-clock time at start plus monotonic time since: it reads like wall time but a clock
+    step (NTP correction, operator change) can't make timers fire early or stall."""
+    wall0, mono0 = time.time(), time.monotonic()
+    return lambda: wall0 + (time.monotonic() - mono0)
+
+
+def _stop_counters(rx: "Receiver") -> Dict[str, int]:
+    return {k: rx.counters[k] for k in ("events_delivered", "gap_events", "late_fills",
+                                        "duplicates", "output_dropped")}
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    a = build_parser().parse_args(argv)
+    logsetup.setup(a.log_format, a.verbose)
+    settings = {k: v for k, v in sorted(vars(a).items())}
+    cfg_sha = auditlog.sha256_hex(auditlog.canonical(settings))
+    tq = hostinfo.TimeQuality(shlex.split(a.chronyc) + ["-c", "tracking"])
+    component = "replay" if a.pcap else "receiver"
+    audit = None
+    if a.audit_dir:
+        try:
+            audit = auditlog.AuditLog(a.audit_dir, component, 2, time_quality=tq,
+                                      min_free_bytes=a.audit_min_free_mb * 1024 * 1024)
+        except auditlog.AuditLocked as e:
+            raise SystemExit(str(e))
+    if not a.pcap:
+        # Before the HEC thread starts, so only the watcher thread receives SIGUSR1.
+        logsetup.SignalWatcher({signal.SIGUSR1: logsetup.debug_toggle_handler(audit)}).start()
+    out, audit_out = build_outputs(a)
+    if audit:
+        audit.write("start", "success", pid=os.getpid(), config_sha256=cfg_sha,
+                    code_sha256=hostinfo.code_sha256(), python=platform.python_version())
+        audit.write("config", "info", settings=settings, config_sha256=cfg_sha)
+        audit.check_time()
     kw = dict(dst_ip=a.dst_ip or None, dst_port=a.dst_port, src_ip=a.src_ip or None,
               state_path=a.state, max_event=a.max_event, max_buffer=a.max_buffer,
               reasm_timeout=a.reasm_timeout, gap_window=a.gap_window, hb_timeout=a.hb_timeout,
               health_interval=a.health_interval, stream_lost_after=a.stream_lost_after,
-              stream_retention=a.stream_retention, rx_time=a.rx_time, src_port=a.src_port)
+              stream_retention=a.stream_retention, rx_time=a.rx_time, src_port=a.src_port,
+              audit=audit, audit_output=audit_out, config_sha256=cfg_sha)
     try:
         if a.pcap:
+            if audit:
+                audit.write("replay_run", "info", phase="start", files=[
+                    os.path.basename(p) for p in sorted(a.pcap, key=lambda p: (os.path.getmtime(p), p))])
             rx = Receiver(out, **kw)
+            digests: List[Dict[str, Any]] = []
             last = None
-            for ts, frame in packets.iter_pcap_paths(a.pcap):
+            for ts, frame in packets.iter_pcap_paths(a.pcap, digests=digests):
                 rx.handle_frame(frame, ts)
                 if last is None or ts - last >= 0.2:
                     rx.tick(ts)
                     last = ts
-            summary = rx.finish((last or time.time()) + a.gap_window)
+
+            def ended(summary: Dict[str, Any]) -> None:
+                if audit is None:
+                    return
+                rx.audit_periodic()
+                audit.write("replay_run", "success", phase="finish", files=digests,
+                            events_filled=rx.counters["late_fills"],
+                            duplicates_skipped=rx.counters["duplicates"],
+                            open_gap_events=summary["open_gap_events"])
+                audit.write("stop", "success", counters=_stop_counters(rx))
+
+            summary = rx.finish((last or time.time()) + a.gap_window, on_end=ended)
             print(json.dumps(summary, sort_keys=True))
             return 0
 
         clock = steady_clock()
         rx = Receiver(out, record_clock=time.time, **kw)
-        stop = []
-        signal.signal(signal.SIGTERM, lambda *_: stop.append(1))
-        signal.signal(signal.SIGINT, lambda *_: stop.append(1))
+        if audit:
+            audit.start_verify()
+        stopped_by: List[int] = []
+        signal.signal(signal.SIGTERM, lambda s, _f: stopped_by.append(s))
+        signal.signal(signal.SIGINT, lambda s, _f: stopped_by.append(s))
         cap = packets.LiveCapture(a.live)
         log.info("capturing on %s, dst %s:%d", a.live, a.dst_ip or "*", a.dst_port)
         last = 0.0
-        while not stop:
+        while not stopped_by:
             frame = cap.recv()
             now = clock()
             if frame is not None:
@@ -838,13 +1035,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 _, drops = cap.kernel_stats()
                 rx.counters["kernel_drops"] += drops
                 rx.tick(now)
-                rx.out.flush()
+                rx.flush()
                 last = now
         cap.close()
+        if audit:
+            rx.audit_periodic()
+            audit.write("stop", "success", signal=signal.Signals(stopped_by[0]).name,
+                        counters=_stop_counters(rx))
         rx.close(clock())
         return 0
     finally:
-        out.close()
+        for o in {id(x): x for x in (out, audit_out)}.values():
+            o.close()
+        if audit:
+            audit.close()
 
 
 if __name__ == "__main__":
