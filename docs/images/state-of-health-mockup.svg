@@ -1,0 +1,618 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1730" width="1440" height="1730" role="img" aria-labelledby="title desc">
+  <title id="title">wd2l state of health dashboard (mockup)</title>
+  <desc id="desc">Mockup with illustrative values. Enclave 2 SIEM dashboard for wd2l during a fiber or optic fault (rule 7) at 13:41Z, after a clean planned stop that morning. Top row: transfer status RED, fault in the boundary segment, 37 events lost with capture NIC receive errors; receiver last heard 12 s ago; 37 open gap events; 1 of 2 streams balanced; time OK; audit trail OK. Then the six-segment pipeline with the boundary red, charts of events in versus delivered, delay by segment, clock skew and gaps by reason, the reconciliation and fault history tables, one detail table per segment, and the audit events to review. Panel numbers match the panel table in docs/state-of-health.md.</desc>
+  <style>
+    text { font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+           font-size: 12px; fill: #1f2328; }
+    .h1 { font-size: 22px; font-weight: 600; fill: #ffffff; }
+    .title { font-size: 14px; font-weight: 600; }
+    .tile { font-size: 13px; font-weight: 600; text-anchor: middle; }
+    .big { font-size: 28px; font-weight: 700; }
+    .badge { font-size: 11px; font-weight: 700; fill: #ffffff; text-anchor: middle; }
+    .sub { fill: #57606a; }
+    .axis { font-size: 11px; fill: #6e7781; font-variant-numeric: tabular-nums; }
+    .legend { font-size: 11px; fill: #57606a; }
+    .th { font-weight: 600; fill: #57606a; }
+    .key { fill: #57606a; }
+    .num { font-variant-numeric: tabular-nums; }
+    .seg { font-size: 14px; font-weight: 700; }
+    .word { font-size: 11px; font-weight: 700; }
+    .ok { fill: #1a7f37; } .amber { fill: #9a6700; } .red { fill: #cf222e; } .unknown { fill: #6e7781; }
+    .b { font-weight: 700; } .mid { text-anchor: middle; } .end { text-anchor: end; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+    <marker id="arrow-tx" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#24292f"/>
+    </marker>
+  </defs>
+
+  <rect width="1440" height="1730" fill="#f4f5f7"/>
+
+  <!-- Header: dashboard title, mockup marker, time range, refresh time -->
+  <g id="header">
+    <rect x="0" y="0" width="1440" height="56" fill="#24292f"/>
+    <text x="24" y="36" class="h1">wd2l state of health</text>
+    <rect x="252" y="17" width="200" height="22" rx="11" fill="#fff8c5" stroke="#9a6700"/>
+    <text x="352" y="32" class="b amber mid">Mockup: illustrative values</text>
+    <rect x="1140" y="15" width="136" height="26" rx="6" fill="#32383f" stroke="#57606a"/>
+    <text x="1154" y="32" style="font-size: 13px; fill: #f0f6fc">Last 12 hours ▾</text>
+    <text x="1416" y="32" class="end" style="fill: #9198a1">Refreshed 14:03:22Z</text>
+  </g>
+
+  <!-- 1. Transfer status (top half) and 1b. Where and why (bottom half) -->
+  <g id="p1">
+    <rect x="16" y="72" width="560" height="160" rx="6" fill="#ffebe9" stroke="#cf222e"/>
+    <rect x="28" y="84" width="22" height="18" rx="4" fill="#57606a"/>
+    <text x="39" y="97" class="badge">1</text>
+    <text x="60" y="98" class="title">Transfer status</text>
+    <text x="28" y="138" class="big red">RED</text>
+    <text x="564" y="138" class="sub end" style="font-size: 13px">since 13:41:05Z</text>
+    <line x1="28" y1="152" x2="564" y2="152" stroke="#ffcecb"/>
+    <!-- 1b. Where and why -->
+    <g id="p1b">
+      <rect x="28" y="160" width="26" height="18" rx="4" fill="#57606a"/>
+      <text x="41" y="173" class="badge">1b</text>
+      <text x="64" y="174" class="title">Where and why</text>
+      <text x="28" y="198" class="red b" style="font-size: 16px">boundary · rule 7</text>
+      <text x="28" y="220" style="font-size: 13px">37 events lost with capture NIC receive errors: fiber or optic</text>
+    </g>
+  </g>
+
+  <!-- 2. Receiver last heard -->
+  <g id="p2">
+    <rect x="592" y="72" width="160" height="160" rx="6" fill="#dafbe1" stroke="#1a7f37"/>
+    <rect x="602" y="82" width="22" height="18" rx="4" fill="#57606a"/>
+    <text x="613" y="95" class="badge">2</text>
+    <text x="672" y="118" class="tile">Receiver last heard</text>
+    <text x="672" y="160" class="big mid ok">12 s</text>
+    <text x="672" y="184" class="sub mid">newest health record</text>
+  </g>
+
+  <!-- 4. Open gap events -->
+  <g id="p4">
+    <rect x="768" y="72" width="152" height="160" rx="6" fill="#ffebe9" stroke="#cf222e"/>
+    <rect x="778" y="82" width="22" height="18" rx="4" fill="#57606a"/>
+    <text x="789" y="95" class="badge">4</text>
+    <text x="844" y="118" class="tile">Open gap events</text>
+    <text x="844" y="160" class="big mid red">37</text>
+    <text x="844" y="184" class="sub mid">events still missing</text>
+  </g>
+
+  <!-- 5. Reconciliation -->
+  <g id="p5">
+    <rect x="936" y="72" width="152" height="160" rx="6" fill="#ffebe9" stroke="#cf222e"/>
+    <rect x="946" y="82" width="22" height="18" rx="4" fill="#57606a"/>
+    <text x="957" y="95" class="badge">5</text>
+    <text x="1012" y="118" class="tile">Reconciliation</text>
+    <text x="1012" y="160" class="big mid red">1 of 2</text>
+    <text x="1012" y="184" class="sub mid">streams balanced</text>
+    <text x="1012" y="202" class="sub mid">last 25 hours</text>
+  </g>
+
+  <!-- 6. Time -->
+  <g id="p6">
+    <rect x="1104" y="72" width="152" height="160" rx="6" fill="#dafbe1" stroke="#1a7f37"/>
+    <rect x="1114" y="82" width="22" height="18" rx="4" fill="#57606a"/>
+    <text x="1125" y="95" class="badge">6</text>
+    <text x="1180" y="118" class="tile">Time</text>
+    <text x="1180" y="160" class="big mid ok">OK</text>
+    <text x="1180" y="184" class="sub mid">skew 0.4 ms</text>
+  </g>
+
+  <!-- 7. Audit trail -->
+  <g id="p7">
+    <rect x="1272" y="72" width="152" height="160" rx="6" fill="#dafbe1" stroke="#1a7f37"/>
+    <rect x="1282" y="82" width="22" height="18" rx="4" fill="#57606a"/>
+    <text x="1293" y="95" class="badge">7</text>
+    <text x="1348" y="118" class="tile">Audit trail</text>
+    <text x="1348" y="160" class="big mid ok">OK</text>
+    <text x="1348" y="184" class="sub mid">E1 ok · E2 ok</text>
+    <text x="1348" y="202" class="sub mid">self-check ok 03:00Z</text>
+  </g>
+
+  <!-- 3. Pipeline: the six segments, each colored by the receiver (seg_* fields) -->
+  <g id="p3">
+    <rect x="16" y="248" width="1408" height="160" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="28" y="260" width="22" height="18" rx="4" fill="#57606a"/>
+    <text x="39" y="273" class="badge">3</text>
+    <text x="60" y="274" class="title">Pipeline</text>
+    <rect x="1010" y="263" width="12" height="12" rx="2" fill="#dafbe1" stroke="#1a7f37"/>
+    <text x="1028" y="273" class="legend">ok</text>
+    <rect x="1056" y="263" width="12" height="12" rx="2" fill="#fff8c5" stroke="#9a6700"/>
+    <text x="1074" y="273" class="legend">amber</text>
+    <rect x="1124" y="263" width="12" height="12" rx="2" fill="#ffebe9" stroke="#cf222e"/>
+    <text x="1142" y="273" class="legend">red</text>
+    <rect x="1176" y="263" width="12" height="12" rx="2" fill="#eaeef2" stroke="#6e7781"/>
+    <text x="1194" y="273" class="legend">unknown: can't be seen right now</text>
+    <rect x="24" y="284" width="568" height="118" rx="4" fill="#f0f6ff"/>
+    <text x="308" y="396" class="th mid">Enclave 1</text>
+    <rect x="608" y="284" width="224" height="118" rx="4" fill="#f6f8fa"/>
+    <text x="720" y="396" class="th mid">One-way link</text>
+    <rect x="848" y="284" width="568" height="118" rx="4" fill="#f8f3ff"/>
+    <text x="1132" y="396" class="th mid">Enclave 2</text>
+    <rect x="56" y="296" width="176" height="84" rx="6" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.5"/>
+    <text x="68" y="320" class="seg ok">e1-input</text>
+    <text x="220" y="320" class="word end ok">OK</text>
+    <text x="68" y="344" class="sub">812 events/s in</text>
+    <text x="68" y="362" class="sub">3 clients</text>
+    <rect x="316" y="296" width="176" height="84" rx="6" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.5"/>
+    <text x="328" y="320" class="seg ok">e1-sender</text>
+    <text x="480" y="320" class="word end ok">OK</text>
+    <text x="328" y="344" class="sub">0 drops</text>
+    <text x="328" y="362" class="sub">stall 0.0 s</text>
+    <polygon points="632,338 642,296 798,296 808,338 798,380 642,380" fill="#ffebe9" stroke="#cf222e" stroke-width="1.5"/>
+    <text x="650" y="320" class="seg red">boundary</text>
+    <text x="790" y="320" class="word end red">RED</text>
+    <text x="650" y="344" class="sub">CRC errors +214</text>
+    <text x="650" y="362" class="sub">37 events lost</text>
+    <rect x="864" y="296" width="176" height="84" rx="6" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.5"/>
+    <text x="876" y="320" class="seg ok">e2-capture</text>
+    <text x="1028" y="320" class="word end ok">OK</text>
+    <text x="876" y="344" class="sub">0 kernel drops</text>
+    <text x="876" y="362" class="sub">archive 0.4 s</text>
+    <rect x="1052" y="296" width="176" height="84" rx="6" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.5"/>
+    <text x="1064" y="320" class="seg ok">e2-receiver</text>
+    <text x="1216" y="320" class="word end ok">OK</text>
+    <text x="1064" y="344" class="sub">CPU 21%</text>
+    <text x="1064" y="362" class="sub">0 expired</text>
+    <rect x="1240" y="296" width="176" height="84" rx="6" fill="#dafbe1" stroke="#1a7f37" stroke-width="1.5"/>
+    <text x="1252" y="320" class="seg ok">e2-siem</text>
+    <text x="1404" y="320" class="word end ok">OK</text>
+    <text x="1252" y="344" class="sub">spool 0</text>
+    <text x="1252" y="362" class="sub">0 rejected</text>
+    <line x1="232" y1="338" x2="315" y2="338" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="492" y1="338" x2="631" y2="338" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="1040" y1="338" x2="1051" y2="338" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="1228" y1="338" x2="1239" y2="338" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <line x1="808" y1="338" x2="863" y2="338" stroke="#24292f" stroke-width="4" marker-end="url(#arrow-tx)"/>
+    <text x="836" y="328" class="word mid">TX only</text>
+  </g>
+
+  <!-- 8. Events in vs delivered: per-minute growth of sender_events_in and events_delivered -->
+  <g id="p8">
+    <rect x="16" y="424" width="1408" height="240" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="28" y="436" width="22" height="18" rx="4" fill="#57606a"/>
+    <text x="39" y="449" class="badge">8</text>
+    <text x="60" y="450" class="title">Events in (Enclave 1) vs delivered (Enclave 2), per minute</text>
+    <line x1="1060" y1="442" x2="1076" y2="442" stroke="#0969da" stroke-width="4" stroke-linecap="round"/>
+    <text x="1082" y="446" class="legend">Events in (Enclave 1)</text>
+    <line x1="1236" y1="442" x2="1252" y2="442" stroke="#8250df" stroke-width="2" stroke-linecap="round"/>
+    <text x="1258" y="446" class="legend">Delivered (Enclave 2)</text>
+    <line x1="76" y1="628" x2="1404" y2="628" stroke="#d0d4da"/>
+    <text x="68" y="632" class="axis end">0</text>
+    <line x1="76" y1="574.7" x2="1404" y2="574.7" stroke="#eaeef2"/>
+    <text x="68" y="578.7" class="axis end">20k</text>
+    <line x1="76" y1="521.3" x2="1404" y2="521.3" stroke="#eaeef2"/>
+    <text x="68" y="525.3" class="axis end">40k</text>
+    <line x1="76" y1="468" x2="1404" y2="468" stroke="#eaeef2"/>
+    <text x="68" y="472" class="axis end">60k</text>
+    <rect x="867.7" y="468" width="35.3" height="160" fill="#eaeef2"/>
+    <text x="859.7" y="600" class="legend end">planned downtime</text>
+    <text x="291.1" y="648" class="axis mid">04:00</text>
+    <text x="512.5" y="648" class="axis mid">06:00</text>
+    <text x="733.8" y="648" class="axis mid">08:00</text>
+    <text x="955.1" y="648" class="axis mid">10:00</text>
+    <text x="1176.5" y="648" class="axis mid">12:00</text>
+    <text x="1397.8" y="648" class="axis mid">14:00</text>
+    <!-- events in: drawn wider, so it shows around the delivered line where the two overlap -->
+    <polyline fill="none" stroke="#0969da" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" points="
+      76,499.1 88.2,499 106.7,499.3 125.1,498.6 143.6,499.6 162,499.4 180.5,499.1 198.9,499.1
+      217.3,498 235.8,498.4 254.2,498.5 272.7,498 291.1,499.2 309.6,499.6 328,499.3 346.5,498.8
+      364.9,499.1 383.3,499.1 401.8,499.3 420.2,498.2 438.7,497.8 457.1,499.3 475.6,499.1 494,497.8
+      512.5,498.3 530.9,498.6 549.3,498.2 567.8,499.2 586.2,498.2 604.7,499.3 623.1,498.7 641.6,499.3
+      660,498.1 678.5,499 696.9,499.1 715.3,499.5 733.8,498.5 752.2,498.4 770.7,498.8 789.1,499.5
+      807.6,498.4 826,497.9 844.5,497.9 862.9,499.3 864.7,498.2 866.6,549.6 868.4,628 901.6,628
+      903.5,468 905.3,498.2 918.2,497.8 936.7,499.3 955.1,499.6 973.6,498.1 992,497.8 1010.5,499
+      1028.9,498.5 1047.3,497.8 1065.8,499.1 1084.2,499 1102.7,499.6 1121.1,498.2 1139.6,498.6 1158,499.6
+      1176.5,499.3 1194.9,498.9 1213.3,499.1 1231.8,498.8 1250.2,497.8 1268.7,499.2 1287.1,499 1305.6,498.4
+      1324,497.8 1342.5,498.5 1357.2,497.9 1360.9,498.3 1362.7,498.5 1364.6,498.3 1370.1,499.5 1375.7,499.4
+      1381.2,498 1386.7,498.1 1392.3,499.3 1394.1,499.1 1397.8,499 1403.3,497.8"/>
+    <polyline fill="none" stroke="#8250df" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="
+      76,499.1 88.2,499 106.7,499.3 125.1,498.6 143.6,499.6 162,499.4 180.5,499.1 198.9,499.1
+      217.3,498 235.8,498.4 254.2,498.5 272.7,498 291.1,499.2 309.6,499.6 328,499.3 346.5,498.8
+      364.9,499.1 383.3,499.1 401.8,499.3 420.2,498.2 438.7,497.8 457.1,499.3 475.6,499.1 494,497.8
+      512.5,498.3 530.9,498.6 549.3,498.2 567.8,499.2 586.2,498.2 604.7,499.3 623.1,498.7 641.6,499.3
+      660,498.1 678.5,499 696.9,499.1 715.3,499.5 733.8,498.5 752.2,498.4 770.7,498.8 789.1,499.5
+      807.6,498.4 826,497.9 844.5,497.9 862.9,499.3 864.7,498.2 866.6,549.6 868.4,628 901.6,628
+      903.5,468 905.3,498.2 918.2,497.8 936.7,499.3 955.1,499.6 973.6,498.1 992,497.8 1010.5,499
+      1028.9,498.5 1047.3,497.8 1065.8,499.1 1084.2,499 1102.7,499.6 1121.1,498.2 1139.6,498.6 1158,499.6
+      1176.5,499.3 1194.9,498.9 1213.3,499.1 1231.8,498.8 1250.2,497.8 1268.7,499.2 1287.1,499 1305.6,498.4
+      1324,497.8 1342.5,498.5 1357.2,497.9 1360.9,498.3 1362.7,499.9 1364.6,500.7 1370.1,501.2 1375.7,501
+      1381.2,501 1386.7,501 1392.3,501 1394.1,499.6 1397.8,499 1403.3,497.8"/>
+    <text x="911.5" y="482" class="legend">backlog drains (off scale)</text>
+  </g>
+
+  <!-- 9. Delay by segment: median per 5 minutes, log scale -->
+  <g id="p9">
+    <rect x="16" y="680" width="696" height="200" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="28" y="692" width="22" height="18" rx="4" fill="#57606a"/>
+    <text x="39" y="705" class="badge">9</text>
+    <text x="60" y="706" class="title">Delay by segment (median, log scale)</text>
+    <line x1="430" y1="702" x2="446" y2="702" stroke="#0969da" stroke-width="2" stroke-linecap="round"/>
+    <text x="452" y="706" class="legend">Enclave 1</text>
+    <line x1="524" y1="702" x2="540" y2="702" stroke="#bf3989" stroke-width="2" stroke-linecap="round"/>
+    <text x="546" y="706" class="legend">Link</text>
+    <line x1="588" y1="702" x2="604" y2="702" stroke="#8250df" stroke-width="2" stroke-linecap="round"/>
+    <text x="610" y="706" class="legend">SIEM ingest</text>
+    <line x1="72" y1="846" x2="696" y2="846" stroke="#d0d4da"/>
+    <text x="64" y="850" class="axis end">1 ms</text>
+    <line x1="72" y1="824.3" x2="696" y2="824.3" stroke="#eaeef2"/>
+    <text x="64" y="828.3" class="axis end">10 ms</text>
+    <line x1="72" y1="802.7" x2="696" y2="802.7" stroke="#eaeef2"/>
+    <text x="64" y="806.7" class="axis end">100 ms</text>
+    <line x1="72" y1="781" x2="696" y2="781" stroke="#eaeef2"/>
+    <text x="64" y="785" class="axis end">1 s</text>
+    <line x1="72" y1="759.3" x2="696" y2="759.3" stroke="#eaeef2"/>
+    <text x="64" y="763.3" class="axis end">10 s</text>
+    <line x1="72" y1="737.7" x2="696" y2="737.7" stroke="#eaeef2"/>
+    <text x="64" y="741.7" class="axis end">100 s</text>
+    <line x1="72" y1="716" x2="696" y2="716" stroke="#eaeef2"/>
+    <text x="64" y="720" class="axis end">1000 s</text>
+    <rect x="444" y="716" width="16.6" height="130" fill="#eaeef2"/>
+    <text x="173.1" y="864" class="axis mid">04:00</text>
+    <text x="277.1" y="864" class="axis mid">06:00</text>
+    <text x="381.1" y="864" class="axis mid">08:00</text>
+    <text x="485.1" y="864" class="axis mid">10:00</text>
+    <text x="589.1" y="864" class="axis mid">12:00</text>
+    <text x="693.1" y="864" class="axis mid">14:00</text>
+    <polyline fill="none" stroke="#0969da" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="
+      73.4,773.4 86.4,776.5 99.4,774.9 112.4,773.3 125.4,775.4 138.4,776 151.4,776.2 164.4,774.5
+      177.4,775.6 190.4,775.1 203.4,774.8 216.4,775.3 229.4,775.6 242.4,775.6 255.4,776 268.4,776.3
+      281.4,773.9 294.4,773.4 307.4,775.3 320.4,774.9 333.4,775.4 346.4,775.1 359.4,774.9 372.4,774.1
+      385.4,774.6 398.4,776.5 411.4,776.4 424.4,774.7 437.4,773.6 441.7,774.5 446.1,716.2 450.4,719.4
+      454.7,724.6 459.1,738.7 463.4,773.8 476.4,773.4 489.4,774.8 502.4,775.5 515.4,773.9 528.4,776.2
+      541.4,774.3 554.4,775.6 567.4,774.6 580.4,774.8 593.4,774.6 606.4,773.4 619.4,775.9 632.4,774
+      645.4,774.9 658.4,774 671.4,775.3 684.4,773.8"/>
+    <polyline fill="none" stroke="#bf3989" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="
+      73.4,840.7 86.4,841 99.4,838.2 112.4,838.5 125.4,840.1 138.4,839.3 151.4,839.6 164.4,838.2
+      177.4,837.9 190.4,838.1 203.4,839.3 216.4,840.9 229.4,839.9 242.4,839 255.4,840.3 268.4,838.3
+      281.4,837.9 294.4,840.5 307.4,839.3 320.4,839 333.4,841 346.4,839.1 359.4,840.1 372.4,840
+      385.4,840.3 398.4,839.1 411.4,838.7 424.4,839.6 437.4,839.2 441.7,839.9 446.1,840.3 450.4,839.1
+      454.7,840.9 459.1,838.7 463.4,840.9 476.4,838.2 489.4,838 502.4,839.4 515.4,840.2 528.4,840
+      541.4,839.3 554.4,837.9 567.4,839.5 580.4,839.5 593.4,838.4 606.4,838.8 619.4,840.6 632.4,839
+      645.4,840.6 658.4,838.3 671.4,838.2 684.4,840.3"/>
+    <polyline fill="none" stroke="#8250df" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="
+      73.4,771.7 86.4,770.9 99.4,770.3 112.4,770.4 125.4,771.7 138.4,771.5 151.4,770 164.4,771.2
+      177.4,771.6 190.4,769.9 203.4,769.6 216.4,769.6 229.4,771.6 242.4,770.7 255.4,769.5 268.4,769.3
+      281.4,769.6 294.4,771 307.4,769.1 320.4,769.6 333.4,771.1 346.4,771 359.4,771.1 372.4,771.5
+      385.4,771.4 398.4,771.2 411.4,771.7 424.4,771.3 437.4,769.9 441.7,769.3 446.1,770.3 450.4,770.9
+      454.7,770.4 459.1,764.1 463.4,764.1 476.4,770 489.4,769.2 502.4,769.4 515.4,769.5 528.4,770.1
+      541.4,770.7 554.4,770.5 567.4,769.3 580.4,771.1 593.4,769.9 606.4,769.4 619.4,770.9 632.4,769.3
+      645.4,769.7 658.4,770.3 671.4,770.6 684.4,771.8"/>
+  </g>
+
+  <!-- 10. Clock skew: clock_offset_s in ms, with the 50 ms alarm lines -->
+  <g id="p10">
+    <rect x="728" y="680" width="696" height="200" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="740" y="692" width="26" height="18" rx="4" fill="#57606a"/>
+    <text x="753" y="705" class="badge">10</text>
+    <text x="776" y="706" class="title">Clock skew (ms)</text>
+    <line x1="786" y1="781" x2="1408" y2="781" stroke="#eaeef2"/>
+    <line x1="786" y1="726.8" x2="1408" y2="726.8" stroke="#6e7781" stroke-dasharray="5 4"/>
+    <text x="778" y="730.8" class="axis end">+50 ms</text>
+    <line x1="786" y1="835.2" x2="1408" y2="835.2" stroke="#6e7781" stroke-dasharray="5 4"/>
+    <text x="778" y="839.2" class="axis end">−50 ms</text>
+    <text x="778" y="785" class="axis end">0</text>
+    <rect x="1156.8" y="716" width="16.5" height="130" fill="#eaeef2"/>
+    <text x="886.8" y="864" class="axis mid">04:00</text>
+    <text x="990.4" y="864" class="axis mid">06:00</text>
+    <text x="1094.1" y="864" class="axis mid">08:00</text>
+    <text x="1197.8" y="864" class="axis mid">10:00</text>
+    <text x="1301.4" y="864" class="axis mid">12:00</text>
+    <text x="1405.1" y="864" class="axis mid">14:00</text>
+    <polyline fill="none" stroke="#57606a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="
+      786,780.8 791.7,780.6 800.4,780.6 809,780.5 817.6,780.8 826.3,780.4 834.9,780.8 843.6,780.4
+      852.2,780.4 860.8,780.8 869.5,780.4 878.1,780.8 886.8,780.6 895.4,780.7 904,780.7 912.7,780.8
+      921.3,780.8 930,780.6 938.6,780.3 947.2,780.5 955.9,780.7 964.5,780.8 973.1,780.4 981.8,780.3
+      990.4,780.4 999.1,780.5 1007.7,780.3 1016.3,780.5 1025,780.8 1033.6,780.7 1042.3,780.8 1050.9,780.7
+      1059.5,780.3 1068.2,780.5 1076.8,780.8 1085.5,780.5 1094.1,780.8 1102.7,780.6 1111.4,780.6 1120,780.6
+      1128.6,780.5 1137.3,780.5 1145.9,780.6 1154.6,780.5 1156.3,780.4"/>
+    <polyline fill="none" stroke="#57606a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="
+      1173.6,780.7 1180.5,780.7 1189.1,780.4 1197.8,780.7 1206.4,780.7 1215,780.6 1223.7,780.7 1232.3,780.4
+      1241,780.7 1249.6,780.7 1258.2,780.4 1266.9,780.4 1275.5,780.4 1284.1,780.3 1292.8,780.5 1301.4,780.7
+      1310.1,780.8 1318.7,780.5 1327.3,780.5 1336,780.7 1344.6,780.5 1353.3,780.6 1361.9,780.4 1370.5,780.4
+      1379.2,780.6 1387.8,780.5 1396.5,780.7 1405.1,780.5 1407.7,780.8"/>
+    <text x="1404" y="773" class="legend end">0.4 ms</text>
+  </g>
+
+  <!-- 11. Gaps by reason: type=gap count per 5 minutes, stacked by reason -->
+  <g id="p11">
+    <rect x="16" y="896" width="696" height="200" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="28" y="908" width="26" height="18" rx="4" fill="#57606a"/>
+    <text x="41" y="921" class="badge">11</text>
+    <text x="64" y="922" class="title">Gaps by reason (events, 5 min)</text>
+    <rect x="380" y="913" width="10" height="10" rx="2" fill="#bf3989"/>
+    <text x="394" y="922" class="legend">not_received</text>
+    <rect x="476" y="913" width="10" height="10" rx="2" fill="#8250df"/>
+    <text x="490" y="922" class="legend">receiver_restart</text>
+    <rect x="588" y="913" width="10" height="10" rx="2" fill="#008f7a"/>
+    <text x="602" y="922" class="legend">output_dropped</text>
+    <line x1="56" y1="1062" x2="696" y2="1062" stroke="#d0d4da"/>
+    <text x="48" y="1066" class="axis end">0</text>
+    <line x1="56" y1="1018.7" x2="696" y2="1018.7" stroke="#eaeef2"/>
+    <text x="48" y="1022.7" class="axis end">5</text>
+    <line x1="56" y1="975.3" x2="696" y2="975.3" stroke="#eaeef2"/>
+    <text x="48" y="979.3" class="axis end">10</text>
+    <line x1="56" y1="932" x2="696" y2="932" stroke="#eaeef2"/>
+    <text x="48" y="936" class="axis end">15</text>
+    <text x="159.7" y="1080" class="axis mid">04:00</text>
+    <text x="266.3" y="1080" class="axis mid">06:00</text>
+    <text x="373" y="1080" class="axis mid">08:00</text>
+    <text x="479.7" y="1080" class="axis mid">10:00</text>
+    <text x="586.3" y="1080" class="axis mid">12:00</text>
+    <text x="693" y="1080" class="axis mid">14:00</text>
+    <rect x="675.7" y="1018.7" width="3.4" height="43.3" rx="1" fill="#bf3989"/>
+    <rect x="680.2" y="984" width="3.4" height="78" rx="1" fill="#bf3989"/>
+    <rect x="684.6" y="958" width="3.4" height="104" rx="1" fill="#bf3989"/>
+    <rect x="689.1" y="966.7" width="3.4" height="95.3" rx="1" fill="#bf3989"/>
+    <text x="668" y="990" class="legend end">37 events not received, 13:40–14:00</text>
+  </g>
+
+  <!-- 12. Reconciliation by stream: latest type=reconcile per sender run -->
+  <g id="p12">
+    <rect x="728" y="896" width="696" height="200" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="740" y="908" width="26" height="18" rx="4" fill="#57606a"/>
+    <text x="753" y="921" class="badge">12</text>
+    <text x="776" y="922" class="title">Reconciliation by stream</text>
+    <rect x="740" y="934" width="672" height="26" rx="3" fill="#f6f8fa"/>
+    <text x="752" y="951" class="th">Stream</text>
+    <text x="920" y="951" class="th">Last check</text>
+    <text x="1120" y="951" class="th end">Cut</text>
+    <text x="1160" y="951" class="th">Balanced</text>
+    <text x="1396" y="951" class="th end">Open gaps</text>
+    <text x="752" y="984" class="num">9f3c41e2a07b55d1</text>
+    <text x="920" y="984" class="num">14:00:00Z</text>
+    <text x="1120" y="984" class="num end">4,812,330</text>
+    <text x="1160" y="984" class="num  red b">no</text>
+    <text x="1396" y="984" class="num end">37</text>
+    <line x1="740" y1="994" x2="1412" y2="994" stroke="#eaeef2"/>
+    <text x="752" y="1012" class="num">51aa0c97de3f2b07</text>
+    <text x="920" y="1012" class="num">09:12:31Z</text>
+    <text x="1120" y="1012" class="num end">2,104,880</text>
+    <text x="1160" y="1012" class="num  ok">yes</text>
+    <text x="1396" y="1012" class="num end">0</text>
+    <line x1="740" y1="1022" x2="1412" y2="1022" stroke="#eaeef2"/>
+  </g>
+
+  <!-- 13. Fault history: type=fault and type=time_status records, newest first -->
+  <g id="p13">
+    <rect x="16" y="1112" width="1408" height="160" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="28" y="1124" width="26" height="18" rx="4" fill="#57606a"/>
+    <text x="41" y="1137" class="badge">13</text>
+    <text x="64" y="1138" class="title">Fault history</text>
+    <rect x="24" y="1150" width="1392" height="24" rx="3" fill="#f6f8fa"/>
+    <text x="32" y="1166" class="th">Time</text>
+    <text x="128" y="1166" class="th">Status</text>
+    <text x="212" y="1166" class="th">Segment</text>
+    <text x="332" y="1166" class="th">Rule</text>
+    <text x="392" y="1166" class="th">Detail</text>
+    <text x="32" y="1196" class="num">13:41:05Z</text>
+    <rect x="128" y="1183" width="54" height="18" rx="9" fill="#ffebe9" stroke="#cf222e"/>
+    <text x="155" y="1196" class="word mid red">red</text>
+    <text x="212" y="1196">boundary</text>
+    <text x="332" y="1196" class="num">7</text>
+    <text x="392" y="1196">37 events lost with capture NIC receive errors: fiber or optic</text>
+    <line x1="24" y1="1206" x2="1416" y2="1206" stroke="#eaeef2"/>
+    <text x="32" y="1222" class="num">09:31:44Z</text>
+    <rect x="128" y="1209" width="54" height="18" rx="9" fill="#dafbe1" stroke="#1a7f37"/>
+    <text x="155" y="1222" class="word mid ok">ok</text>
+    <text x="212" y="1222">—</text>
+    <text x="332" y="1222" class="num">—</text>
+    <text x="392" y="1222">—</text>
+    <line x1="24" y1="1232" x2="1416" y2="1232" stroke="#eaeef2"/>
+    <text x="32" y="1248" class="num">09:12:36Z</text>
+    <rect x="128" y="1235" width="54" height="18" rx="9" fill="#fff8c5" stroke="#9a6700"/>
+    <text x="155" y="1248" class="word mid amber">amber</text>
+    <text x="212" y="1248">e1-sender</text>
+    <text x="332" y="1248" class="num">2</text>
+    <text x="392" y="1248">the sender stopped cleanly (planned downtime?) and nothing has arrived since</text>
+  </g>
+
+  <!-- 14. Enclave 1 input: latest wd2l:sender:health -->
+  <g id="p14">
+    <rect x="16" y="1288" width="218" height="240" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="16" y="1288" width="218" height="36" rx="6" fill="#f6f8fa"/>
+    <rect x="16" y="1306" width="218" height="18" fill="#f6f8fa"/>
+    <line x1="16" y1="1324" x2="234" y2="1324" stroke="#d0d4da"/>
+    <rect x="16" y="1288" width="218" height="240" rx="6" fill="none" stroke="#d0d4da"/>
+    <rect x="26" y="1297" width="26" height="18" rx="4" fill="#57606a"/>
+    <text x="39" y="1310" class="badge">14</text>
+    <text x="60" y="1311" class="title">Enclave 1 input</text>
+    <text x="28" y="1350" class="key">events_in</text>
+    <text x="222" y="1350" class="num end">1,284,551,020</text>
+    <line x1="28" y1="1359" x2="222" y2="1359" stroke="#eaeef2"/>
+    <text x="28" y="1376" class="key">clients</text>
+    <text x="222" y="1376" class="num end">3</text>
+    <line x1="28" y1="1385" x2="222" y2="1385" stroke="#eaeef2"/>
+    <text x="28" y="1402" class="key">input_backlog_bytes</text>
+    <text x="222" y="1402" class="num end">0</text>
+    <line x1="28" y1="1411" x2="222" y2="1411" stroke="#eaeef2"/>
+    <text x="28" y="1428" class="key">bad_input</text>
+    <text x="222" y="1428" class="num end">0</text>
+    <line x1="28" y1="1437" x2="222" y2="1437" stroke="#eaeef2"/>
+  </g>
+
+  <!-- 15. Enclave 1 sender: latest wd2l:sender:health -->
+  <g id="p15">
+    <rect x="254" y="1288" width="218" height="240" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="254" y="1288" width="218" height="36" rx="6" fill="#f6f8fa"/>
+    <rect x="254" y="1306" width="218" height="18" fill="#f6f8fa"/>
+    <line x1="254" y1="1324" x2="472" y2="1324" stroke="#d0d4da"/>
+    <rect x="254" y="1288" width="218" height="240" rx="6" fill="none" stroke="#d0d4da"/>
+    <rect x="264" y="1297" width="26" height="18" rx="4" fill="#57606a"/>
+    <text x="277" y="1310" class="badge">15</text>
+    <text x="298" y="1311" class="title">Enclave 1 sender</text>
+    <text x="266" y="1350" class="key">stall_s</text>
+    <text x="460" y="1350" class="num end">0.0</text>
+    <line x1="266" y1="1359" x2="460" y2="1359" stroke="#eaeef2"/>
+    <text x="266" y="1376" class="key">sender_drops</text>
+    <text x="460" y="1376" class="num end">0</text>
+    <line x1="266" y1="1385" x2="460" y2="1385" stroke="#eaeef2"/>
+    <text x="266" y="1402" class="key">send_errors</text>
+    <text x="460" y="1402" class="num end">0</text>
+    <line x1="266" y1="1411" x2="460" y2="1411" stroke="#eaeef2"/>
+    <text x="266" y="1428" class="key">cpu_pct</text>
+    <text x="460" y="1428" class="num end">7.5</text>
+    <line x1="266" y1="1437" x2="460" y2="1437" stroke="#eaeef2"/>
+    <text x="266" y="1454" class="key">nic_carrier</text>
+    <text x="460" y="1454" class="num end">true</text>
+    <line x1="266" y1="1463" x2="460" y2="1463" stroke="#eaeef2"/>
+    <text x="266" y="1480" class="key">nic_tx_errors</text>
+    <text x="460" y="1480" class="num end">0</text>
+    <line x1="266" y1="1489" x2="460" y2="1489" stroke="#eaeef2"/>
+  </g>
+
+  <!-- 16. Boundary: latest summary -->
+  <g id="p16">
+    <rect x="492" y="1288" width="218" height="240" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="492" y="1288" width="218" height="36" rx="6" fill="#ffebe9"/>
+    <rect x="492" y="1306" width="218" height="18" fill="#ffebe9"/>
+    <line x1="492" y1="1324" x2="710" y2="1324" stroke="#cf222e"/>
+    <rect x="492" y="1288" width="218" height="240" rx="6" fill="none" stroke="#cf222e"/>
+    <rect x="502" y="1297" width="26" height="18" rx="4" fill="#57606a"/>
+    <text x="515" y="1310" class="badge">16</text>
+    <text x="536" y="1311" class="title red">Boundary</text>
+    <text x="504" y="1350" class="key">nic_carrier</text>
+    <text x="698" y="1350" class="num end">true</text>
+    <line x1="504" y1="1359" x2="698" y2="1359" stroke="#eaeef2"/>
+    <text x="504" y="1376" class="key">nic_carrier_changes</text>
+    <text x="698" y="1376" class="num end">2</text>
+    <line x1="504" y1="1385" x2="698" y2="1385" stroke="#eaeef2"/>
+    <text x="504" y="1402" class="key">nic_rx_crc_errors</text>
+    <text x="698" y="1402" class="num end red b">+214</text>
+    <line x1="504" y1="1411" x2="698" y2="1411" stroke="#eaeef2"/>
+    <text x="504" y="1428" class="key">nic_rx_frame_errors</text>
+    <text x="698" y="1428" class="num end red">+3</text>
+    <line x1="504" y1="1437" x2="698" y2="1437" stroke="#eaeef2"/>
+    <text x="504" y="1454" class="key">other_packets</text>
+    <text x="698" y="1454" class="num end">0</text>
+    <line x1="504" y1="1463" x2="698" y2="1463" stroke="#eaeef2"/>
+    <text x="504" y="1480" class="key">bad_frames</text>
+    <text x="698" y="1480" class="num end">0</text>
+    <line x1="504" y1="1489" x2="698" y2="1489" stroke="#eaeef2"/>
+  </g>
+
+  <!-- 17. Enclave 2 capture: latest summary -->
+  <g id="p17">
+    <rect x="730" y="1288" width="218" height="240" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="730" y="1288" width="218" height="36" rx="6" fill="#f6f8fa"/>
+    <rect x="730" y="1306" width="218" height="18" fill="#f6f8fa"/>
+    <line x1="730" y1="1324" x2="948" y2="1324" stroke="#d0d4da"/>
+    <rect x="730" y="1288" width="218" height="240" rx="6" fill="none" stroke="#d0d4da"/>
+    <rect x="740" y="1297" width="26" height="18" rx="4" fill="#57606a"/>
+    <text x="753" y="1310" class="badge">17</text>
+    <text x="774" y="1311" class="title">Enclave 2 capture</text>
+    <text x="742" y="1350" class="key">nic_rx_packets</text>
+    <text x="936" y="1350" class="num end">9.1 M</text>
+    <line x1="742" y1="1359" x2="936" y2="1359" stroke="#eaeef2"/>
+    <text x="742" y="1376" class="key">kernel_drops</text>
+    <text x="936" y="1376" class="num end">0</text>
+    <line x1="742" y1="1385" x2="936" y2="1385" stroke="#eaeef2"/>
+    <text x="742" y="1402" class="key">archive_file</text>
+    <text x="936" y="1420" class="num end">cap-20261005140000.pcap</text>
+    <line x1="742" y1="1429" x2="936" y2="1429" stroke="#eaeef2"/>
+    <text x="742" y="1446" class="key">archive_age_s</text>
+    <text x="936" y="1446" class="num end">0.4</text>
+    <line x1="742" y1="1455" x2="936" y2="1455" stroke="#eaeef2"/>
+  </g>
+
+  <!-- 18. Enclave 2 receiver: latest summary -->
+  <g id="p18">
+    <rect x="968" y="1288" width="218" height="240" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="968" y="1288" width="218" height="36" rx="6" fill="#f6f8fa"/>
+    <rect x="968" y="1306" width="218" height="18" fill="#f6f8fa"/>
+    <line x1="968" y1="1324" x2="1186" y2="1324" stroke="#d0d4da"/>
+    <rect x="968" y="1288" width="218" height="240" rx="6" fill="none" stroke="#d0d4da"/>
+    <rect x="978" y="1297" width="26" height="18" rx="4" fill="#57606a"/>
+    <text x="991" y="1310" class="badge">18</text>
+    <text x="1012" y="1311" class="title">Enclave 2 receiver</text>
+    <text x="980" y="1350" class="key">heartbeat_age_s</text>
+    <text x="1174" y="1350" class="num end">0.6</text>
+    <line x1="980" y1="1359" x2="1174" y2="1359" stroke="#eaeef2"/>
+    <text x="980" y="1376" class="key">open_gap_events</text>
+    <text x="1174" y="1376" class="num end">37</text>
+    <line x1="980" y1="1385" x2="1174" y2="1385" stroke="#eaeef2"/>
+    <text x="980" y="1402" class="key">reasm_expired</text>
+    <text x="1174" y="1402" class="num end">0</text>
+    <line x1="980" y1="1411" x2="1174" y2="1411" stroke="#eaeef2"/>
+    <text x="980" y="1428" class="key">cpu_pct</text>
+    <text x="1174" y="1428" class="num end">21</text>
+    <line x1="980" y1="1437" x2="1174" y2="1437" stroke="#eaeef2"/>
+    <text x="980" y="1454" class="key">rss_mb</text>
+    <text x="1174" y="1454" class="num end">96</text>
+    <line x1="980" y1="1463" x2="1174" y2="1463" stroke="#eaeef2"/>
+  </g>
+
+  <!-- 19. Enclave 2 SIEM: latest summary -->
+  <g id="p19">
+    <rect x="1206" y="1288" width="218" height="240" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="1206" y="1288" width="218" height="36" rx="6" fill="#f6f8fa"/>
+    <rect x="1206" y="1306" width="218" height="18" fill="#f6f8fa"/>
+    <line x1="1206" y1="1324" x2="1424" y2="1324" stroke="#d0d4da"/>
+    <rect x="1206" y="1288" width="218" height="240" rx="6" fill="none" stroke="#d0d4da"/>
+    <rect x="1216" y="1297" width="26" height="18" rx="4" fill="#57606a"/>
+    <text x="1229" y="1310" class="badge">19</text>
+    <text x="1250" y="1311" class="title">Enclave 2 SIEM</text>
+    <text x="1218" y="1350" class="key">hec_queue</text>
+    <text x="1412" y="1350" class="num end">12</text>
+    <line x1="1218" y1="1359" x2="1412" y2="1359" stroke="#eaeef2"/>
+    <text x="1218" y="1376" class="key">hec_spool_files</text>
+    <text x="1412" y="1376" class="num end">0</text>
+    <line x1="1218" y1="1385" x2="1412" y2="1385" stroke="#eaeef2"/>
+    <text x="1218" y="1402" class="key">hec_posts_failed</text>
+    <text x="1412" y="1402" class="num end">0</text>
+    <line x1="1218" y1="1411" x2="1412" y2="1411" stroke="#eaeef2"/>
+    <text x="1218" y="1428" class="key">hec_rejected_events</text>
+    <text x="1412" y="1428" class="num end">0</text>
+    <line x1="1218" y1="1437" x2="1412" y2="1437" stroke="#eaeef2"/>
+    <text x="1218" y="1454" class="key">output_dropped</text>
+    <text x="1412" y="1454" class="num end">0</text>
+    <line x1="1218" y1="1463" x2="1412" y2="1463" stroke="#eaeef2"/>
+  </g>
+
+  <!-- 20. Audit events to review: index=wd2l_audit, visible only to the wd2l_auditor role -->
+  <g id="p20">
+    <rect x="16" y="1544" width="1408" height="170" rx="6" fill="#ffffff" stroke="#d0d4da"/>
+    <rect x="28" y="1556" width="26" height="18" rx="4" fill="#57606a"/>
+    <text x="41" y="1569" class="badge">20</text>
+    <text x="64" y="1570" class="title">Audit events to review (wd2l_auditor role)</text>
+    <rect x="24" y="1580" width="1392" height="24" rx="3" fill="#f6f8fa"/>
+    <text x="32" y="1596" class="th">Time</text>
+    <text x="124" y="1596" class="th">Host</text>
+    <text x="212" y="1596" class="th">Component</text>
+    <text x="310" y="1596" class="th">Event</text>
+    <text x="440" y="1596" class="th">Actor</text>
+    <text x="800" y="1596" class="th">Detail</text>
+    <text x="32" y="1622" class="num">09:28:10Z</text>
+    <text x="124" y="1622">rx01</text>
+    <text x="212" y="1622">receiver</text>
+    <text x="310" y="1622">config_changed</text>
+    <text x="440" y="1622">uid=987(wd2l) unit=wd2l-receiver.service</text>
+    <text x="800" y="1622">config hash 3be1… → 9a07…</text>
+    <line x1="24" y1="1630" x2="1416" y2="1630" stroke="#eaeef2"/>
+    <text x="32" y="1646" class="num">09:12:36Z</text>
+    <text x="124" y="1646">logsrv01</text>
+    <text x="212" y="1646">sender</text>
+    <text x="310" y="1646">stop</text>
+    <text x="440" y="1646">uid=987(wd2l) unit=wd2l-sender.service</text>
+    <text x="800" y="1646">SIGTERM, last_seq 2,104,880</text>
+    <line x1="24" y1="1654" x2="1416" y2="1654" stroke="#eaeef2"/>
+    <text x="32" y="1670" class="num">03:00:04Z</text>
+    <text x="124" y="1670">rx01</text>
+    <text x="212" y="1670">receiver</text>
+    <text x="310" y="1670">audit_verify</text>
+    <text x="440" y="1670">uid=987(wd2l) unit=wd2l-receiver.service</text>
+    <text x="800" y="1670">ok, 41,220 records</text>
+    <line x1="24" y1="1678" x2="1416" y2="1678" stroke="#eaeef2"/>
+    <text x="32" y="1694" class="num">02:10:55Z</text>
+    <text x="124" y="1694">logsrv01</text>
+    <text x="212" y="1694">sender</text>
+    <text x="310" y="1694">debug_toggled</text>
+    <text x="440" y="1694">uid=0(root) pid=88121 comm=kill auid=1001(jdoe)</text>
+    <text x="800" y="1694">DEBUG</text>
+  </g>
+
+</svg>
