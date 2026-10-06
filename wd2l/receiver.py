@@ -23,7 +23,7 @@ import time
 from collections import OrderedDict, deque
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from . import hostinfo, logsetup, packets, wire
+from . import __version__, hostinfo, logsetup, packets, wire
 from . import audit as auditlog
 from .audit import Summarizer
 from .outputs import FileOutput, HecOutput, MultiOutput, Output
@@ -341,7 +341,8 @@ class Receiver:
                  record_clock: Optional[Callable[[], float]] = None, rx_time: bool = True,
                  src_port: int = 0, audit: Optional[auditlog.AuditLog] = None,
                  audit_output: Optional[Output] = None, config_sha256: Optional[str] = None,
-                 audit_interval: float = 60.0):
+                 audit_interval: float = 60.0,
+                 component: str = "receiver", time_quality: Any = None):
         """`now` passed to handle_frame/tick drives every timer. Live capture passes a steady
         clock (immune to clock steps); pcap replay passes packet timestamps. `record_clock`,
         if given, supplies the wall-clock `time` written into health records, each event's
@@ -382,6 +383,9 @@ class Receiver:
         self.dirty = False
         self.saved_with_pending = False
         self.audit = audit
+        self.component = component
+        self.tq = time_quality
+        self.host = hostinfo.hostname()
         self.audit_out = audit_output or output
         self.outputs: List[Output] = [output] if self.audit_out is output else [output, self.audit_out]
         self.config_sha256 = config_sha256
@@ -681,8 +685,12 @@ class Receiver:
         """Wall-clock time for records: the live clock, or the packet time during replay."""
         return self.record_clock() if self.record_clock else now
 
+    def _identity(self) -> Dict[str, Any]:
+        return {"host": self.host, "enclave": 2, "component": self.component,
+                "version": __version__}
+
     def _health_record(self, kind: str, now: float, **kw: Any) -> None:
-        rec = {"type": kind, "time": round(self._wall(now), 3)}
+        rec = dict(self._identity(), type=kind, time=round(self._wall(now), 3))
         rec.update(kw)
         self.out.health(rec)
         if self.audit is not None and kind in AUDITED_HEALTH:
@@ -718,6 +726,11 @@ class Receiver:
                    heartbeat_age_s=round(now - ref, 1) if ref is not None else None,
                    heartbeat_stale=self.hb_stale, other_reasons=self.other_reasons,
                    bad_reasons=self.bad_reasons, reasm_buffered=self.reasm.buffered)
+        rec.update(self._identity())
+        if self.tq is not None:
+            rec["time_quality"] = self.tq.read()
+        if self.audit is not None:
+            rec.update(self.audit.status())
         self.out.health(rec)
         return rec
 
@@ -992,7 +1005,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
               health_interval=a.health_interval, stream_lost_after=a.stream_lost_after,
               stream_retention=a.stream_retention, rx_time=a.rx_time, src_port=a.src_port,
               audit=audit, audit_output=audit_out,
-              config_sha256=None if a.pcap else cfg_sha)
+              config_sha256=None if a.pcap else cfg_sha,
+              component=component, time_quality=tq)
     try:
         if a.pcap:
             if audit:

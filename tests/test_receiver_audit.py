@@ -189,3 +189,27 @@ def test_replay_main_does_not_touch_config_hash_in_state(tmp_path):
     with open(state) as f:
         assert json.load(f)["config_sha256"] == "a" * 64
     assert [x for x in read_audit(adir) if x["event"] == "config_changed"] == []
+
+
+import wd2l
+
+
+class FakeTQ:
+    def read(self):
+        return {"stratum": 3, "offset_ms": 0.1, "synced": True, "source": "gps"}
+
+    def alarm(self, q=None):
+        return None
+
+
+def test_health_records_say_who_wrote_them_and_where_the_chain_stands(tmp_path):
+    r, out, a = make(tmp_path, time_quality=FakeTQ())
+    feed(r, ev(1), 0)
+    rec = r.emit_health(0)
+    assert (rec["enclave"], rec["component"], rec["version"]) == (2, "receiver", wd2l.__version__)
+    assert rec["host"] and rec["time_quality"]["stratum"] == 3
+    st = a.status()
+    assert (rec["audit_ok"], rec["audit_n"], rec["audit_hash"], rec["audit_verify"]) == \
+        (True, st["audit_n"], st["audit_hash"], None)
+    start = out.kinds("stream_start")[0]
+    assert start["enclave"] == 2 and start["component"] == "receiver"
