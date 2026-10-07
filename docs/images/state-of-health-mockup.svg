@@ -6,7 +6,7 @@
            font-size: 12px; fill: #1f2328; }
     .h1 { font-size: 22px; font-weight: 600; fill: #ffffff; }
     .title { font-size: 14px; font-weight: 600; }
-    .tile { font-size: 13px; font-weight: 600; text-anchor: middle; }
+    .tile { font-size: 12px; font-weight: 600; text-anchor: middle; }
     .big { font-size: 28px; font-weight: 700; }
     .badge { font-size: 11px; font-weight: 700; fill: #ffffff; text-anchor: middle; }
     .sub { fill: #57606a; }
@@ -35,8 +35,8 @@
   <g id="header">
     <rect x="0" y="0" width="1440" height="56" fill="#24292f"/>
     <text x="24" y="36" class="h1">wd2l state of health</text>
-    <rect x="252" y="17" width="200" height="22" rx="11" fill="#fff8c5" stroke="#9a6700"/>
-    <text x="352" y="32" class="b amber mid">Mockup: illustrative values</text>
+    <rect x="340" y="17" width="220" height="22" rx="11" fill="#fff8c5" stroke="#9a6700"/>
+    <text x="450" y="32" class="b amber mid">Mockup: illustrative values</text>
     <rect x="1140" y="15" width="136" height="26" rx="6" fill="#32383f" stroke="#57606a"/>
     <text x="1154" y="32" style="font-size: 13px; fill: #f0f6fc">Last 12 hours ▾</text>
     <text x="1416" y="32" class="end" style="fill: #9198a1">Refreshed 14:03:22Z</text>

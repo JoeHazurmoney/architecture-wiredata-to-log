@@ -99,7 +99,7 @@ off green. The status tile names the first rule that matches.
 | 17 | **Enclave 2 capture** | Is every packet captured and archived? | Latest summary: `nic_rx_packets`, `kernel_drops`, `archive_file`, `archive_age_s` | — | Host capacity; `wd2l-capture` |
 | 18 | **Enclave 2 receiver** | Is the receiver keeping up? | Latest summary: `heartbeat_age_s`, `open_gap_events`, `reasm_expired`, `cpu_pct`, `rss_mb` | — | Receiver host |
 | 19 | **Enclave 2 SIEM** | Is the SIEM taking everything? | Latest summary: `hec_queue`, `hec_spool_files`, `hec_posts_failed`, `hec_rejected_events`, `output_dropped` | — | The SIEM; `<spool>/rejected/` |
-| 20 | **Audit events to review** | What did people change? | `index=wd2l_audit`: `config_changed`, `state_reset`, `replay_run`, `debug_toggled`, `audit_failure`, `audit_verify` | — | Needs the `wd2l_auditor` role; others see it empty |
+| 20 | **Audit events to review** | What did people change? | `index=wd2l_audit`: `start`, `stop`, `config_changed`, `state_reset`, `replay_run`, `debug_toggled`, `audit_failure`, `audit_verify` | — | Needs the `wd2l_auditor` role; others see it empty |
 
 * **"Latest summary"** is the newest `type=health` record from the receiver
   (`index=wd2l sourcetype=wd2l:health`), written every 60 s. Enclave 1's own summary arrives
