@@ -388,6 +388,10 @@
             "value": "#9a6700"
           },
           {
+            "match": "ALARM",
+            "value": "#cf222e"
+          },
+          {
             "match": "RED",
             "value": "#cf222e"
           },

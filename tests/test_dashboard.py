@@ -44,3 +44,16 @@ def test_only_the_review_panel_reads_the_audit_index():
     readers = [k for k, s in d["dataSources"].items()
                if "wd2l_audit" in s["options"].get("query", "")]
     assert readers == ["ds_audit_review"]
+
+
+def test_single_values_colour_every_state_their_source_can_emit():
+    viz = load()["visualizations"]
+    expected = {
+        "viz_status": {"OK", "AMBER", "RED", "UNKNOWN"},
+        "viz_time": {"OK", "ALARM", "UNKNOWN"},
+        "viz_reconcile": {"OK", "RED"},
+        "viz_audit": {"OK", "RED"},
+    }
+    for vid, states in expected.items():
+        matches = {m["match"] for m in viz[vid]["context"]["statusColors"]}
+        assert states <= matches, (vid, sorted(states - matches))
