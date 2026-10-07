@@ -176,7 +176,7 @@ def test_deeply_nested_json_is_counted_not_a_crash():
     crafted frame must not stop the receiver."""
     import hashlib
     r, out = rx()
-    deep = b"[" * 5000 + b"]" * 5000
+    deep = b"[" * 30000 + b"]" * 30000      # past the C json limit on 3.12 too (~10,000)
     feed(r, wire.encode_event(SID, 1, b'{"_raw":"x","a":' + deep + b"}"), 0)
     assert r.counters["bad_events"] == 1 and out.events == []
     payload = b'{"a":' + deep + b"}"
