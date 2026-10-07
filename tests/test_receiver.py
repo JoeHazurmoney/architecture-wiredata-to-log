@@ -209,6 +209,25 @@ def test_state_survives_restart(tmp_path):
     assert r2.streams[SID].gaps.r == []
 
 
+def test_time_of_the_last_heartbeat_survives_restart(tmp_path):
+    state = str(tmp_path / "state.json")
+    r, _ = rx(state_path=state)
+    feed(r, ev(1), 5)
+    feed(r, [hb(1)], 7)
+    feed(r, ev(2), 9)
+    assert (r.streams[SID].last_hb, r.streams[SID].last_seen) == (7, 9)
+    r.save_state()
+    r2, _ = rx(state_path=state)
+    assert r2.streams[SID].last_hb == 7
+    with open(state) as f:
+        st = json.load(f)
+    del st["streams"]["%016x" % SID]["last_hb"]      # a state file from before the key
+    with open(state, "w") as f:
+        json.dump(st, f)
+    r3, _ = rx(state_path=state)
+    assert r3.streams[SID].last_hb == 9
+
+
 def test_finish_declares_all_holes():
     r, out = rx(gap_window=100)
     feed(r, ev(1) + ev(3) + [hb(5)], 0)

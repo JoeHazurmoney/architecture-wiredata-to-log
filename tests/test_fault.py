@@ -224,6 +224,58 @@ def test_sender_drops():
     assert faults(out) == [("amber", "e1-sender", 6)]
 
 
+RUN_A, RUN_B, RUN_C = 0xA1, 0xB2, 0xC3
+
+
+def run_evt(sid, seq):
+    return wire.encode_event(sid, seq, json.dumps({"_raw": "e%d" % seq}).encode())
+
+
+def run_hb(sid, seq, **info):
+    return wire.encode_heartbeat(sid, seq, dict({"events_sent": seq, "events_in": seq}, **info))
+
+
+def test_a_never_seen_run_does_not_hide_the_live_one():
+    """Final review I2: run A ends cleanly, run B is never seen, run C sends DATA before its
+    first heartbeat. B's placeholder (no heartbeat info) must not be read as the newest run:
+    events flow, so there is no rule 5."""
+    r, out = rxf()
+    feed(r, run_evt(RUN_A, 1) + [run_hb(RUN_A, 1, boot=1, final=True)], 0)
+    r.tick(0)
+    for t in range(1, 411):
+        if t >= 10:
+            seq = t - 9
+            dgs = run_evt(RUN_C, seq)
+            if t >= 11:
+                dgs.append(run_hb(RUN_C, seq, boot=3, prev_stream=RUN_B, prev_last_seq=50))
+            feed(r, dgs, t)
+        r.tick(t)
+    assert out.kinds("stream_missing")[0]["stream"] == "%016x" % RUN_B
+    assert ("amber", "e1-input", 5) not in faults(out), faults(out)
+    assert faults(out)[-1] == ("ok", None, 0)
+
+
+def test_a_restored_run_does_not_make_a_crash_look_planned():
+    """Final review I2, restore variant: run A ended cleanly and was retired; run B's first
+    heartbeat brings A back. When B then goes quiet without a final heartbeat, that is rule 3
+    (red), not rule 2 (planned stop)."""
+    r, out = rxf(stream_retention=20)
+    feed(r, run_evt(RUN_A, 1) + [run_hb(RUN_A, 1, boot=1, final=True)], 0)
+    for t in range(0, 30):
+        r.tick(t)
+    assert RUN_A in r.retired
+    for t in range(30, 41):
+        dgs = run_evt(RUN_B, t - 29)
+        if t >= 31:
+            dgs.append(run_hb(RUN_B, t - 29, boot=2, prev_stream=RUN_A, prev_last_seq=1))
+        feed(r, dgs, t)
+        r.tick(t)
+    assert RUN_A in r.streams and r.streams[RUN_A].final     # brought back by B's link
+    for t in range(41, 50):
+        r.tick(t)
+    assert faults(out)[-1] == ("red", "e1-sender/boundary", 3), faults(out)
+
+
 class BadTQ:
     def read(self):
         return {"stratum": 0, "offset_ms": 0.0, "synced": False, "source": ""}

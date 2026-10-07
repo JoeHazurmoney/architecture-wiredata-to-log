@@ -133,6 +133,7 @@ class StreamTracker:
         self.gaps = RangeSet()
         self.first_seen = first_seen
         self.last_seen = first_seen
+        self.last_hb: Optional[float] = None   # when its latest heartbeat arrived
         self.final = False
         self.lost_reported = False
         self.hb: Dict[str, Any] = {}
@@ -178,7 +179,7 @@ class StreamTracker:
         return "new"
 
     def on_heartbeat(self, last_seq: int, info: Dict[str, Any], now: float) -> None:
-        self.last_seen = now
+        self.last_seen = self.last_hb = now
         self.hb = info
         self._raise_known(last_seq, now)
         self._advance()
@@ -232,7 +233,7 @@ class StreamTracker:
     def to_json(self) -> Dict[str, Any]:
         return {"lo": self.lo, "above": sorted(self.above), "known": self.known,
                 "marks": list(self.marks), "gaps": self.gaps.r, "first_seen": self.first_seen,
-                "last_seen": self.last_seen, "final": self.final,
+                "last_seen": self.last_seen, "last_hb": self.last_hb, "final": self.final,
                 "lost_reported": self.lost_reported, "hb": self.hb,
                 "delivered": self.delivered, "boot": self.boot, "linked": self.linked,
                 "records": self.records, "rc": self.rc.to_json()}
@@ -251,6 +252,11 @@ class StreamTracker:
         t.final = bool(d.get("final", False))
         t.lost_reported = bool(d.get("lost_reported", False))
         t.hb = d.get("hb", {}) if isinstance(d.get("hb"), dict) else {}
+        lh = d.get("last_hb")
+        if isinstance(lh, (int, float)) and not isinstance(lh, bool):
+            t.last_hb = float(lh)
+        elif t.hb:
+            t.last_hb = t.last_seen     # a state file from before last_hb was kept
         t.delivered = int(d.get("delivered", 0))
         boot = d.get("boot")
         t.boot = int(boot) if isinstance(boot, int) else None
@@ -783,9 +789,19 @@ class Receiver:
                 balanced=res["balanced"])
         t.rc.written = (res["cut"], res["balanced"])
 
-    def _evaluate_faults(self, now: float) -> None:
+    def _newest_run(self) -> Optional[StreamTracker]:
+        """The sender run the fault rules read: the data stream whose latest heartbeat is the
+        newest. A placeholder for a run never seen, or a retired stream brought back, has no
+        heartbeat and is skipped, however recently it was created. Without any heartbeat yet,
+        the stream first seen last."""
         data = [t for t in self.streams.values() if not t.records]
-        newest = max(data, key=lambda t: t.first_seen) if data else None
+        heard = [t for t in data if t.hb and t.last_hb is not None]
+        if heard:
+            return max(heard, key=lambda t: (t.last_hb, t.first_seen))
+        return max(data, key=lambda t: t.first_seen) if data else None
+
+    def _evaluate_faults(self, now: float) -> None:
+        newest = self._newest_run()
         hb = newest.hb if newest is not None else {}
         stats = self._stats()
         ft = self.faults
