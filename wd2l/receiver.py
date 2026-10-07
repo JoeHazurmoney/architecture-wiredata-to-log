@@ -541,13 +541,18 @@ class Receiver:
 
     def _deliver_record(self, evt: Dict[str, Any], sid: int, seq: int) -> None:
         """A record from the sender's records stream: re-serialized canonically (so a line can't
-        be smuggled into a file) and sent to the audit or health index."""
+        be smuggled into a file) and sent to the audit or health index. Only records that say
+        they are the Enclave 1 sender's are passed on: Enclave 1 can't speak for Enclave 2."""
         try:
             rec = json.loads(evt["_raw"])
             if not isinstance(rec, dict):
                 raise ValueError("not a JSON object")
+            enclave = rec.get("enclave")
+            if (not isinstance(enclave, int) or isinstance(enclave, bool) or enclave != 1
+                    or rec.get("component") != "sender"):
+                raise ValueError("not a record of the Enclave 1 sender")
             raw = auditlog.canonical(rec).decode("utf-8")
-        except ValueError:
+        except (ValueError, RecursionError):
             self.counters["records_bad"] += 1
             return
         kind = "audit" if evt.get("sourcetype") == "wd2l:sender:audit" else "health"

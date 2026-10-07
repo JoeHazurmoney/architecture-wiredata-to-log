@@ -49,7 +49,7 @@ log flow.
 | `sender_drops`, `sender_truncated`, `sender_bad_input`, `sender_unread_bytes` | From the sender's heartbeat | 0 (truncated: expected if you have huge events) |
 | `sender_opaque_events` | Events the sender flagged for an opaque blob (`wd2l_opaque`), this sender run | 0, or the level known for your sources |
 | `hec_events_sent`, `hec_spool_files`, `hec_posts_failed`, `hec_rejected_events`, `hec_queue_overflow_events` | SIEM delivery | spool 0, rejected 0, overflow 0 |
-| `records_delivered`, `records_bad` | Audit records from Enclave 1 handed to the SIEM, and ones that were refused as malformed | growing; 0 |
+| `records_delivered`, `records_bad` | Audit and health records from Enclave 1 handed to the SIEM, and ones that were refused: malformed, or not naming the Enclave 1 sender (`enclave` 1, `component` `sender`) | growing; 0 |
 | `fault_status`, `fault_segment`, `fault_rule`, `fault_detail` | The receiver's verdict on where the fault is ([state-of-health.md](state-of-health.md)) | `ok`; the rest empty |
 | `seg_e1_input`, `seg_e1_sender`, `seg_boundary`, `seg_e2_capture`, `seg_e2_receiver`, `seg_e2_siem` | State of each segment | `ok` (`unknown` while it can't be seen) |
 | `time_status`, `time_reason`, `time_quality` | The time check, why it is in alarm, and chrony's own numbers (synced, stratum, offset) | `ok`; synced, stratum 2 |
@@ -211,6 +211,10 @@ hold metadata, counts and hashes, never log content. The record types are in the
 | Official copy, each host | `/var/log/wd2l/audit-*.jsonl` (a new file past 64 MiB, kept 1 year) | Members of group `wd2l-audit` |
 | Enclave 1, second copy | The log aggregator copies the log server's files to the log retention server ([retention-server.md](deployment/retention-server.md#6-wd2l-audit-files)) | Auditors, administrators |
 | SIEM | `index=wd2l_audit`: `sourcetype=wd2l:audit` (receiver), `wd2l:sender:audit` (sender, in-band) | The auditor role only |
+
+The receiver passes on only in-band records that name the Enclave 1 sender (`enclave` 1,
+`component` `sender`), so Enclave 1 can't put records about Enclave 2 in the index. Anything else
+is counted in `records_bad`. The daily review report shows each record's `sourcetype`.
 
 **Verify a copy**
 

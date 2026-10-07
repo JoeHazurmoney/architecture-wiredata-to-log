@@ -300,7 +300,9 @@ There is no `boot` and there are no `prev_*` keys. Records streams aren't linked
   `sourcetype` is `wd2l:sender:audit` or `wd2l:sender:health`. `_raw` is the record as canonical
   JSON, the same bytes as the line in the local audit file. There is no `index`: Enclave 2
   chooses it.
-* The receiver routes by the flag, never by `sourcetype`.
+* The receiver routes by the flag, never by `sourcetype`. It passes on only records whose
+  `enclave` is 1 and `component` is `sender`: Enclave 1 can't speak for Enclave 2. Anything else
+  is dropped and counted in `records_bad`.
 * Volume is bounded: summaries, about one record a minute, plus events.
 * Loss shows up as a gap marked `records: true`.
 * Receivers older than wd2l 0.2.0 ignore `flags` and would treat the records stream as one more

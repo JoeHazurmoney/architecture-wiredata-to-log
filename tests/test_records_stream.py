@@ -169,6 +169,31 @@ def test_bad_record_json_is_counted_and_not_forwarded():
     assert r.counters["records_bad"] == 1 and aout.forwarded_records == []
 
 
+def test_a_record_claiming_to_be_from_enclave_2_is_refused():
+    """Final review I6: the low side must not plant records about the high side."""
+    r, out, aout = rx()
+    forged = {"event": "replay_run", "enclave": 2, "component": "receiver", "host": "rx01",
+              "actor": "uid=0(root) auid=1001(admin)"}
+    feed(r, rec_frames(1, forged))
+    feed(r, rec_frames(2, dict(forged, type="health", audit_ok=True), kind="health"))
+    for i, claim in enumerate(({"enclave": 1, "component": "receiver"},
+                               {"enclave": 2, "component": "sender"},
+                               {"enclave": True, "component": "sender"},
+                               {"component": "sender"}), 3):
+        feed(r, rec_frames(i, dict({"event": "start"}, **claim)))
+    assert r.counters["records_bad"] == 6 and r.counters["records_delivered"] == 0
+    assert aout.forwarded_records == out.forwarded_records == []
+    feed(r, rec_frames(9, {"event": "start", "enclave": 1, "component": "sender"}))
+    assert r.counters["records_delivered"] == 1 and len(aout.forwarded_records) == 1
+
+
+def test_a_deeply_nested_record_is_counted_not_a_crash():
+    r, out, aout = rx()
+    body = json.dumps({"_raw": "[" * 10000 + "]" * 10000, "sourcetype": "wd2l:sender:audit"})
+    feed(r, wire.encode_event(RECS, 1, body.encode(), flags=wire.FLAG_RECORDS))
+    assert r.counters["records_bad"] == 1 and aout.forwarded_records == []
+
+
 def test_file_output_writes_forwarded_records_durably(tmp_path):
     o = FileOutput(str(tmp_path))
     o.forwarded({"_raw": '{"event":"start"}'}, RECS, 1, "audit")

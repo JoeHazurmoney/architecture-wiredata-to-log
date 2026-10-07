@@ -121,7 +121,7 @@
       "type": "ds.search",
       "name": "ds_audit",
       "options": {
-        "query": "index=wd2l type=health (sourcetype=wd2l:health OR sourcetype=wd2l:sender:health) | stats latest(audit_ok) as ok latest(audit_verify) as verify by component | eval good=if(ok=\"true\" AND coalesce(verify,\"\")!=\"failed\",1,0) | stats min(good) as all_good values(component) as sides | eval state=if(all_good=1,\"OK\",\"RED\") | table state sides"
+        "query": "index=wd2l type=health ((sourcetype=wd2l:health component!=sender) OR (sourcetype=wd2l:sender:health component=sender)) | stats latest(audit_ok) as ok latest(audit_verify) as verify by component | eval good=if(ok=\"true\" AND coalesce(verify,\"\")!=\"failed\",1,0) | stats min(good) as all_good values(component) as sides | eval state=if(all_good=1,\"OK\",\"RED\") | table state sides"
       }
     },
     "ds_flow": {

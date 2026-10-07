@@ -35,6 +35,12 @@ def test_new_alerts_and_review_report():
     assert "index=wd2l_audit" in s["WD2L - Audit review (daily)"]["search"]
 
 
+def test_daily_review_shows_the_sourcetype():
+    """Final review I6: the reviewer can see which records came in-band from Enclave 1."""
+    search = conf("savedsearches.conf")["WD2L - Audit review (daily)"]["search"]
+    assert "sourcetype" in search.split("| table", 1)[1].split()
+
+
 def test_audit_index_token_and_role():
     idx = conf("indexes.conf")
     assert idx["wd2l_audit"]["frozenTimePeriodInSecs"] == "31622400"

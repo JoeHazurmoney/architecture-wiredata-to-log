@@ -114,7 +114,8 @@ The heartbeat has `events_sent`, `records_too_big`, `outbox_dropped`, `sender_ti
 than wd2l 0.2.0 ignore `flags`, so **update the receiver first**.
 
 Receiver rule: frames with `flags` bit 0 set are tracked as their own stream, delivered to the
-audit or health index, and never linked to the run chain.
+audit or health index, and never linked to the run chain. Only records whose `enclave` is 1 and
+whose `component` is `sender` are delivered; anything else is dropped and counted in `records_bad`.
 
 ## Why the sequence number never resets
 

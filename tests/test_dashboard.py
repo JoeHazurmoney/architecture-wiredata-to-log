@@ -46,6 +46,13 @@ def test_only_the_review_panel_reads_the_audit_index():
     assert readers == ["ds_audit_review"]
 
 
+def test_audit_tile_takes_each_side_only_from_its_own_sourcetype():
+    """Final review I6: a record on the sender's sourcetype can't stand in for the receiver."""
+    q = load()["dataSources"]["ds_audit"]["options"]["query"]
+    assert "(sourcetype=wd2l:health component!=sender)" in q
+    assert "(sourcetype=wd2l:sender:health component=sender)" in q
+
+
 def test_single_values_colour_every_state_their_source_can_emit():
     viz = load()["visualizations"]
     expected = {
