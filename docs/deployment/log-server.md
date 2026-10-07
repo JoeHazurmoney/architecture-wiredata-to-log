@@ -129,6 +129,9 @@ sudo -u wd2l python3 -m wd2l.audit verify /var/log/wd2l
 wd2l-audit-report verify --dir /var/log/wd2l      # once installed with pip
 ```
 
+The aggregator copies these files to the log retention server
+([retention-server.md](retention-server.md#6-wd2l-audit-files)).
+
 To turn debug logging on or off so that the audit record names you, signal the sender from your
 own session:
 
@@ -181,8 +184,8 @@ A second output keeps the 1-year Enclave 1 copy ([retention-server.md](retention
 * The aggregator must be able to read a time window back from the retention server and route it
   to the sender output. Route replayed events to the sender output only, not back to the
   retention server.
-* Once wd2l writes audit files (audit plan, phase 1), also read `/var/log/wd2l/audit-*.jsonl`
-  and route them to the retention server only, with each line unchanged.
+* Also read `/var/log/wd2l/audit-*.jsonl` and route those lines to the retention server only,
+  with each line unchanged ([retention-server.md](retention-server.md#6-wd2l-audit-files)).
 
 ### Example: Cribl Stream
 

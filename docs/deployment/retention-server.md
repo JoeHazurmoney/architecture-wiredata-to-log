@@ -7,9 +7,9 @@ jobs:
 1. **Replay source.** Enclave 2 can't ask for lost events again across a one-way link. When it
    reports a loss, the aggregator reads that time window back from this server and sends it
    through `wd2l-sender` again.
-2. **1-year home for wd2l's Enclave 1 audit files**, once those are built (see
-   [audit-and-health-plan.md](../audit-and-health-plan.md)). This is proposed; confirm it with the
-   security owner (open item 5 in the plan).
+2. **1-year home for wd2l's Enclave 1 audit files** (see [section 6](#6-wd2l-audit-files) and
+   [audit-and-health-plan.md](../audit-and-health-plan.md)). Confirm this home with the
+   security owner (open item 5, section 17 of the plan).
 
 It isn't on the transfer path. If it's down, logs still reach Enclave 2; only the Enclave 1 copy
 falls behind.
@@ -61,7 +61,7 @@ earlier: these are audit records.
 
 ## 4. Protect it
 
-It holds a full copy of Enclave 1's logs, and later wd2l's audit files, so treat it as audit
+It holds a full copy of Enclave 1's logs, and wd2l's audit files, so treat it as audit
 storage (protection of audit information):
 
 * Only the aggregator's service account can write. Only the delete job (or lifecycle rule) can
@@ -80,13 +80,25 @@ The full procedure is in [operations.md](../operations.md#re-sending-from-enclav
    twice.
 3. The events cross again as new events with new sequence numbers.
 
-## 6. wd2l audit files (proposed)
+## 6. wd2l audit files
 
-Once wd2l writes audit files (phase 1 of the audit plan), the aggregator also reads
-`/var/log/wd2l/audit-*.jsonl` on the central log server and routes them to the retention server
-only. Enclave 2 already gets those records in-band from the sender. Keep every line unchanged,
-so the hash chain still verifies on the copy. wd2l starts a new file when one gets large and
-never renames them, so a file input that picks up new files by name pattern is enough.
+`wd2l-sender` writes audit files to `/var/log/wd2l/audit-*.jsonl` on the central log server. The
+aggregator also reads those files and routes them to the retention server only. Enclave 2 already
+gets the same records in-band from the sender. Keep every line unchanged, so the hash chain still
+verifies on the copy. wd2l starts a new file when one gets large and never renames them, so a file
+input that picks up new files by name pattern is enough.
+
+Keeping them here for 1 year is still to be confirmed by the security owner (audit plan, section
+17, item 5). Until then the official copy is the one on the log server.
+
+To check a copy:
+
+```bash
+wd2l-audit-report verify --dir <copy>
+```
+
+It prints `ok`, or what is wrong with the chain. See
+[operations.md](../operations.md#audit-records).
 
 ## 7. Checks
 

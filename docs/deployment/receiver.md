@@ -135,19 +135,27 @@ second aggregator is needed, and the receiver writes no event files, so there is
 rotate. Why, and why the `--out-dir` file output isn't for production yet:
 [ADR-0003](../decisions/0003-receiver-to-siem-delivery.md). The SIEM needs:
 
-* **Indexes** (or the SIEM's equivalent): one for the imported events and one for `wd2l`
-  health records. **Every index name Enclave 1 uses must exist**, and the token must be allowed to
-  write to it. Otherwise the collector rejects the batch with HTTP 400; the receiver re-sends it
+* **Indexes** (or the SIEM's equivalent): one for the imported events (`enclave1`), one for
+  `wd2l` health records, and `wd2l_audit` for audit records, kept 1 year and readable by an
+  auditor role only. **Every index name Enclave 1 uses must exist**, and the token must be
+  allowed to write to it. Otherwise the collector rejects the batch with HTTP 400; the receiver re-sends it
   one event at a time, moves only the refused events to `<spool>/rejected/` and counts
   `hec_rejected_events`. Or run with `--force-index` and put everything in one index.
-* **A token** for the receiver, over TLS.
+* **Two tokens**, over TLS: the main one for events and health records, and one for
+  `wd2l_audit`. The main token must not be allowed to write `wd2l_audit`, so that nobody holding
+  it can add to the audit trail.
 * **Indexed (searchable) fields**, sent in each event's `fields` object: `wd2l_stream`,
   `wd2l_seq`, `wd2l_truncated`, `wd2l_src_seq` (with the sender's `--source-seq`), the send
   and arrival times `wd2l_tx_time` and `wd2l_rx_time`, and, on events with a blob that can't be
   inspected, `wd2l_opaque` and `wd2l_opaque_bytes`.
-* **JSON parsing** for the `wd2l:health` records.
-* **Alerts** on lost events, stale heartbeat, silent receiver, unexpected traffic or damage, and
-  opaque content (see [operations.md](../operations.md)).
+* **JSON parsing** for the four sourcetypes: `wd2l:health`, `wd2l:sender:health`,
+  `wd2l:audit` and `wd2l:sender:audit`.
+* **Alerts**: ten, on lost events, stale heartbeat, a missing sender run, silent receiver,
+  unexpected traffic or damage, opaque content, fault segment, reconciliation, audit trail and
+  time quality, plus a daily report of audit events for the security owner (see
+  [operations.md](../operations.md)).
+* **The dashboard**, which shows where a fault is. It is described in
+  [state-of-health.md](../state-of-health.md).
 * **The same parsing add-ons** you use in Enclave 1 for each log source. Events keep their source
   type, so parsed fields come out the same.
 
@@ -156,13 +164,18 @@ rotate. Why, and why the `--out-dir` file output isn't for production yet:
 Ready-made files for Splunk are in [`deploy/receiver/splunk/`](../../deploy/receiver/splunk/). Put
 them in an app, e.g. `$SPLUNK_HOME/etc/apps/wd2l/local/`:
 
-* `indexes.conf`: `enclave1` and `wd2l`.
-* `inputs.conf`: HEC on 8088 with TLS, and the `wd2l` token.
+* `indexes.conf`: `enclave1`, `wd2l` and `wd2l_audit` (1 year).
+* `inputs.conf`: HEC on 8088 with TLS, and two tokens: `wd2l`, and `wd2l_audit` for audit
+  records only.
+* `authorize.conf`: the `wd2l_auditor` role, the only one that can search `wd2l_audit`.
 * `fields.conf`: marks `wd2l_stream`, `wd2l_seq`, `wd2l_truncated`, `wd2l_src_seq`,
   `wd2l_tx_time`, `wd2l_rx_time`, `wd2l_opaque` and `wd2l_opaque_bytes` as indexed fields.
-* `props.conf`: JSON field extraction for `wd2l:health`.
-* `savedsearches.conf`: the six alerts (lost events, stale heartbeat, missing sender run, silent
-  receiver, unexpected traffic or damage, opaque content). Add your alert actions.
+* `props.conf`: JSON field extraction for the four wd2l sourcetypes.
+* `savedsearches.conf`: the ten alerts (lost events, stale heartbeat, missing sender run, silent
+  receiver, unexpected traffic or damage, opaque content, fault segment, reconciliation not
+  balanced, audit trail, time quality) and the daily audit review. Add your alert actions.
+* `wd2l-health-dashboard.json`: the state-of-health dashboard (Dashboard Studio). Import it, then
+  read [state-of-health.md](../state-of-health.md) for what each panel means.
 
 ## 6. Check end to end
 
@@ -173,10 +186,15 @@ index=enclave1 earliest=-15m | stats count by host, sourcetype
 index=wd2l sourcetype=wd2l:health type=health | head 1
     | table _time events_delivered gap_events open_gap_events heartbeat_age_s other_packets kernel_drops hec_spool_files
 index=wd2l sourcetype=wd2l:health type!=health earliest=-24h | table _time type stream first_seq last_seq count
+index=wd2l sourcetype=wd2l:health type=health | head 1
+    | table fault_status time_status audit_ok audit_verify reconcile_unbalanced
+index=wd2l sourcetype=wd2l:sender:health | head 1
 index=enclave1 earliest=-15m | eval link_ms=(wd2l_rx_time-wd2l_tx_time)*1000
     | stats median(link_ms) max(link_ms) by host
 ```
 
 Healthy: events for every expected host, `heartbeat_age_s` ≤ ~1, and `gap_events`,
-`other_packets`, `kernel_drops`, `hec_spool_files` all 0. Link delay of a few milliseconds, and
+`other_packets`, `kernel_drops`, `hec_spool_files` all 0. `fault_status` is `ok`, `time_status` is
+`ok`, `audit_ok` is `true`, `audit_verify` is `ok` (empty until the first daily check) and
+`reconcile_unbalanced` is 0. The sender's health record shows that Enclave 1's records arrive too. Link delay of a few milliseconds, and
 `clock_offset_s` in the health record within a few milliseconds of 0.

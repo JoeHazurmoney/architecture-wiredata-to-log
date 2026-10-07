@@ -44,7 +44,7 @@ flowchart LR
 |---|---|---|
 | Log forwarding agents / syslog | every Enclave 1 host | Send logs to the log aggregator, as today. |
 | Log aggregator (e.g. Cribl Stream) | central log server | Collect, parse into events, set host, source, source type and index, hand every event to the sender and a copy to the log retention server. Replay a time window from the retention server when asked. |
-| Log retention server | Enclave 1, its own host | Keep a copy of every event the aggregator collects for 1 year. The source for replaying lost events, and (proposed) the 1-year home of wd2l's Enclave 1 audit files once those are built. Not on the transfer path. |
+| Log retention server | Enclave 1, its own host | Keep a copy of every event the aggregator collects for 1 year. The source for replaying lost events, and the 1-year home of wd2l's Enclave 1 audit files (to be confirmed by the security owner). Not on the transfer path. |
 | `wd2l-sender` | central log server | Number each event, flag content that can't be inspected (long encrypted, compressed or random-looking blobs), split big events into packet-sized pieces, add checksums, send UDP to the black hole, send a heartbeat every second. |
 | Egress NIC | central log server | Dedicated NIC. One /30 address, static ARP for the black hole, IPv6 off, firewall allows one flow. |
 | Black-hole switch port | Enclave 1 switch | Keeps the log server's link up and throws every frame away. |
@@ -53,6 +53,8 @@ flowchart LR
 | Capture NIC | Enclave 2 receiver host | Receive only: no IP, no ARP, promiscuous, egress dropped. |
 | tcpdump | receiver host | Hourly pcap archive of everything that arrives (7 days by default). |
 | `wd2l-receiver` | receiver host | Rebuild events, verify them, track sequence numbers, report gaps, send to the SIEM. |
+| Audit records | both hosts, and Enclave 2's SIEM | Each host writes hash-chained records of who started, stopped or changed what, and of what crossed or failed. Enclave 1's records also cross in-band, so Enclave 2's SIEM holds both trails. The sender and receiver compare a hash of every event, so loss, change or misnumbering shows. See the [audit plan](audit-and-health-plan.md). |
+| Fault location | `wd2l-receiver`, and the SIEM dashboard | The receiver decides where a fault is (one of six segments, by rule) from its own counters and the sender's heartbeat. The dashboard draws what the receiver decided. See [state-of-health.md](state-of-health.md). |
 | SIEM (e.g. Splunk) | Enclave 2 | Stores events with the original host, source, source type, index and time. |
 
 ## Design rules, and why
