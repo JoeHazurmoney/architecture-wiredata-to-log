@@ -84,14 +84,14 @@ off green. The status tile names the first rule that matches.
 | 2 | **Receiver last heard** | Is the receiver alive? | Age of the newest `wd2l:health` record | < 90 s / 90–900 s / > 900 s | Receiver host and service; the "WD2L - Receiver silent" alert |
 | 3 | **Pipeline** | Which segment? | Latest summary: `seg_e1_input` … `seg_e2_siem` | per box: green / amber / red; grey = can't be seen right now | That box's detail row (panels 14–19) |
 | 4 | **Open gap events** | Is anything missing now? | Latest summary: `open_gap_events` | 0 / — / > 0 | [operations.md, events lost](operations.md#alert-events-lost-typegap) |
-| 5 | **Reconciliation** | Does the SIEM hold exactly what was sent? | Latest `type=reconcile` per stream, last 25 h | all balanced / — / any not | Panel 12; replay or re-send; unbalanced with no gaps is an incident |
+| 5 | **Reconciliation** | Does the SIEM hold exactly what was sent? | Latest `type=reconcile` per stream, last 25 h | all balanced / — / any not | Panel 12; replay or re-send; unbalanced with no gaps is an incident. A stream with a permanent gap (events re-sent from Enclave 1 come back under new numbers) stays red for good: follow "WD2L - Events lost in transfer" and [its runbook](operations.md#alert-events-lost-typegap) |
 | 6 | **Time** | Can we trust timestamps? | Latest summary: `time_status`, `clock_offset_s` | `ok` / — / `alarm` | `time_reason`; chrony and the GPS receiver on that side |
 | 7 | **Audit trail** | Are both trails written and intact? | Latest health from each side, each from its own sourcetype: `audit_ok`, `audit_verify` | both ok / self-check not run yet / any `false` or `failed` | [operations.md, audit trail](operations.md) |
 | 8 | **Events in vs delivered** | Does everything that enters Enclave 1 leave Enclave 2? | Summaries: per-minute growth of `sender_events_in` and `events_delivered` | the lines overlap | A gap between the lines is loss or backlog: panels 4, 11, 19 |
 | 9 | **Delay by segment** | Is it keeping up? | Imported events: `wd2l_tx_time − _time`, `wd2l_rx_time − wd2l_tx_time`, `_indextime − wd2l_rx_time` | site values; e.g. under 60 s, 50 ms, 60 s | [operations.md, measuring delays](operations.md#measuring-delays) |
 | 10 | **Clock skew** | Do the two enclaves agree on time? | Summaries: `clock_offset_s` | inside ±50 ms | Time sync, not the network |
 | 11 | **Gaps by reason** | What kind of loss? | `type=gap` records, `count` by `reason` (records-stream gaps marked) | none | The reason table in operations.md |
-| 12 | **Reconciliation by stream** | Which run doesn't balance, and since when? | `type=reconcile`: `cut`, `balanced`, `gaps_open` per stream | all balanced | As panel 5 |
+| 12 | **Reconciliation by stream** | Which run doesn't balance, and since when? | `type=reconcile`: `cut`, `balanced`, `gaps_open` per stream | all balanced | As panel 5. A row with `gaps_open` above 0 that never balances is a permanent gap, not a new fault |
 | 13 | **Fault history** | What changed, when? | `type=fault` and `type=time_status` records | — | Attach to the incident ticket |
 | 14 | **Enclave 1 input** | Is the aggregator feeding the sender? | Latest `wd2l:sender:health`: `events_in`, `clients`, `input_backlog_bytes`, `bad_input` | — | Enclave 1 team: the aggregator |
 | 15 | **Enclave 1 sender** | Is the sender keeping up? | Latest `wd2l:sender:health`: `stall_s`, `sender_drops`, `send_errors`, `cpu_pct`, `nic_carrier`, `nic_tx_errors` | — | Enclave 1 team: the log server |
@@ -536,7 +536,7 @@ red.
 | "WD2L - Unexpected traffic or damage on the tap" | In the last 20 minutes: packets that aren't the log flow, corrupt frames, kernel drops, sender drops, truncation, unread input at a sender stop, SIEM rejections or dropped output | 15–19 |
 | "WD2L - Opaque content in imported logs" | Imported events carry a blob that can't be inspected (`wd2l_opaque`) | — (in the imported events) |
 | "WD2L - Fault segment" | The receiver's fault status moved away from `ok` (`type=fault`) | 1, 1b, 3, 13 |
-| "WD2L - Reconciliation not balanced" | A sender run hasn't balanced for an hour | 5, 12 |
+| "WD2L - Reconciliation not balanced" | A sender run with no open gaps hasn't balanced for an hour | 5, 12 |
 | "WD2L - Audit trail" | `audit_ok` false or `audit_verify` failed, on either side | 7 |
 | "WD2L - Time quality" | A clock unsynchronised, above stratum 3, more than 100 ms off or unreadable, or skew over 50 ms | 6, 10 |
 | "WD2L - Audit review (daily)" | A report, not an alert: every morning, the previous day's configuration changes, state resets, archive replays, debug toggles, audit failures, self-checks and time quality changes. Its owner needs the `wd2l_auditor` role | 20 |

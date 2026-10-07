@@ -120,11 +120,20 @@ trouble is, not only that there is some.
 The sender's heartbeats carry a count and a hash of every event it has numbered, up to a cut. The
 receiver keeps the same hash of what it delivered and compares them at each cut.
 "WD2L - Reconciliation not balanced" fires when a stream has had no balanced `type=reconcile`
-record for an hour (`balanced=true` is what a healthy stream keeps writing).
+record for an hour (`balanced=true` is what a healthy stream keeps writing) **and** its latest
+record has no open gaps (`gaps_open=0`). A stream with open gaps is the job of
+"WD2L - Events lost in transfer", which has already fired for it.
 
-1. **Open gaps?** `gaps_open` above 0 explains it: events are missing. Replay the archive or
-   re-send them from Enclave 1 ([events lost](#alert-events-lost-typegap)). The stream balances
-   again at the next cut after they arrive.
+1. **Open gaps** (`gaps_open` above 0, on the dashboard) explain an unbalanced stream: events
+   are missing. Follow [events lost](#alert-events-lost-typegap). Whether the stream balances
+   again depends on how the events come back:
+   * **A replay of the capture archive** fills gaps whose packets reached the capture NIC
+     (`receiver_restart`, `output_dropped`, and kernel drops that tcpdump still caught). They
+     arrive under their old numbers, and the stream balances at the next cut.
+   * **A re-send from Enclave 1** brings the events back as new events with new numbers, in the
+     sender's current run. They don't fill the old stream's gaps, so that stream stays
+     unbalanced for good. That is expected: the gap is permanent, and the `gap` records and the
+     re-send are the evidence. This alert stays quiet for it.
 2. **No open gaps** is not normal. Events were counted on one side and not the other, or changed
    on the way, and nothing says why. Compare with the audit reports:
    ```bash
@@ -308,7 +317,10 @@ run that never arrived) have to be sent again from Enclave 1. The log retention 
    [deployment/retention-server.md](deployment/retention-server.md).
 3. **Check in Enclave 2.** The replayed events arrive as normal new events with new sequence
    numbers. Events in the window that had already arrived land a second time, with a different
-   `wd2l_seq`. Remove them in searches with `| dedup host source _time _raw`.
+   `wd2l_seq`. Remove them in searches with `| dedup host source _time _raw`. The re-sent events
+   don't fill the old stream's gaps, so that stream never balances again (dashboard panels 5 and
+   12 stay red for it). That is expected; the `gap` records and the re-sent events are the
+   record of what happened.
 
 ## Measuring delays
 

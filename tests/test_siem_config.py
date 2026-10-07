@@ -35,6 +35,14 @@ def test_new_alerts_and_review_report():
     assert "index=wd2l_audit" in s["WD2L - Audit review (daily)"]["search"]
 
 
+def test_reconciliation_alert_fires_only_without_open_gaps():
+    """Final review I3: a stream with a permanent gap never balances again; open gaps are the
+    "Events lost" alert's job, so this one fires only for the unexplained case."""
+    search = conf("savedsearches.conf")["WD2L - Reconciliation not balanced"]["search"]
+    assert "latest(gaps_open) as gaps_open" in search
+    assert re.search(r"\| where balanced_checks=0 AND gaps_open=0\s*$", search), search
+
+
 def test_daily_review_shows_the_sourcetype():
     """Final review I6: the reviewer can see which records came in-band from Enclave 1."""
     search = conf("savedsearches.conf")["WD2L - Audit review (daily)"]["search"]
