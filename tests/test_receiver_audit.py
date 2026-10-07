@@ -140,6 +140,18 @@ def test_boundary_anomalies_are_summarised_each_minute(tmp_path):
     assert len(events(a, "boundary_anomaly")) == 2      # deltas: nothing new
 
 
+def test_refused_records_are_a_boundary_anomaly(tmp_path):
+    """Final review follow-up: records the receiver refuses (records_bad) are audited."""
+    r, out, a = make(tmp_path)
+    body = json.dumps({"_raw": json.dumps({"event": "start", "enclave": 2,
+                                           "component": "receiver"}),
+                       "sourcetype": "wd2l:sender:audit"}).encode()
+    feed(r, wire.encode_event(0x2222, 1, body, flags=wire.FLAG_RECORDS), 0)
+    r.audit_periodic()
+    [b] = [x for x in events(a, "boundary_anomaly") if x["reason"] == "records_bad"]
+    assert (b["count"], b["segment"], b["outcome"]) == (1, "boundary", "failure")
+
+
 def test_output_failures_are_audited_against_the_siem_segment(tmp_path):
     r, out, a = make(tmp_path, out=SlowOutput())
     feed(r, ev(1), 0)

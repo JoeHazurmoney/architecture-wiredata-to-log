@@ -171,6 +171,24 @@ def test_garbage_is_counted_not_fatal():
     assert r.counters["bad_events"] == 1 and out.events == []
 
 
+def test_deeply_nested_json_is_counted_not_a_crash():
+    """Final review follow-up: json.loads raises RecursionError, not ValueError, on these. A
+    crafted frame must not stop the receiver."""
+    import hashlib
+    r, out = rx()
+    deep = b"[" * 5000 + b"]" * 5000
+    feed(r, wire.encode_event(SID, 1, b'{"_raw":"x","a":' + deep + b"}"), 0)
+    assert r.counters["bad_events"] == 1 and out.events == []
+    payload = b'{"a":' + deep + b"}"
+    nested_hb = wire._pack(wire.TYPE_HEARTBEAT, SID, 1, 0, 1, len(payload),
+                           hashlib.sha256(payload).digest(), payload, 0)
+    r.handle_datagram(nested_hb, 0)
+    assert r.counters["bad_frames"] == 1 and r.bad_reasons["bad heartbeat json"] == 1
+    assert r.counters["heartbeats"] == 0
+    feed(r, ev(2), 1)                        # still running
+    assert out.seqs() == [2]
+
+
 def test_other_traffic_is_counted():
     from wd2l import packets
     r, out = rx()

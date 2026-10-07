@@ -144,7 +144,7 @@ def parse_event(data: bytes) -> Dict[str, Any]:
     """Decode a reassembled event. Only accepts the shape serialize_event produces."""
     try:
         obj = json.loads(data.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError) as e:
+    except (UnicodeDecodeError, ValueError, RecursionError) as e:  # Recursion: too deeply nested
         raise FrameError("event is not JSON: %s" % e)
     if not isinstance(obj, dict) or not isinstance(obj.get("_raw"), str):
         raise FrameError("event has no _raw string")

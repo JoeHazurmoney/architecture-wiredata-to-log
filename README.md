@@ -108,7 +108,7 @@ for each, are recorded as Architecture Decision Records (ADRs) in
 ## Try it
 
 ```bash
-pip install pytest && python3 -m pytest          # 378 tests, no root needed
+pip install pytest && python3 -m pytest          # 381 tests, no root needed
 
 sudo lab/run-lab.sh                               # full path in network namespaces
 sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly

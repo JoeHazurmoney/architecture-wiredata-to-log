@@ -533,7 +533,7 @@ red.
 | "WD2L - Heartbeat stale" | No sender heartbeat for the heartbeat timeout, or a sender run went quiet without a clean end | 1, 3 |
 | "WD2L - Sender run missing or restart chain broken" | A whole sender run never reached Enclave 2, the sender's restart count went back, or a stream with open gaps was dropped from tracking | — (the records are in [operations.md](operations.md#health-records)) |
 | "WD2L - Receiver silent" | No health record from the receiver for 15 minutes | 2 |
-| "WD2L - Unexpected traffic or damage on the tap" | In the last 20 minutes: packets that aren't the log flow, corrupt frames, kernel drops, sender drops, truncation, unread input at a sender stop, SIEM rejections or dropped output | 15–19 |
+| "WD2L - Unexpected traffic or damage on the tap" | In the last 20 minutes: packets that aren't the log flow, corrupt frames, refused Enclave 1 records (`records_bad`), kernel drops, sender drops, truncation, unread input at a sender stop, SIEM rejections or dropped output | 15–19 |
 | "WD2L - Opaque content in imported logs" | Imported events carry a blob that can't be inspected (`wd2l_opaque`) | — (in the imported events) |
 | "WD2L - Fault segment" | The receiver's fault status moved away from `ok` (`type=fault`) | 1, 1b, 3, 13 |
 | "WD2L - Reconciliation not balanced" | A sender run with no open gaps hasn't balanced for an hour | 5, 12 |

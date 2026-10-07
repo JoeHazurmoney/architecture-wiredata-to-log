@@ -49,13 +49,13 @@ names the difference. Each section's **As built** note has the details.
 | [7. Records stream](#7-getting-enclave-1s-records-to-enclave-2-no-enclave-1-siem) | Enclave 1 records in-band on a flagged stream; heartbeat snapshot | As proposed; only with `--audit-dir`; not linked across runs; the receiver picks the index and passes on only the Enclave 1 sender's records; `heartbeat_trimmed`; `time_unavailable` | `wd2l/wire.py`, `wd2l/sender.py`, `wd2l/outputs.py`, `docs/interface-description.md`, `docs/wire-format.md`, `tests/test_records_stream.py`, `tests/test_sender_health.py` |
 | [8. Health signals](#8-health-signals-by-segment) | New signals per segment | As proposed; "tcpdump running" is `archive_stale`; spool bytes added in the final review | `wd2l/hostinfo.py`, `wd2l/receiver.py`, `wd2l/outputs.py`, `tests/test_hostinfo.py`, `tests/test_receiver_signals.py`, `tests/test_hec.py` |
 | [9. Reconciliation](#9-reconciliation-completeness-and-accuracy) | Set hashes, hourly `reconcile`, `wd2l-audit-report` | As proposed, plus `type=reconcile` health records and a record when an ended stream's balance changes; report has `--export` and `--complete`; a gap closed by a re-send stays unbalanced for good (open item 7) | `wd2l/reconcile.py`, `wd2l/audit_report.py`, `tests/test_reconcile.py`, `tests/test_receiver_reconcile.py`, `tests/test_audit_report.py` |
-| [10. Protection](#10-protecting-the-audit-trail-protection-storage-failure-response) | Chain, self-check, append-only files, 1 year, own index, auditd rules, keep transferring | As proposed; self-check in a child process (output to temporary files, killed after 6 h); new file after a failed write; torn and hostile lines reported; free-space floor enforced; audit records to the SIEM need their own token | `wd2l/audit.py`, `deploy/common/wd2l-audit-seal.sh`, `deploy/common/wd2l-audit-seal.timer`, `deploy/log-server/wd2l.rules`, `deploy/receiver/wd2l.rules`, `tests/test_audit.py`, `tests/test_deploy.py` |
+| [10. Protection](#10-protecting-the-audit-trail-protection-storage-failure-response) | Chain, self-check, append-only files, 1 year, own index, auditd rules, keep transferring | As proposed; self-check in a child process (output to temporary files, killed after 6 h); new file after a short write; torn and hostile lines reported; free-space floor enforced; audit records to the SIEM need their own token | `wd2l/audit.py`, `deploy/common/wd2l-audit-seal.sh`, `deploy/common/wd2l-audit-seal.timer`, `deploy/log-server/wd2l.rules`, `deploy/receiver/wd2l.rules`, `tests/test_audit.py`, `tests/test_deploy.py` |
 | [11. Time](#11-time-time-stamps) | chrony every 60 s; thresholds; skew alarm | As proposed, plus `type=time_status` records; a sender that can't read chrony is an alarm too | `wd2l/hostinfo.py`, `wd2l/fault.py`, `tests/test_hostinfo.py`, `tests/test_fault.py` |
 | [12. Fault dashboard](#12-the-where-is-the-fault-dashboard) | Rules 1–11 in the receiver; six-part layout | Rules as proposed; `unknown` segments; rule 3 `e1-sender/boundary`, rule 8 `e2-capture`; the rules read the run with the newest heartbeat; 20 panels | `wd2l/fault.py`, `wd2l/receiver.py`, `docs/state-of-health.md`, `deploy/receiver/splunk/wd2l-health-dashboard.json`, `tests/test_fault.py`, `tests/test_dashboard.py` |
 | [13. Alerts](#13-alerts-added-or-changed) | Fault, reconciliation, audit and time alerts; daily review report | As proposed; every alert reads only the health index; the reconciliation alert fires only without open gaps; the daily report shows `sourcetype` | `deploy/receiver/splunk/savedsearches.conf`, `docs/operations.md`, `docs/planned-downtime.md`, `tests/test_siem_config.py` |
 | [14. Control mapping](#14-control-mapping-examples) | Examples per control | Unchanged; the rows point at built features | This table's `Where` column |
 | [15. Storage](#15-storage-estimate-storage-capacity-retention) | Audit 1–5 MB/day per side; health ~10 MB/day | Measured: audit about 16 KB on a quiet day, about 2.8 MB with three summaries a minute, and heavy loss adds about 1 MB a day (gaps summarised); health about 5.4 MB/day, plus one `gap` record per gap | `lab/run-lab.sh`, `lab/verify.py` |
-| [16. Phases](#16-implementation-phases) | Four phases; unit tests; nine lab fault runs | Done: four phases, then the final review fixes; 378 tests; all nine fault runs passed at f0c5cbd | `tests/`, `lab/run-lab.sh`, `lab/check_fault.py`, `.github/workflows/tests.yml` |
+| [16. Phases](#16-implementation-phases) | Four phases; unit tests; nine lab fault runs | Done: four phases, then the final review fixes; 381 tests; all nine fault runs passed at f0c5cbd | `tests/`, `lab/run-lab.sh`, `lab/check_fault.py`, `.github/workflows/tests.yml` |
 | [17. Open items](#17-open-items-for-the-security-and-system-owners) | Six questions for the owners | Still open, plus a seventh from the final review (permanent gaps); the code uses the proposed defaults | `deploy/receiver/splunk/authorize.conf`, `docs/deployment/retention-server.md` |
 
 ## 3. What exists today, and the gaps
@@ -212,7 +212,8 @@ alerts, the runbooks and the lab's checks use them. They gain the identity field
 >   `seq_last`). Past 100 keys in a minute, the rest share one `overflow` record.
 > * **`boundary_anomaly` and `output_failure`** are written once a minute from the growth of
 >   the receiver's counters. `reason` names the counter: for example `other_packets` (which
->   includes the wrong UDP source port), `bad_frames`, `digest_mismatch`, `output_dropped` or
+>   includes the wrong UDP source port), `bad_frames`, `digest_mismatch`, `records_bad`
+>   (records refused on the records stream; final review), `output_dropped` or
 >   `hec_rejected_events`.
 > * **Two added events:** `sender_boot_reset` and `stream_evicted`. Like `stream_missing`, they
 >   are evidence about completeness.
@@ -296,7 +297,9 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 >   `health.jsonl` the receiver's own.
 > * The receiver passes on only records that name the Enclave 1 sender (`enclave` 1,
 >   `component` `sender`). Anything else on the records stream, including JSON too deeply
->   nested to read, is dropped and counted in `records_bad` (final review). So Enclave 1 can't
+>   nested to read, is dropped and counted in `records_bad` (final review). That counter is
+>   audited once a minute as a `boundary_anomaly`, and its growth fires
+>   "WD2L - Unexpected traffic or damage on the tap". So Enclave 1 can't
 >   plant records about Enclave 2 in the audit index. As a second line, the dashboard's audit
 >   tile takes each side's health only from that side's sourcetype, and the daily review report
 >   shows the sourcetype.
@@ -485,8 +488,10 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 > * **Files:** `<dir>/audit-<UTC start time>.jsonl`, for example
 >   `audit-20261005T140322.418213Z.jsonl`, mode 0640 whatever the umask. The units use
 >   `/var/log/wd2l`; the install step creates it (owner `wd2l`, group `wd2l-audit`, mode 2750).
->   One `write` and one `fsync` per record. A new file starts past 64 MiB, and also after any
->   failed write, so nothing is ever appended after a partial line.
+>   One `write` and one `fsync` per record. A new file starts past 64 MiB, after a short write
+>   (so nothing is ever appended after a partial line), and when there is space again after
+>   the free-space floor. After a write that fails with nothing written, writing carries on in
+>   the same file.
 > * **Lock:** a `.lock` file in the directory, held with `flock`. An archive replay started while
 >   the live receiver runs refuses with "audit directory … is in use by another wd2l process".
 > * **Verification** reports a partial last line as `torn`, not as a break: a crash or a full
@@ -825,7 +830,7 @@ At the planned < 1,000 events/s:
 > | 2. Records stream and fault location | 39cc5d6..719e938 | 298 |
 > | 3. Reconciliation and report | 719e938..205b7b0 | 342 |
 > | 4. SIEM, deployment, docs | 205b7b0 to the commit that adds these notes | 354 |
-> | Final review fixes | 6df6126 to the commit that records them in these notes | 378 |
+> | Final review fixes | 6df6126 to the commit that records them in these notes | 381 |
 >
 > **Unit tests per area** (`tests/`):
 >

@@ -49,7 +49,7 @@ AUDITED_HEALTH = {"stream_start": "info", "stream_end": "success",
 SUMMARY_OUTCOME = {"gap": "failure", "gap_filled": "success"}
 # Counters whose growth is written once a minute as boundary_anomaly / output_failure.
 BOUNDARY_COUNTERS = ("other_packets", "bad_frames", "bad_events", "digest_mismatch",
-                     "event_too_big", "reasm_inconsistent")
+                     "event_too_big", "reasm_inconsistent", "records_bad")
 OUTPUT_COUNTERS = ("output_dropped", "hec_rejected_events", "hec_queue_overflow_events",
                    "hec_spool_overflow_events", "hec_records_lost",
                    "audit_hec_rejected_events", "audit_hec_spool_overflow_events",
@@ -630,7 +630,7 @@ class Receiver:
     def _heartbeat(self, t: StreamTracker, f: wire.Frame, now: float) -> None:
         try:
             info = json.loads(f.payload.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError):
+        except (UnicodeDecodeError, ValueError, RecursionError):  # Recursion: too deeply nested
             info = None
         if not isinstance(info, dict):
             self.counters["bad_frames"] += 1

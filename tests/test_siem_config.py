@@ -43,6 +43,15 @@ def test_reconciliation_alert_fires_only_without_open_gaps():
     assert re.search(r"\| where balanced_checks=0 AND gaps_open=0\s*$", search), search
 
 
+def test_tap_alert_watches_every_boundary_counter():
+    """Final review follow-up: the alert covers what the receiver audits as boundary_anomaly."""
+    from wd2l.receiver import BOUNDARY_COUNTERS
+    search = conf("savedsearches.conf")["WD2L - Unexpected traffic or damage on the tap"]["search"]
+    for name in ("other_packets", "bad_frames", "bad_events", "digest_mismatch", "records_bad"):
+        assert name in BOUNDARY_COUNTERS
+        assert "range(%s)" % name in search and "%s>0" % name in search, name
+
+
 def test_daily_review_shows_the_sourcetype():
     """Final review I6: the reviewer can see which records came in-band from Enclave 1."""
     search = conf("savedsearches.conf")["WD2L - Audit review (daily)"]["search"]
