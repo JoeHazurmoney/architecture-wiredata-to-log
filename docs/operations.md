@@ -167,10 +167,16 @@ keeps going while the trail is broken. The audit records are what is at risk.
   `/var/log/wd2l`. The `audit_failure` record in the SIEM gives the reason (for example
   `low_space` or `torn_write`).
 * **`audit_verify=failed`.** The daily self-check found the hash chain broken: a record was
-  changed, removed or reordered, or a file is damaged. On that host:
+  changed, removed or reordered, or a file is damaged. It also shows `failed` when the check
+  couldn't run: it could not start, or it ran over 6 hours and was killed. The service journal
+  then has an "audit chain self-check could not start" or "... timeout" line, and the
+  `audit_verify` record's `reason` says the same. On that host:
   ```bash
+  journalctl -u wd2l-receiver | grep 'self-check'     # wd2l-sender on the log server
   wd2l-audit-report verify --dir /var/log/wd2l
   ```
+  If the chain verifies and the journal shows `could not start` or `timeout`, fix the cause
+  (memory, a very large audit directory). The flag clears at the next daily check.
   Then compare with the other copies: the log retention server's copy for Enclave 1
   (`verify --dir <copy>`) and the `wd2l_audit` index (`verify --export FILE`). Tell the security
   owner and follow the incident process. Don't edit or delete the files.

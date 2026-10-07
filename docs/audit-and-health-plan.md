@@ -55,7 +55,7 @@ names the difference. Each section's **As built** note has the details.
 | [13. Alerts](#13-alerts-added-or-changed) | Fault, reconciliation, audit and time alerts; daily review report | As proposed; every alert reads only the health index; the reconciliation alert fires only without open gaps; the daily report shows `sourcetype` | `deploy/receiver/splunk/savedsearches.conf`, `docs/operations.md`, `docs/planned-downtime.md`, `tests/test_siem_config.py` |
 | [14. Control mapping](#14-control-mapping-examples) | Examples per control | Unchanged; the rows point at built features | This table's `Where` column |
 | [15. Storage](#15-storage-estimate-storage-capacity-retention) | Audit 1–5 MB/day per side; health ~10 MB/day | Measured: audit about 16 KB on a quiet day, about 2.8 MB with three summaries a minute, and heavy loss adds about 1 MB a day (gaps summarised); health about 5.4 MB/day, plus one `gap` record per gap | `lab/run-lab.sh`, `lab/verify.py` |
-| [16. Phases](#16-implementation-phases) | Four phases; unit tests; nine lab fault runs | Done: four phases, then the final review fixes; 381 tests; all nine fault runs passed at f0c5cbd | `tests/`, `lab/run-lab.sh`, `lab/check_fault.py`, `.github/workflows/tests.yml` |
+| [16. Phases](#16-implementation-phases) | Four phases; unit tests; nine lab fault runs | Done: four phases, then the final review fixes; 381 tests; all 16 CI lab runs, the nine fault runs among them, passed at 1e59b8a | `tests/`, `lab/run-lab.sh`, `lab/check_fault.py`, `.github/workflows/tests.yml` |
 | [17. Open items](#17-open-items-for-the-security-and-system-owners) | Six questions for the owners | Still open, plus a seventh from the final review (permanent gaps); the code uses the proposed defaults | `deploy/receiver/splunk/authorize.conf`, `docs/deployment/retention-server.md` |
 
 ## 3. What exists today, and the gaps
@@ -854,8 +854,9 @@ At the planned < 1,000 events/s:
 > receiver placed each one and then cleared it. `sender-hang` expects the one segment value
 > `e1-sender/boundary` (section 12). See
 > [running-the-lab.md](running-the-lab.md#9-inject-faults-and-see-where-the-receiver-places-them).
-> The nine fault runs passed locally at f0c5cbd (this commit changes only docs), and CI runs the
-> same nine on every push (`.github/workflows/tests.yml`). What they printed:
+> The nine fault runs passed locally at f0c5cbd, and again, with all 16 CI lab runs, after the final
+> review fixes (1e59b8a). CI runs the same nine on every push (`.github/workflows/tests.yml`).
+> What they printed at f0c5cbd:
 >
 > | `--fault` | Records, in order, as `(status, segment, rule)` | Check | Reconcile |
 > |---|---|---|---|
