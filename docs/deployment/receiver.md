@@ -78,7 +78,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--stream-retention` | 7 days | How long finished sender runs with nothing open stay fully tracked. Keep it at least as long as the pcap archive |
 | `--audit-dir` | none | The unit uses `/var/log/wd2l`. Hash-chained audit records, see [the audit plan](../audit-and-health-plan.md) and **Audit files** below |
 | `--audit-min-free-mb` | `256` | Free space the audit directory must keep. Below it, nothing more goes in the audit files: records are still forwarded, counted as missed, and `audit_ok` is false until there is space again |
-| `--hec-audit-token-file` | none | Token for the audit index. The unit uses `/etc/wd2l/hec-audit.token` |
+| `--hec-audit-token-file` | none | Token for the audit index. The unit uses `/etc/wd2l/hec-audit.token`. Required when `--audit-dir` and `--hec-url` are both given; if the site uses one token for both, name the `--hec-token-file` file again |
 | `--audit-index` | none | Index that receives audit records. The unit uses `wd2l_audit` |
 | `--pcap-dir` | none | Capture archive directory, to check that tcpdump is writing it. The unit uses `/var/lib/wd2l/pcap` |
 | `--capture-iface` | the `--live` NIC | NIC whose carrier and receive counters go into the health record |

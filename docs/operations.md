@@ -272,9 +272,15 @@ sudo -u wd2l env PYTHONPATH=/opt/wd2l python3 -m wd2l.receiver \
     --state /var/lib/wd2l/state.json \
     --hec-url https://siem.enclave2.example:8088 --hec-token-file /etc/wd2l/hec.token \
     --hec-ca /etc/wd2l/siem-ca.pem --spool-dir /var/lib/wd2l/spool \
-    --default-index enclave1 --health-index wd2l
+    --default-index enclave1 --health-index wd2l \
+    --audit-dir /var/log/wd2l --hec-audit-token-file /etc/wd2l/hec-audit.token
 sudo systemctl start wd2l-receiver
 ```
+
+`--audit-dir` makes the replay write its `replay_run` records, naming you, to the receiver's
+audit trail. Audit records need their own token: with `--audit-dir` and `--hec-url`, the receiver
+refuses to start without `--hec-audit-token-file`. If the site uses one token for both, name the
+same file twice.
 
 It prints a summary. `late_fills` is how many gap events it recovered; `open_gap_events` is
 what's still missing. tcpdump keeps capturing while the receiver is stopped, so the stop itself

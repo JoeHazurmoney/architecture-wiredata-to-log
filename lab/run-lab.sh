@@ -195,6 +195,7 @@ if [ -n "$FAULT" ]; then
   if [ "$FAULT" = siem-down ]; then
     echo lab-token > "$OUT/hec.token"
     RX_ARGS+=(--hec-url http://127.0.0.1:8088 --hec-token-file "$OUT/hec.token"
+              --hec-audit-token-file "$OUT/hec.token"
               --spool-dir "$OUT/spool")
   fi
 fi

@@ -1241,7 +1241,14 @@ def _stop_counters(rx: "Receiver") -> Dict[str, int]:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    a = build_parser().parse_args(argv)
+    p = build_parser()
+    a = p.parse_args(argv)
+    if a.audit_dir and a.hec_url and not a.hec_audit_token_file:
+        # On the data token, whose index list leaves the audit index out, the SIEM would refuse
+        # every audit record.
+        p.error("--audit-dir with --hec-url needs --hec-audit-token-file (a token that can write "
+                "the audit index). If the site uses one token for both, name the same file as "
+                "--hec-token-file")
     logsetup.setup(a.log_format, a.verbose)
     settings = {k: v for k, v in sorted(vars(a).items())}
     cfg_sha = auditlog.sha256_hex(auditlog.canonical(settings))

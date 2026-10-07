@@ -203,6 +203,18 @@ def test_replay_refuses_while_another_process_holds_the_audit_dir(tmp_path):
         held.close()
 
 
+def test_audit_records_to_the_siem_need_their_own_token_file(tmp_path, capsys):
+    """Final review I5: on the data token the SIEM would refuse every audit record."""
+    adir = tmp_path / "audit"
+    with pytest.raises(SystemExit) as e:
+        receiver.main(["--pcap", str(tmp_path / "x.pcap"), "--hec-url", "https://siem:8088",
+                       "--hec-token-file", str(tmp_path / "hec.token"), "--audit-dir", str(adir)])
+    assert e.value.code == 2
+    err = capsys.readouterr().err
+    assert "--hec-audit-token-file" in err and "same" in err and "usage:" in err
+    assert not adir.exists()
+
+
 def test_replay_leaves_the_saved_config_hash_alone(tmp_path):
     state = str(tmp_path / "state.json")
     r, _, a = make(tmp_path, state_path=state, config_sha256="a" * 64)
