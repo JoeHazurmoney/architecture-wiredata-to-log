@@ -40,10 +40,13 @@ STATE_VERSION = 2
 RX_TIME_FIELD = "wd2l_rx_time"
 HEX64 = re.compile(r"[0-9a-f]{64}")
 
-# Health records that are also audit events (§6), with their outcome.
-AUDITED_HEALTH = {"gap": "failure", "stream_start": "info", "stream_end": "success",
+# Health records that are also audit events (§6), with their outcome. `gap` is audited too, but
+# summarised once a minute per stream and reason (SUMMARY_OUTCOME): chronic loss would otherwise
+# write one audit record per gap.
+AUDITED_HEALTH = {"stream_start": "info", "stream_end": "success",
                   "stream_lost": "failure", "stream_missing": "failure",
                   "sender_boot_reset": "failure", "stream_evicted": "failure"}
+SUMMARY_OUTCOME = {"gap": "failure", "gap_filled": "success"}
 # Counters whose growth is written once a minute as boundary_anomaly / output_failure.
 BOUNDARY_COUNTERS = ("other_packets", "bad_frames", "bad_events", "digest_mismatch",
                      "event_too_big", "reasm_inconsistent")
@@ -892,6 +895,10 @@ class Receiver:
             self._health_record("gap", now, stream="%016x" % t.stream_id,
                                 first_seq=a, last_seq=b, count=n, reason=reason,
                                 **self._flag(t))
+            if self.audit is not None:
+                self.summary.note("gap", dict({"stream": "%016x" % t.stream_id,
+                                               "reason": reason}, **self._flag(t)),
+                                  count=n, seq_first=a, seq_last=b, gaps=1)
             self.dirty = True
 
     def _wall(self, now: float) -> float:
@@ -971,13 +978,18 @@ class Receiver:
         """Once a minute: summaries, counter growth, time quality, free space, self-check."""
         if self.audit is None:
             return
-        for event, fields in self.summary.drain():
-            self.audit.write(event, "success" if event == "gap_filled" else "info", **fields)
+        self._write_summaries()
         self._audit_deltas()
         self.audit.check_time()
         self.audit.check_space()
         self.audit.maybe_verify()
         self._drain_audit()
+
+    def _write_summaries(self) -> None:
+        """The summarised audit events (gap, gap_filled) noted since the last call."""
+        if self.audit is not None:
+            for event, fields in self.summary.drain():
+                self.audit.write(event, SUMMARY_OUTCOME.get(event, "info"), **fields)
 
     def _audit_deltas(self) -> None:
         cur: Dict[str, Any] = dict(self.counters, **self.reasm.counters, **self._stats())
@@ -1022,6 +1034,7 @@ class Receiver:
             self.emit_health(now)
         self.flush()
         self._reconcile(now)
+        self._write_summaries()     # e.g. gaps of events the output gave up on just now
         self._drain_audit()
         for o in self.outputs:
             o.close()
@@ -1242,6 +1255,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                       min_free_bytes=a.audit_min_free_mb * 1024 * 1024)
         except auditlog.AuditLocked as e:
             raise SystemExit(str(e))
+        audit.check_space()     # the floor holds from the first record
     if not a.pcap:
         # Before the HEC thread starts, so only the watcher thread receives SIGUSR1.
         logsetup.SignalWatcher({signal.SIGUSR1: logsetup.debug_toggle_handler(audit)}).start()

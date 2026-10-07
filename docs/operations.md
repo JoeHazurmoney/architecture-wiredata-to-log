@@ -148,9 +148,12 @@ record for an hour (`balanced=true` is what a healthy stream keeps writing).
 keeps going while the trail is broken. The audit records are what is at risk.
 
 * **`audit_ok=false`.** The host can't write its audit file, or its disk is below the free-space
-  limit (`--audit-min-free-mb`, 256 by default). Check free space and permissions on
-  `/var/log/wd2l`. The `audit_failure` record, in the file and in the SIEM, gives the reason
-  (for example `low_space` or `torn_write`).
+  limit (`--audit-min-free-mb`, 256 by default). Below the limit the host writes nothing more to
+  its audit files, so the state file, spool and archive keep their room. Records are still
+  forwarded, and once there is space again a new file starts with an `audit_failure` record
+  (`reason=recovered`) giving the number `missed`. Check free space and permissions on
+  `/var/log/wd2l`. The `audit_failure` record in the SIEM gives the reason (for example
+  `low_space` or `torn_write`).
 * **`audit_verify=failed`.** The daily self-check found the hash chain broken: a record was
   changed, removed or reordered, or a file is damaged. On that host:
   ```bash
@@ -347,8 +350,12 @@ Reading the numbers:
   without it the receiver reports everything before the first event it sees in the current stream
   as missing.
 * **Disk**: watch `/var/lib/wd2l/pcap` (hourly files, 7-day prune), `/var/lib/wd2l/spool`
-  (only grows while the SIEM is unreachable; capped at 10 GB) and `/var/log/wd2l` (the audit
-  files: under 2 GB a year, deleted after a year). In Enclave 1, watch the log
+  (only grows while the SIEM is unreachable; capped at 10 GB, and its `audit/` subdirectory,
+  the audit records' own spool, at 10 GB more) and `/var/log/wd2l` (the audit files, deleted
+  after a year). The audit files stay under 2 GB a year only because frequent events are
+  summarised: heavy loss writes at most one `gap` audit record a minute per stream and reason,
+  not one per gap. Below `--audit-min-free-mb` free, nothing more is written to them until
+  there is space again (see [Alert: audit trail](#alert-audit-trail)). In Enclave 1, watch the log
   retention server's disk against its 1-year estimate, and the aggregator's queue for it. A full
   queue means a window with no copy to replay from.
 * **Rejected HEC events** (`hec_rejected_events` > 0): look in `/var/lib/wd2l/spool/rejected/`.

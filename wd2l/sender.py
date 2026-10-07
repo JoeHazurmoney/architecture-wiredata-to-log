@@ -773,6 +773,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                       min_free_bytes=a.audit_min_free_mb * 1024 * 1024)
         except auditlog.AuditLocked as e:
             raise SystemExit(str(e))
+        audit.check_space()     # the floor holds from the first record
     # Before any other thread exists, so only the watcher thread receives SIGUSR1.
     logsetup.SignalWatcher({signal.SIGUSR1: logsetup.debug_toggle_handler(audit)}).start()
     sid = new_stream_id()

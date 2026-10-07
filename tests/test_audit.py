@@ -163,6 +163,7 @@ import collections
 import errno
 import os
 import re
+import time
 
 import wd2l
 from wd2l import hostinfo
@@ -351,9 +352,36 @@ def test_low_space_is_reported_once_and_clears(tmp_path):
     assert a.status()["audit_ok"] is False
     free[0] = 10 ** 9
     a.check_space()
-    notes = [(r["reason"], r["outcome"]) for r in read_audit(a.dir) if r["event"] == "audit_failure"]
-    assert notes == [("low_space", "failure"), ("space_ok", "info")]
+    # Below the floor nothing goes in the file (final review I4): low_space is forwarded only.
+    notes = [(r["reason"], r["outcome"]) for r in a.take_outbox() if r["event"] == "audit_failure"]
+    assert notes == [("low_space", "failure"), ("recovered", "info"), ("space_ok", "info")]
     assert a.status()["audit_ok"] is True
+
+
+def test_below_the_floor_every_write_fails_until_space_is_back(tmp_path):
+    """Final review I4: the floor is kept, so the state file, spool and archive keep their room."""
+    a = new_log(tmp_path, min_free_bytes=1000)
+    free = [10 ** 9]
+    a._disk_usage = lambda path: Usage(0, 0, free[0])
+    a.write("start", "success")
+    a.check_space()
+    free[0] = 10
+    a.check_space()
+    r = a.write("gap", "failure", count=3)
+    assert r["n"] is None and a.missed == 2 and a.status()["audit_ok"] is False
+    free[0] = 10 ** 9
+    a.check_space()
+    a.write("stop", "success")
+    on_disk = read_audit(a.dir)
+    assert [(x["event"], x.get("reason")) for x in on_disk] == [
+        ("start", None), ("audit_failure", "recovered"), ("audit_failure", "space_ok"),
+        ("stop", None)]
+    assert on_disk[1]["missed"] == 2 and "floor" in on_disk[1]["error"]
+    assert len(audit.audit_files(a.dir)) == 2           # writing resumed in a new file
+    forwarded = [(x["event"], x.get("reason"), x["n"]) for x in a.take_outbox()]
+    assert ("audit_failure", "low_space", None) in forwarded and ("gap", None, None) in forwarded
+    assert not any(x[1] == "write_failed" for x in forwarded)
+    assert audit.verify_dir(a.dir).ok
 
 
 def test_time_quality_is_recorded_first_and_on_each_change(tmp_path):
@@ -413,6 +441,78 @@ def test_self_check_runs_at_start_then_daily(tmp_path):
     a.maybe_verify()
     assert a.verify_proc is not None
     a.close()
+
+
+def test_self_check_output_does_not_block_the_child(tmp_path):
+    """Final review I4(c): over 64 KiB of output (one line per file) must not wedge the child
+    while the owner only polls."""
+    d = tmp_path / "a"
+    d.mkdir()
+    for i, rec in enumerate(chain(2000)):
+        name = "audit-20261005T%02d%02d%02d.000000Z.jsonl" % (i // 3600, i // 60 % 60, i % 60)
+        (d / name).write_bytes(audit.canonical(rec) + b"\n")
+    a = new_log(tmp_path)
+    assert a.n == 2000
+    a.start_verify()
+    end = time.time() + 60
+    res = None
+    while res is None and time.time() < end:
+        res = a.poll_verify()
+        time.sleep(0.05)
+    assert res is not None and res["result"] == "ok" and len(res["files"]) == 2000
+    assert a.status()["audit_verify"] == "ok"
+    a.close()
+
+
+def test_self_check_that_cannot_start_is_recorded_not_raised(tmp_path, monkeypatch):
+    """Final review I4(c), Minor 8: a fork failure must not stop the receiver."""
+    a = new_log(tmp_path)
+    a.write("start", "success")
+
+    def no_fork(*args, **kw):
+        raise OSError(errno.ENOMEM, "Cannot allocate memory")
+    monkeypatch.setattr(audit.subprocess, "Popen", no_fork)
+    a.maybe_verify()
+    assert a.verify_proc is None and a.status()["audit_verify"] == "failed"
+    last = read_audit(a.dir)[-1]
+    assert (last["event"], last["outcome"], last["reason"]) == \
+        ("audit_verify", "failure", "could not start")
+    assert "Cannot allocate memory" in last["error"]
+
+
+class HungChild:
+    def __init__(self, *args, **kw):
+        self.killed = False
+
+    def poll(self):
+        return -9 if self.killed else None
+
+    def kill(self):
+        self.killed = True
+
+    def terminate(self):
+        self.killed = True
+
+    def wait(self, timeout=None):
+        return -9
+
+
+def test_self_check_still_running_after_six_hours_is_killed(tmp_path, monkeypatch):
+    """Final review I4(c), Minor 8: a hung child must not leave audit_verify at its old value."""
+    t = [1000.0]
+    a = new_log(tmp_path, clock=lambda: t[0])
+    a.write("start", "success")
+    monkeypatch.setattr(audit.subprocess, "Popen", HungChild)
+    a.maybe_verify()
+    child = a.verify_proc
+    t[0] += 6 * 3600 - 1
+    a.maybe_verify()
+    assert a.verify_proc is child and not child.killed
+    t[0] += 2
+    a.maybe_verify()
+    assert child.killed and a.verify_proc is None and a.status()["audit_verify"] == "failed"
+    last = read_audit(a.dir)[-1]
+    assert (last["event"], last["outcome"], last["reason"]) == ("audit_verify", "failure", "timeout")
 
 
 def test_values_that_cannot_be_json_are_made_safe_not_raised(tmp_path):

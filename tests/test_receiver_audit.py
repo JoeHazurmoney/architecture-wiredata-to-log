@@ -43,11 +43,55 @@ def test_gaps_are_audit_events_and_reach_the_audit_output(tmp_path):
     r, out, a = make(tmp_path, gap_window=1)
     feed(r, ev(1) + ev(4), 0)
     r.tick(5)
+    r.audit_periodic()                                  # gaps are summarised once a minute
     [g] = events(a, "gap")
     assert (g["seq_first"], g["seq_last"], g["count"], g["reason"], g["outcome"]) == \
         (2, 3, 2, "not_received", "failure")
     assert g["stream"] == "%016x" % SID and g["segment"] == "e2-receiver"
     assert [x["event"] for x in out.audits if x["event"] == "gap"] == ["gap"]
+
+
+def test_gaps_are_summarised_per_minute_stream_and_reason(tmp_path):
+    """Final review I4(b): chronic loss must not write one audit record per gap. Health keeps
+    every range."""
+    r, out, a = make(tmp_path, out=SlowOutput(), gap_window=1)
+    feed(r, ev(1) + ev(3) + ev(5) + ev(7), 0)
+    r.tick(5)
+    out.fail(SID, 1)
+    r.tick(6)
+    assert events(a, "gap") == []
+    r.audit_periodic()
+    got = {g["reason"]: g for g in events(a, "gap")}
+    assert set(got) == {"not_received", "output_dropped"}
+    nr = got["not_received"]
+    assert (nr["count"], nr["gaps"], nr["seq_first"], nr["seq_last"], nr["outcome"]) == \
+        (3, 3, 2, 6, "failure")
+    assert (got["output_dropped"]["count"], got["output_dropped"]["seq_first"]) == (1, 1)
+    assert [(h["first_seq"], h["last_seq"], h["reason"]) for h in out.kinds("gap")] == [
+        (2, 2, "not_received"), (4, 4, "not_received"), (6, 6, "not_received"),
+        (1, 1, "output_dropped")]
+
+
+def test_a_gap_declared_at_stop_is_still_audited(tmp_path):
+    r, out, a = make(tmp_path, out=SlowOutput())
+    feed(r, ev(1), 0)
+    out.fail(SID, 1)
+    r.close(1)
+    [g] = events(a, "gap")
+    assert (g["reason"], g["count"]) == ("output_dropped", 1)
+
+
+def test_a_replay_below_the_audit_floor_still_forwards_its_records(tmp_path):
+    """Final review I4(a): the floor is checked at start, before the first record."""
+    p = replay_pcap(tmp_path)
+    adir, out = str(tmp_path / "audit"), str(tmp_path / "out")
+    receiver.main(["--pcap", p, "--out-dir", out, "--audit-dir", adir, "--chronyc", "/bin/false",
+                   "--audit-min-free-mb", str(2 ** 40)])
+    assert read_audit(adir) == []
+    with open(os.path.join(out, "audit.jsonl")) as f:
+        fwd = [json.loads(x) for x in f]
+    assert [x["event"] for x in fwd[:2]] == ["audit_failure", "start"]
+    assert fwd[0]["reason"] == "low_space" and all(x["n"] is None for x in fwd)
 
 
 def test_stream_start_and_clean_end_are_audited(tmp_path):

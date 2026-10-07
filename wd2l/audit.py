@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections import deque
@@ -43,6 +44,8 @@ OUTCOMES = ("success", "failure", "info")
 HOME_SEGMENT = {"sender": "e1-sender", "receiver": "e2-receiver", "replay": "e2-receiver"}
 _UNSET = object()
 MIN_FIELDS = {"seq_first"}
+SUM_FIELDS = {"gaps"}
+VERIFY_TIMEOUT = 6 * 3600.0     # a self-check still running after this is killed
 
 
 def canonical(rec: Dict[str, Any]) -> bytes:
@@ -206,7 +209,8 @@ class Summarizer:
     def note(self, event: str, key: Optional[Dict[str, Any]] = None, count: int = 1,
              **values: Any) -> None:
         """`key`: the fields that split the summary (host, source, reason...). `values`: numbers
-        keep the maximum (or the minimum, for MIN_FIELDS); strings are collected."""
+        keep the maximum (the minimum for MIN_FIELDS, the sum for SUM_FIELDS); strings are
+        collected."""
         key = dict(key or {})
         k = (event, tuple(sorted(key.items())))
         with self.lock:
@@ -222,6 +226,9 @@ class Summarizer:
                 if v is None:
                     continue
                 if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    if name in SUM_FIELDS:
+                        item["num"][name] = item["num"].get(name, 0) + v
+                        continue
                     old = item["num"].get(name, v)
                     item["num"][name] = min(old, v) if name in MIN_FIELDS else max(old, v)
                 else:
@@ -300,6 +307,9 @@ class AuditLog:
       audit_ok=false); the first record written afterwards is an audit_failure saying how many
       records the file missed. After a short write (a partial line on disk) writing resumes in a
       new file, so nothing is ever appended to a partial line.
+    * While free space is below min_free_bytes (check_space), every write is such a failure, so
+      the audit files never take the room the state file, spool and archive need. Writing
+      resumes in a new file once there is space again.
     * Every record also goes to `outbox`, for the owner to forward (in-band, or to the SIEM).
     """
 
@@ -333,6 +343,8 @@ class AuditLog:
         self.low_space = False
         self.time_state: Any = _UNSET
         self.verify_proc: Optional[subprocess.Popen] = None
+        self.verify_files: List[Any] = []     # the child's stdout and stderr
+        self.verify_timeout = VERIFY_TIMEOUT
         self.verify_result: Optional[str] = None
         self.verify_upto = 0
         self.last_verify: Optional[float] = None
@@ -410,6 +422,10 @@ class AuditLog:
 
     def _append(self, rec: Dict[str, Any]) -> bool:
         """Chain the record and append it to the file. Returns False if it isn't in the file."""
+        if self.low_space:
+            self._close_file()      # resume in a new file once there is space again
+            return self._failed(rec, OSError(errno.ENOSPC, "free space below the audit floor "
+                                             "(--audit-min-free-mb, %d bytes)" % self.min_free))
         rec["n"], rec["prev_hash"] = self.n + 1, self.last_hash
         rec["hash"] = record_hash(rec)
         line = canonical(rec) + b"\n"
@@ -438,9 +454,11 @@ class AuditLog:
             self.ok, self.error = False, str(e)
             log.error("audit file write failed (%s); the transfer continues and records are "
                       "still forwarded", e)
-            fail = self._base("audit_failure", "failure")
-            fail.update(reason="write_failed", error=str(e), n=None, prev_hash=None, hash=None)
-            self._queue(fail)
+            if not self.low_space:      # below the floor, check_space's low_space record says why
+                fail = self._base("audit_failure", "failure")
+                fail.update(reason="write_failed", error=str(e), n=None, prev_hash=None,
+                            hash=None)
+                self._queue(fail)
         return False
 
     def _new_file(self) -> None:
@@ -499,13 +517,16 @@ class AuditLog:
             self.write("time_quality", "failure" if alarm else "success", reason=alarm or "ok")
 
     def check_space(self) -> None:
+        """Compare free space with the floor. Below it, every write fails (see _append) until
+        a later call finds space again. The owners call this at start and about once a minute."""
         try:
             free = self._disk_usage(self.dir).free
         except OSError:
             return
         low = free < self.min_free
         if low != self.low_space:
-            self.low_space = low
+            with self.lock:
+                self.low_space = low
             if low:
                 log.error("audit directory %s: %d bytes free, below %d", self.dir, free, self.min_free)
                 self.write("audit_failure", "failure", reason="low_space", free_bytes=free,
@@ -515,7 +536,10 @@ class AuditLog:
 
     def start_verify(self) -> None:
         """Check the chain in a child process (`python3 -m wd2l.audit verify`), up to where it
-        stands now. A child keeps the capture loop's interpreter free."""
+        stands now. A child keeps the capture loop's interpreter free. Its output goes to
+        temporary files, not pipes: a pipe read only once the child has exited fills up (one
+        line per audit file) and the child never exits. A child that can't be started is a
+        failed check, never an exception for the caller."""
         if self.verify_proc is not None:
             return
         with self.lock:
@@ -527,19 +551,62 @@ class AuditLog:
         root = os.path.dirname(hostinfo.PKG_DIR)
         env["PYTHONPATH"] = root + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
         self.verify_upto = n
-        self.verify_proc = subprocess.Popen(
-            [sys.executable, "-m", "wd2l.audit", "verify", self.dir, "--upto", str(n),
-             "--upto-hash", h], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        files: List[Any] = []
+        try:
+            files = [tempfile.TemporaryFile(), tempfile.TemporaryFile()]
+            self.verify_proc = subprocess.Popen(
+                [sys.executable, "-m", "wd2l.audit", "verify", self.dir, "--upto", str(n),
+                 "--upto-hash", h], stdout=files[0], stderr=files[1], env=env)
+        except (OSError, subprocess.SubprocessError) as e:
+            for f in files:
+                f.close()
+            self._verify_failed("could not start", str(e))
+            return
+        self.verify_files = files
+
+    def _end_verify(self) -> Tuple[bytes, bytes]:
+        """Forget the child; return what it wrote to stdout and stderr."""
+        self.verify_proc = None
+        out = []
+        for f in self.verify_files:
+            try:
+                f.seek(0)
+                out.append(f.read())
+            except OSError:
+                out.append(b"")
+            f.close()
+        self.verify_files = []
+        return (out[0], out[1]) if len(out) == 2 else (b"", b"")
+
+    def _verify_failed(self, reason: str, error: str) -> Dict[str, Any]:
+        log.error("audit chain self-check %s: %s", reason, error)
+        self.verify_result = "failed"
+        self.write("audit_verify", "failure", upto=self.verify_upto, reason=reason, error=error)
+        return {"result": "failed", "files": [], "problems": ["self-check %s: %s" % (reason, error)]}
 
     def poll_verify(self, wait: bool = False) -> Optional[Dict[str, Any]]:
-        """Collect a finished self-check and record it as audit_verify."""
+        """Collect a finished self-check and record it as audit_verify. A child still running
+        after verify_timeout seconds is killed, and the check is recorded as failed."""
         p = self.verify_proc
-        if p is None or (not wait and p.poll() is None):
+        if p is None:
             return None
-        out, err = p.communicate()
-        self.verify_proc = None
+        if not wait and p.poll() is None:
+            if self.last_verify is None or self.clock() - self.last_verify < self.verify_timeout:
+                return None
+            p.kill()
+            try:
+                p.wait(5)
+            except subprocess.TimeoutExpired:
+                pass
+            self._end_verify()
+            return self._verify_failed("timeout", "still running after %d s, killed"
+                                       % self.verify_timeout)
+        p.wait()
+        out, err = self._end_verify()
         try:
             res = json.loads(out)
+            if not isinstance(res, dict):
+                raise ValueError("not a JSON object")
         except ValueError:
             res = {"result": "failed", "files": [], "problems": [
                 "verifier failed: %s" % err.decode("utf-8", "replace")[-300:]]}
@@ -570,6 +637,9 @@ class AuditLog:
                 except subprocess.TimeoutExpired:
                     p.kill()
             self.verify_proc = None
+            for f in self.verify_files:
+                f.close()
+            self.verify_files = []
             self._close_file()
             if self._lockfd is not None:
                 os.close(self._lockfd)
