@@ -119,7 +119,8 @@ trouble is, not only that there is some.
 
 The sender's heartbeats carry a count and a hash of every event it has numbered, up to a cut. The
 receiver keeps the same hash of what it delivered and compares them at each cut.
-"WD2L - Reconciliation not balanced" fires on a `type=reconcile` record with `balanced=false`.
+"WD2L - Reconciliation not balanced" fires when a stream has had no balanced `type=reconcile`
+record for an hour (`balanced=true` is what a healthy stream keeps writing).
 
 1. **Open gaps?** `gaps_open` above 0 explains it: events are missing. Replay the archive or
    re-send them from Enclave 1 ([events lost](#alert-events-lost-typegap)). The stream balances

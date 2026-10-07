@@ -93,11 +93,14 @@ journalctl -u wd2l-sender -n 3 --no-pager
 ```
 
 The last line's message reads `final: last_seq=<N> {… "shutdown_unread_bytes": 0 …}`. With
-`--log-format json` the line is a JSON object, and this pulls the message out:
+`--log-format json` the line is a JSON object, and this shows the message from `final:` on:
 
 ```bash
-journalctl -u wd2l-sender -n 3 -o cat | grep -o '"msg": "[^"]*"'
+journalctl -u wd2l-sender -n 3 -o cat | grep -o 'final: last_seq=.*'
 ```
+
+In JSON logs the quotes inside the counters appear escaped, so look for
+`\"shutdown_unread_bytes\": 0`.
 
 Note `<N>` and tell Enclave 2. If `shutdown_unread_bytes` isn't 0, input was still arriving: see
 [If something went wrong](#if-something-went-wrong).
