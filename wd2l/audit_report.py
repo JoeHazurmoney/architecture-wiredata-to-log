@@ -35,7 +35,7 @@ def unwrap(obj: Any) -> Optional[Dict[str, Any]]:
     if isinstance(obj, dict) and isinstance(obj.get("_raw"), str):
         try:
             obj = json.loads(obj["_raw"])
-        except ValueError:
+        except (ValueError, RecursionError):
             return None
     return obj if isinstance(obj, dict) and "event" in obj else None
 
@@ -60,7 +60,7 @@ def load(dirs: Sequence[str], exports: Sequence[str]) -> tuple[List[Dict[str, An
                                     skipped.append(f"{path}:{line_num}: not a JSON object")
                                 else:
                                     out.append(obj)
-                            except ValueError:
+                            except (ValueError, RecursionError):
                                 skipped.append(f"{path}:{line_num}: not JSON")
             except (OSError, IOError) as e:
                 skipped.append(f"{path}: {e}")
@@ -71,7 +71,7 @@ def load(dirs: Sequence[str], exports: Sequence[str]) -> tuple[List[Dict[str, An
                     if line.strip():
                         try:
                             obj = json.loads(line)
-                        except ValueError:
+                        except (ValueError, RecursionError):
                             skipped.append(f"{path}:{line_num}: not JSON")
                             continue
                         rec = unwrap(obj)

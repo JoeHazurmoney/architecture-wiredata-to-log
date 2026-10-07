@@ -207,6 +207,26 @@ def test_events_with_unreadable_lines(tmp_path, capsys):
     assert "skipped 1 unreadable lines" in err
 
 
+DEEP = "[" * 100000 + "]" * 100000
+
+
+def test_deeply_nested_lines_are_unreadable_not_a_crash(tmp_path, capsys):
+    """Final review Minor 9: json.loads raises RecursionError, not ValueError, on these."""
+    e1, _ = make(tmp_path)
+    [path] = auditlog.audit_files(e1)
+    with open(path, "a") as f:
+        f.write(DEEP + "\n")
+    assert audit_report.main(["events", "--dir", e1]) == 0
+    out, err = capsys.readouterr()
+    assert len(json.loads(out)) == 2 and "skipped 1 unreadable lines" in err
+    exp = tmp_path / "export.json"
+    with open(exp, "w") as f:
+        f.write(DEEP + "\n")
+        f.write(json.dumps({"result": {"_raw": DEEP}}) + "\n")
+    code, out = run(capsys, ["verify", "--export", str(exp)])
+    assert code == 1 and len(json.loads(out)["unreadable"]) == 2
+
+
 def test_help_returns_zero(capsys):
     code = audit_report.main(["--help"])
     assert code == 0

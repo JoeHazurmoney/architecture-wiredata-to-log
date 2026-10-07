@@ -53,12 +53,18 @@ def test_audit_tile_takes_each_side_only_from_its_own_sourcetype():
     assert "(sourcetype=wd2l:sender:health component=sender)" in q
 
 
+def test_reconciliation_tile_without_records_is_unknown_not_ok():
+    """Final review Minor 5: "0 of 0 balanced" must not show green."""
+    q = load()["dataSources"]["ds_reconcile"]["options"]["query"]
+    assert 'state=if(streams=0,"UNKNOWN",' in q
+
+
 def test_single_values_colour_every_state_their_source_can_emit():
     viz = load()["visualizations"]
     expected = {
         "viz_status": {"OK", "AMBER", "RED", "UNKNOWN"},
         "viz_time": {"OK", "ALARM", "UNKNOWN"},
-        "viz_reconcile": {"OK", "RED"},
+        "viz_reconcile": {"OK", "RED", "UNKNOWN"},
         "viz_audit": {"OK", "RED"},
     }
     for vid, states in expected.items():

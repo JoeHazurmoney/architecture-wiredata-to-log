@@ -415,6 +415,7 @@ class HecOutput(Output):
         s = dict(self.counters)
         s["hec_queue"] = self.q.qsize()
         s["hec_spool_files"] = len(self.spool.files())
+        s["hec_spool_bytes"] = self.spool.size()   # kept as files come and go: no directory walk
         return {self.stat_prefix + k: v for k, v in s.items()}
 
     # -- consumer side (hec thread)

@@ -161,6 +161,21 @@ def test_close_spools_unsent(tmp_path):
     assert spooled.count(b"\n") == 3
 
 
+def test_spool_bytes_are_reported(tmp_path):
+    """Final review Minor 1: the e2-siem panel shows spool bytes, not only files."""
+    probe = FakeSplunk()
+    port = probe.port
+    probe.stop()
+    o = hec("http://127.0.0.1:%d" % port, tmp_path, retry_interval=60)
+    assert o.stats()["hec_spool_bytes"] == 0
+    for i in range(3):
+        o.event({"_raw": "e"}, 1, i)
+    o.close()
+    on_disk = sum(os.path.getsize(tmp_path / "spool" / f)
+                  for f in os.listdir(tmp_path / "spool") if f.endswith(".ndjson"))
+    assert on_disk > 0 and o.stats()["hec_spool_bytes"] == on_disk
+
+
 def test_force_index(splunk, tmp_path):
     o = hec("http://127.0.0.1:%d" % splunk.port, tmp_path, force_index="imported")
     o.event({"_raw": "x", "index": "net"}, 1, 1)

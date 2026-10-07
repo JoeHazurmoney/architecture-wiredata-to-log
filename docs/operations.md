@@ -48,7 +48,7 @@ log flow.
 | `reasm_expired`, `reasm_evicted`, `event_too_big` | Split events that never completed | 0 |
 | `sender_drops`, `sender_truncated`, `sender_bad_input`, `sender_unread_bytes` | From the sender's heartbeat | 0 (truncated: expected if you have huge events) |
 | `sender_opaque_events` | Events the sender flagged for an opaque blob (`wd2l_opaque`), this sender run | 0, or the level known for your sources |
-| `hec_events_sent`, `hec_spool_files`, `hec_posts_failed`, `hec_rejected_events`, `hec_queue_overflow_events` | SIEM delivery | spool 0, rejected 0, overflow 0 |
+| `hec_events_sent`, `hec_spool_files`, `hec_spool_bytes`, `hec_posts_failed`, `hec_rejected_events`, `hec_queue_overflow_events` | SIEM delivery. With `--hec-audit-token-file`, the same with an `audit_` prefix for the audit records' own output | spool 0, rejected 0, overflow 0 |
 | `records_delivered`, `records_bad` | Audit and health records from Enclave 1 handed to the SIEM, and ones that were refused: malformed, or not naming the Enclave 1 sender (`enclave` 1, `component` `sender`) | growing; 0 |
 | `fault_status`, `fault_segment`, `fault_rule`, `fault_detail` | The receiver's verdict on where the fault is ([state-of-health.md](state-of-health.md)) | `ok`; the rest empty |
 | `seg_e1_input`, `seg_e1_sender`, `seg_boundary`, `seg_e2_capture`, `seg_e2_receiver`, `seg_e2_siem` | State of each segment | `ok` (`unknown` while it can't be seen) |

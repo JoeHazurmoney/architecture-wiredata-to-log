@@ -796,6 +796,7 @@ class Receiver:
                 sender_hash=res["sender_hash"], receiver_hash=res["receiver_hash"],
                 balanced=res["balanced"])
         t.rc.written = (res["cut"], res["balanced"])
+        self.dirty = True       # saved, so a crash while idle doesn't write the record again
 
     def _newest_run(self) -> Optional[StreamTracker]:
         """The sender run the fault rules read: the data stream whose latest heartbeat is the

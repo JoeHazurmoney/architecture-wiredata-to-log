@@ -148,6 +148,21 @@ def test_reconcile_records_at_stream_end_and_when_the_balance_changes(tmp_path):
     assert [(h["balanced"], h["gaps_open"]) for h in out.kinds("reconcile")] == [(False, 1), (True, 0)]
 
 
+def test_the_stream_end_record_is_saved_so_a_crash_does_not_repeat_it(tmp_path):
+    """Final review Minor 19: writing the record changes the state; it must be saved."""
+    state = str(tmp_path / "state.json")
+    s, data, hb = run()
+    r, out = rx(state_path=state)
+    feed(r, data + hb, 0)
+    r.tick(1)                            # saves the events, then writes the stream-end record
+    assert len(out.kinds("reconcile")) == 1 and r.dirty
+    r.last_save -= 10                    # past the once-a-second save limit
+    r.tick(2)                            # then the receiver crashes while idle
+    r2, out2 = rx(state_path=state)
+    r2.tick(3)
+    assert out2.kinds("reconcile") == []
+
+
 def test_hourly_reconcile_record_for_a_live_stream(tmp_path):
     a = auditlog.AuditLog(str(tmp_path / "audit"), "receiver", 2, host="rx", actor="me", build="b")
     sock = FakeSock()

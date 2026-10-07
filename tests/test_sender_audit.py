@@ -106,6 +106,12 @@ def test_send_failures_are_summarised(tmp_path):
     assert (r["error"], r["count"], r["outcome"]) == ("EMSGSIZE", 1, "failure")
 
 
+def noted(s, event):
+    """How many times `event` has been noted in the sender's summary so far."""
+    with s.summary.lock:
+        return sum(v["count"] for (e, _), v in s.summary.items.items() if e == event)
+
+
 def test_bad_input_and_auth_failures_are_summarised(tmp_path):
     s, a, _ = make(tmp_path)
     srv = InputServer(("127.0.0.1", 0), s, "s3cret")
@@ -115,8 +121,9 @@ def test_bad_input_and_auth_failures_are_summarised(tmp_path):
             c = socket.create_connection(srv.server_address)
             c.sendall(payload)
             c.close()
-        assert wait_for(lambda: s.counters["bad_input"] == 2)
-        assert wait_for(lambda: any(e == "auth_failure" for e, _ in list(s.summary.items)))
+        # Wait on the summary, not the counter: the counter is bumped before the note.
+        assert wait_for(lambda: noted(s, "input_rejected") == 2)
+        assert wait_for(lambda: noted(s, "auth_failure") == 1)
     finally:
         srv.shutdown()
         srv.server_close()

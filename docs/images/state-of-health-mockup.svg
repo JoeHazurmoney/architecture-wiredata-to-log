@@ -562,15 +562,18 @@
     <text x="1218" y="1376" class="key">hec_spool_files</text>
     <text x="1412" y="1376" class="num end">0</text>
     <line x1="1218" y1="1385" x2="1412" y2="1385" stroke="#eaeef2"/>
-    <text x="1218" y="1402" class="key">hec_posts_failed</text>
+    <text x="1218" y="1402" class="key">hec_spool_bytes</text>
     <text x="1412" y="1402" class="num end">0</text>
     <line x1="1218" y1="1411" x2="1412" y2="1411" stroke="#eaeef2"/>
-    <text x="1218" y="1428" class="key">hec_rejected_events</text>
+    <text x="1218" y="1428" class="key">hec_posts_failed</text>
     <text x="1412" y="1428" class="num end">0</text>
     <line x1="1218" y1="1437" x2="1412" y2="1437" stroke="#eaeef2"/>
-    <text x="1218" y="1454" class="key">output_dropped</text>
+    <text x="1218" y="1454" class="key">hec_rejected_events</text>
     <text x="1412" y="1454" class="num end">0</text>
     <line x1="1218" y1="1463" x2="1412" y2="1463" stroke="#eaeef2"/>
+    <text x="1218" y="1480" class="key">output_dropped</text>
+    <text x="1412" y="1480" class="num end">0</text>
+    <line x1="1218" y1="1489" x2="1412" y2="1489" stroke="#eaeef2"/>
   </g>
 
   <!-- 20. Audit events to review: index=wd2l_audit, visible only to the wd2l_auditor role -->

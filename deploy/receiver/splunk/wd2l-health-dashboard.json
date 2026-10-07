@@ -100,7 +100,7 @@
       "name": "ds_d_siem",
       "options": {
         "extend": "ds_latest",
-        "query": "| table hec_queue hec_spool_files hec_posts_failed hec_rejected_events output_dropped | transpose 0 column_name=signal | rename \"row 1\" as value"
+        "query": "| table hec_queue hec_spool_files hec_spool_bytes hec_posts_failed hec_rejected_events output_dropped | transpose 0 column_name=signal | rename \"row 1\" as value"
       }
     },
     "ds_heard": {
@@ -114,7 +114,7 @@
       "type": "ds.search",
       "name": "ds_reconcile",
       "options": {
-        "query": "index=wd2l sourcetype=wd2l:health type=reconcile earliest=-25h | stats latest(balanced) as b by stream | stats count as streams count(eval(b=\"true\")) as ok | eval shown=ok.\" of \".streams.\" balanced\", state=if(ok=streams,\"OK\",\"RED\") | table shown state"
+        "query": "index=wd2l sourcetype=wd2l:health type=reconcile earliest=-25h | stats latest(balanced) as b by stream | stats count as streams count(eval(b=\"true\")) as ok | eval shown=ok.\" of \".streams.\" balanced\", state=if(streams=0,\"UNKNOWN\",if(ok=streams,\"OK\",\"RED\")) | table shown state"
       }
     },
     "ds_audit": {

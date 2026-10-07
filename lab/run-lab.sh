@@ -99,9 +99,22 @@ v6off() {
 }
 
 cleanup() {
-  for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill "$p" 2>/dev/null || true; done
-  wait 2>/dev/null || true
-  [ "$KEEP" = 1 ] || "$HERE/teardown.sh" >/dev/null 2>&1 || true
+  set +e
+  # Every process this run started, including any a fault left frozen (SIGSTOP): wake them
+  # first so they can act on SIGTERM, and never wait forever (an aborted run must not hang CI).
+  local all=("${PIDS[@]:-}" $(jobs -p)) p alive
+  for p in "${all[@]}"; do [ -n "$p" ] && kill -CONT "$p" 2>/dev/null; done
+  for p in "${all[@]}"; do [ -n "$p" ] && kill -TERM "$p" 2>/dev/null; done
+  for _ in $(seq 50); do
+    alive=0
+    for p in "${all[@]}"; do [ -n "$p" ] && kill -0 "$p" 2>/dev/null && alive=1; done
+    [ "$alive" = 0 ] && break
+    sleep 0.1
+  done
+  for p in "${all[@]}"; do [ -n "$p" ] && kill -KILL "$p" 2>/dev/null; done
+  wait 2>/dev/null
+  [ "$KEEP" = 1 ] || "$HERE/teardown.sh" >/dev/null 2>&1
+  return 0
 }
 trap cleanup EXIT
 

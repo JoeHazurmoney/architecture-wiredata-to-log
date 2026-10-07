@@ -142,6 +142,13 @@ def test_verify_cli(tmp_path, capsys):
     assert audit.main(["verify", str(tmp_path), "--upto", "9"]) == 1
 
 
+def test_verify_cli_fails_when_there_is_nothing_to_verify(tmp_path, capsys):
+    """Final review Minor 7: an empty or wiped directory must not verify as ok."""
+    assert audit.main(["verify", str(tmp_path)]) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["result"] == "failed" and out["problems"] == ["no audit records found"]
+
+
 def test_nan_record_is_reported_not_crash():
     # A record with NaN in JSON (json.loads accepts NaN, but canonical refuses it)
     recs = chain(2)

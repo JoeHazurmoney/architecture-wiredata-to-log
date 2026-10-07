@@ -656,6 +656,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     v.add_argument("--upto-hash", help="the hash record --upto must have")
     a = p.parse_args(argv)
     res = verify_dir(a.directory, a.upto, a.upto_hash)
+    if res.records == 0 and a.upto is None:
+        # An empty or wiped directory proves nothing (same wording as wd2l-audit-report).
+        res.problems.append("no audit records found")
     print(json.dumps(res.to_json(), sort_keys=True))
     return 0 if res.ok else 1
 
