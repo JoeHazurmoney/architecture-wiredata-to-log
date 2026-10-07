@@ -49,6 +49,26 @@ def test_heartbeat_carries_the_snapshot(tmp_path):
     assert s.health_record()["nic_tx_packets"] == 10
 
 
+class UnreadableTQ:
+    def read(self):
+        return {"synced": None, "source": "unavailable", "error": "chronyc: not found"}
+
+    def alarm(self, q=None):
+        return "unavailable"
+
+
+def test_heartbeat_says_when_chrony_cannot_be_read():
+    """Final review I1: "unavailable" must reach Enclave 2, not vanish with the None values."""
+    sock = FakeSock()
+    s = Sender(("10.255.255.2", 5514), sock=sock, rate_pps=0, time_quality=UnreadableTQ())
+    s.send_heartbeat()
+    info = last_info(sock)
+    assert info["time_unavailable"] is True
+    assert not {"time_synced", "time_stratum", "time_offset_ms"} & set(info)
+    s.tq = FakeTQ()
+    assert "time_unavailable" not in s.snapshot()
+
+
 def test_pacing_time_is_counted_as_stall():
     sock = FakeSock()
     s = Sender(("10.255.255.2", 5514), sock=sock, rate_pps=500)
@@ -116,8 +136,8 @@ def test_worst_case_heartbeat_fits_one_packet():
     snap = {"stall_s": 123456789.123, "cpu_pct": 9999.9, "rss_mb": 1048576.5, "clients": 99999,
             "input_backlog_bytes": 2 ** 63, "nic_carrier": False, "nic_tx_packets": 2 ** 63,
             "nic_tx_errors": 2 ** 63, "nic_tx_dropped": 2 ** 63, "time_stratum": 16,
-            "time_offset_ms": -123456789.123, "time_synced": False, "audit_ok": False,
-            "audit_n": 2 ** 63}
+            "time_offset_ms": -123456789.123, "time_synced": False, "time_unavailable": True,
+            "audit_ok": False, "audit_n": 2 ** 63}
     frame = s._heartbeat_frame(True, snap)
     info = json.loads(wire.decode(frame).payload)
     assert "nic_tx_dropped" in info and info["events_hash"] == "f" * 64

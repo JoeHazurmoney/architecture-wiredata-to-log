@@ -72,7 +72,9 @@ One piece, JSON, sent every second and once more on clean shutdown:
 ```
 
 Keys are sent in sorted order, as shown. Since wd2l 0.2.0 the heartbeat also carries a snapshot of
-Enclave 1 (input, sender process, egress NIC, time, audit); see the ICD §8 for every key.
+Enclave 1 (input, sender process, egress NIC, time, audit); see the ICD §8 for every key. When the
+sender can't read chrony, `time_offset_ms`, `time_stratum` and `time_synced` are left out and
+`"time_unavailable":true` is sent instead.
 
 `seq` in the header is the last event number sent. That's what lets the receiver notice events
 lost at the very end of a burst, when nothing newer arrives to reveal the hole. `final` is present

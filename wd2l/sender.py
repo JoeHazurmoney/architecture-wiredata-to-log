@@ -352,6 +352,10 @@ class Sender:
             q = self.tq.read()
             snap.update(time_stratum=q.get("stratum"), time_offset_ms=q.get("offset_ms"),
                         time_synced=q.get("synced"))
+            if q.get("synced") is None:
+                # chrony can't be read: the None values are left out below, so say so
+                # explicitly, or Enclave 2 would see no time keys and no alarm.
+                snap["time_unavailable"] = True
         if self.audit is not None:
             st = self.audit.status()
             snap.update(audit_ok=st["audit_ok"], audit_n=st["audit_n"])

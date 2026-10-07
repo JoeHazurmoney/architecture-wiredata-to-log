@@ -445,7 +445,7 @@ flowchart LR
 
 | You see | It means | Do | See also |
 |---|---|---|---|
-| Panel 6 red: `time_status` is `alarm`, with the reason in `time_reason`, for example "receiver: unsynced", "sender: stratum 5 > 3" or "clock skew 0.081 s > 0.05 s". Panel 10 may be outside the ±50 ms lines. The pipeline and the transfer status don't change. "WD2L - Time quality" fires | One side's clock is unsynchronised, above stratum 3 or more than 100 ms off, or the two enclaves disagree by more than 50 ms. Events still arrive, but their times, and the delays in panel 9, can't be trusted | On the side `time_reason` names, run `chronyc tracking`, then check that enclave's GPS receiver and the switch that serves time at stratum 2. Skew while both sides are synced points to one side's GPS receiver or switch | [Measuring delays](operations.md#measuring-delays) |
+| Panel 6 red: `time_status` is `alarm`, with the reason in `time_reason`, for example "receiver: unsynced", "sender: stratum 5 > 3", "sender: unavailable" (chrony can't be read) or "clock skew 0.081 s > 0.05 s". Panel 10 may be outside the ±50 ms lines. The pipeline and the transfer status don't change. "WD2L - Time quality" fires | One side's clock is unsynchronised, above stratum 3, more than 100 ms off or can't be read, or the two enclaves disagree by more than 50 ms. Events still arrive, but their times, and the delays in panel 9, can't be trusted | On the side `time_reason` names, run `chronyc tracking` (for "unavailable", check that `chronyd` runs and the wd2l service can run `chronyc`), then check that enclave's GPS receiver and the switch that serves time at stratum 2. Skew while both sides are synced points to one side's GPS receiver or switch | [Measuring delays](operations.md#measuring-delays) |
 
 ### Audit trail fault
 
@@ -538,5 +538,5 @@ red.
 | "WD2L - Fault segment" | The receiver's fault status moved away from `ok` (`type=fault`) | 1, 1b, 3, 13 |
 | "WD2L - Reconciliation not balanced" | A sender run hasn't balanced for an hour | 5, 12 |
 | "WD2L - Audit trail" | `audit_ok` false or `audit_verify` failed, on either side | 7 |
-| "WD2L - Time quality" | A clock unsynchronised, above stratum 3 or more than 100 ms off, or skew over 50 ms | 6, 10 |
+| "WD2L - Time quality" | A clock unsynchronised, above stratum 3, more than 100 ms off or unreadable, or skew over 50 ms | 6, 10 |
 | "WD2L - Audit review (daily)" | A report, not an alert: every morning, the previous day's configuration changes, state resets, archive replays, debug toggles, audit failures, self-checks and time quality changes. Its owner needs the `wd2l_auditor` role | 20 |

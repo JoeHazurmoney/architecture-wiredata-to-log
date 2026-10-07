@@ -163,11 +163,13 @@ keeps going while the trail is broken. The audit records are what is at risk.
 ## Alert: time quality
 
 "WD2L - Time quality" fires when `time_status` is `alarm`. `time_reason` names the side and why,
-for example "receiver: unsynced", "sender: stratum 5 > 3" or "clock skew 0.081 s > 0.05 s". The
-alarm is for a clock that isn't synchronised, a stratum above 3, an offset over 100 ms, or the two
-enclaves differing by more than 50 ms.
+for example "receiver: unsynced", "sender: stratum 5 > 3", "sender: unavailable" or "clock skew
+0.081 s > 0.05 s". The alarm is for a clock that isn't synchronised, a stratum above 3, an offset
+over 100 ms, a side that can't read chrony at all, or the two enclaves differing by more than
+50 ms.
 
-1. **On the side named**, run `chronyc tracking`: reference, stratum and offset.
+1. **On the side named**, run `chronyc tracking`: reference, stratum and offset. For
+   "unavailable", check that `chronyd` is running and that the wd2l service can run `chronyc`.
 2. **Check that enclave's GPS receiver**, then the switch that serves time at stratum 2.
 3. **Skew while both sides are synced** points to one side's GPS receiver or switch.
 

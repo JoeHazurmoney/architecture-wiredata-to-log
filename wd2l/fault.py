@@ -139,6 +139,8 @@ def time_status(own: Optional[Dict[str, Any]], sender_hb: Dict[str, Any],
                          max_stratum, max_offset_ms)
         if why:
             reasons.append("sender: " + why)
+    if sender_hb.get("time_unavailable") is True:
+        reasons.append("sender: unavailable")
     if clock_offset_s is not None and abs(clock_offset_s) > max_skew_s:
         reasons.append("clock skew %.3f s > %g s" % (clock_offset_s, max_skew_s))
     return ("alarm", "; ".join(reasons)) if reasons else ("ok", None)

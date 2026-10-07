@@ -262,6 +262,7 @@ snapshot keys would not fit `--max-datagram`, they are left out of that heartbea
 | `time_offset_ms` | number | ms | when chrony answers | Clock offset from chrony on the log server |
 | `time_stratum` | integer |  | when chrony answers | Clock stratum from chrony on the log server |
 | `time_synced` | boolean |  | when chrony answers | Chrony reports the clock as synchronised |
+| `time_unavailable` | `true` |  | when chrony can't be read | The sender couldn't read chrony (missing, hanging or blocked), so the other `time_*` keys are left out. Enclave 2 raises a time alarm ("sender: unavailable") |
 | `truncated` | integer | events | always | Events cut to fit the size limit |
 | `uptime` | number, 1 decimal | seconds | always | Time since this run started |
 

@@ -320,7 +320,8 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 >   heartbeat and in the sender's summary. Events in per second is the growth of `events_in`.
 >   Auth failures are `auth_failure` audit records only.
 > * `e1-sender`: `send_errors`, `sender_drops`, `boot`, `stall_s`, `cpu_pct`, `rss_mb`,
->   `time_stratum`, `time_offset_ms` and `time_synced`; with `--egress-iface`, `nic_carrier`,
+>   `time_stratum`, `time_offset_ms` and `time_synced` (or `time_unavailable` when chrony can't
+>   be read); with `--egress-iface`, `nic_carrier`,
 >   `nic_tx_packets`, `nic_tx_errors` and `nic_tx_dropped`.
 > * `boundary`: the capture NIC's `nic_carrier`, `nic_carrier_changes`, `nic_rx_crc_errors` and
 >   `nic_rx_frame_errors` (also `nic_rx_errors` and `nic_rx_missed_errors`), and
@@ -512,9 +513,10 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 > * The thresholds are defaults in the code: an alarm when unsynced, above stratum 3 or more than
 >   100 ms off, and a skew alarm over 50 ms. There is no command-line option for them yet.
 > * When chrony can't be read (missing or hanging), `time_quality` says `unavailable`, and the
->   `time_quality` audit record marks it a failure. On the receiver it is also a time alarm. A
->   sender that can't read chrony leaves the time keys out of its heartbeat, so Enclave 2 shows
->   no time alarm for it; the in-band audit record and the daily review report still show it.
+>   `time_quality` audit record marks it a failure. It is also a time alarm, on either side. A
+>   sender that can't read chrony leaves the other time keys out of its heartbeat and sends
+>   `time_unavailable: true`, so `time_reason` says "sender: unavailable". The alarm clears with
+>   the first heartbeat after chrony answers again.
 > * The receiver works out `time_status` (`ok` or `alarm`, with `time_reason`) from its own
 >   clock, the sender's heartbeat keys and the skew. It is in every summary, and each change is
 >   also a `type=time_status` record, so the time alert fires at once, not on the next summary.

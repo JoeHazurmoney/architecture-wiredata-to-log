@@ -78,6 +78,14 @@ def test_time_status():
     assert fault.time_status(None, {}, None) == ("ok", None)
 
 
+def test_sender_that_cannot_read_chrony_is_a_time_alarm():
+    """Final review I1: the sender's "unavailable" alarms like the receiver's own."""
+    good = {"stratum": 3, "offset_ms": 0.1, "synced": True}
+    assert fault.time_status(good, {"time_unavailable": True}, None) == \
+        ("alarm", "sender: unavailable")
+    assert fault.time_status(good, {"time_unavailable": False}, None) == ("ok", None)
+
+
 import json
 
 from wd2l import packets, wire
@@ -230,6 +238,18 @@ def test_time_status_changes_are_recorded():
     r.tick(0)
     [t] = out.kinds("time_status")
     assert t["time_status"] == "alarm" and "receiver: unsynced" in t["time_reason"]
+
+
+def test_sender_time_unavailable_alarms_then_clears():
+    """Readable, then unavailable, then readable again: each heartbeat replaces the last one's
+    keys, so the alarm clears by itself."""
+    r, out = rxf()
+    readable = dict(time_synced=True, time_stratum=3, time_offset_ms=0.1)
+    for t, info in enumerate((readable, {"time_unavailable": True}, readable)):
+        feed(r, hbf(0, **info), t)
+        r.tick(t)
+    assert [(x["time_status"], x["time_reason"]) for x in out.kinds("time_status")] == [
+        ("alarm", "sender: unavailable"), ("ok", None)]
 
 
 def test_skew_raises_the_time_alarm():
