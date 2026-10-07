@@ -171,6 +171,24 @@ def test_garbage_is_counted_not_fatal():
     assert r.counters["bad_events"] == 1 and out.events == []
 
 
+def test_deeply_nested_json_is_counted_not_a_crash():
+    """Final review follow-up: json.loads raises RecursionError, not ValueError, on these. A
+    crafted frame must not stop the receiver."""
+    import hashlib
+    r, out = rx()
+    deep = b"[" * 30000 + b"]" * 30000      # past the C json limit on 3.12 too (~10,000)
+    feed(r, wire.encode_event(SID, 1, b'{"_raw":"x","a":' + deep + b"}"), 0)
+    assert r.counters["bad_events"] == 1 and out.events == []
+    payload = b'{"a":' + deep + b"}"
+    nested_hb = wire._pack(wire.TYPE_HEARTBEAT, SID, 1, 0, 1, len(payload),
+                           hashlib.sha256(payload).digest(), payload, 0)
+    r.handle_datagram(nested_hb, 0)
+    assert r.counters["bad_frames"] == 1 and r.bad_reasons["bad heartbeat json"] == 1
+    assert r.counters["heartbeats"] == 0
+    feed(r, ev(2), 1)                        # still running
+    assert out.seqs() == [2]
+
+
 def test_other_traffic_is_counted():
     from wd2l import packets
     r, out = rx()
@@ -207,6 +225,25 @@ def test_state_survives_restart(tmp_path):
     r2.tick(10)
     assert out2.seqs() == [3, 5] and gaps(out2) == []
     assert r2.streams[SID].gaps.r == []
+
+
+def test_time_of_the_last_heartbeat_survives_restart(tmp_path):
+    state = str(tmp_path / "state.json")
+    r, _ = rx(state_path=state)
+    feed(r, ev(1), 5)
+    feed(r, [hb(1)], 7)
+    feed(r, ev(2), 9)
+    assert (r.streams[SID].last_hb, r.streams[SID].last_seen) == (7, 9)
+    r.save_state()
+    r2, _ = rx(state_path=state)
+    assert r2.streams[SID].last_hb == 7
+    with open(state) as f:
+        st = json.load(f)
+    del st["streams"]["%016x" % SID]["last_hb"]      # a state file from before the key
+    with open(state, "w") as f:
+        json.dump(st, f)
+    r3, _ = rx(state_path=state)
+    assert r3.streams[SID].last_hb == 9
 
 
 def test_finish_declares_all_holes():

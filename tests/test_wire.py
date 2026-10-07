@@ -1,3 +1,4 @@
+import hashlib
 import json
 import random
 
@@ -89,3 +90,17 @@ def test_parse_event_validates():
         wire.parse_event(b'["_raw"]')
     evt = wire.parse_event(b'{"_raw":"r","_time":"bad","host":5,"fields":{"a":1,"b":[1]},"x":1}')
     assert evt == {"_raw": "r", "fields": {"a": 1}}
+
+
+def test_flags_round_trip_and_default_to_zero():
+    body = b'{"_raw":"x"}'
+    assert wire.decode(wire.encode_event(5, 1, body)[0]).flags == 0
+    assert wire.decode(wire.encode_event(5, 1, body, flags=wire.FLAG_RECORDS)[0]).flags == 1
+    assert wire.decode(wire.encode_heartbeat(5, 1, {"a": 1}, flags=wire.FLAG_RECORDS)).flags == 1
+
+
+def test_a_precomputed_digest_is_used():
+    body = b'{"_raw":"x"}'
+    d = wire.event_digest(body)
+    assert d == hashlib.sha256(body).digest()
+    assert wire.decode(wire.encode_event(5, 1, body, digest=d)[0]).digest == d

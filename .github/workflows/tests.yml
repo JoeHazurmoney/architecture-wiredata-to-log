@@ -32,5 +32,14 @@ jobs:
       - run: sudo lab/run-lab.sh --receiver-outage
       - run: sudo lab/run-lab.sh --receiver-crash
       - run: sudo lab/run-lab.sh --maintenance
+      - run: sudo lab/run-lab.sh --fault aggregator-stop
+      - run: sudo lab/run-lab.sh --fault sender-stop
+      - run: sudo lab/run-lab.sh --fault sender-hang
+      - run: sudo lab/run-lab.sh --fault tap-down
+      - run: sudo lab/run-lab.sh --fault foreign-only
+      - run: sudo lab/run-lab.sh --fault wire-loss
+      - run: sudo lab/run-lab.sh --fault receiver-slow
+      - run: sudo lab/run-lab.sh --fault siem-down
+      - run: sudo lab/run-lab.sh --fault clock
       - run: sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
       - run: sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log

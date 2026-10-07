@@ -25,6 +25,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
+from .audit import canonical, ts_epoch
+
 log = logging.getLogger("wd2l.outputs")
 
 Key = Tuple[int, int]  # (stream_id, seq)
@@ -35,6 +37,15 @@ class Output:
         raise NotImplementedError
 
     def health(self, rec: Dict[str, Any]) -> None:
+        raise NotImplementedError
+
+    def audit(self, rec: Dict[str, Any]) -> None:
+        """One of this host's audit records. Never dropped, like health records."""
+        raise NotImplementedError
+
+    def forwarded(self, evt: Dict[str, Any], stream_id: int, seq: int, kind: str) -> None:
+        """An Enclave 1 record from the sender's records stream (kind "audit" or "health").
+        Tracked for durability like event()."""
         raise NotImplementedError
 
     def flush(self) -> None:
@@ -67,6 +78,8 @@ class FileOutput(Output):
 
     def __init__(self, out_dir: str):
         os.makedirs(out_dir, exist_ok=True)
+        self.dir = out_dir
+        self._extra: Dict[str, Any] = {}
         self.events = open(os.path.join(out_dir, "events.jsonl"), "a", encoding="utf-8")
         self.healthf = open(os.path.join(out_dir, "health.jsonl"), "a", encoding="utf-8")
         self._pending: Dict[int, Set[int]] = {}
@@ -81,13 +94,33 @@ class FileOutput(Output):
         self.healthf.write(json.dumps(rec, sort_keys=True) + "\n")
         self.healthf.flush()
 
+    def _file(self, name: str):
+        f = self._extra.get(name)
+        if f is None:
+            f = self._extra[name] = open(os.path.join(self.dir, name), "a", encoding="utf-8")
+        return f
+
+    def audit(self, rec):
+        f = self._file("audit.jsonl")
+        f.write(canonical(rec).decode("utf-8") + "\n")
+        f.flush()
+
+    def forwarded(self, evt, stream_id, seq, kind):
+        f = self._file("audit.jsonl" if kind == "audit" else "e1-health.jsonl")
+        f.write(evt["_raw"] + "\n")
+        self._pending.setdefault(stream_id, set()).add(seq)
+
     def flush(self):
         if self.closed:
             return
         self.events.flush()
         self.healthf.flush()
+        for f in self._extra.values():
+            f.flush()
         if self._pending:
             os.fsync(self.events.fileno())
+            for f in self._extra.values():
+                os.fsync(f.fileno())
             self._pending = {}
 
     def pending(self):
@@ -98,6 +131,10 @@ class FileOutput(Output):
             return
         self.flush()
         os.fsync(self.healthf.fileno())
+        for f in self._extra.values():
+            f.flush()
+            os.fsync(f.fileno())
+            f.close()
         self.events.close()
         self.healthf.close()
         self.closed = True
@@ -114,6 +151,14 @@ class MultiOutput(Output):
     def health(self, rec):
         for o in self.outputs:
             o.health(rec)
+
+    def audit(self, rec):
+        for o in self.outputs:
+            o.audit(rec)
+
+    def forwarded(self, evt, stream_id, seq, kind):
+        for o in self.outputs:
+            o.forwarded(evt, stream_id, seq, kind)
 
     def flush(self):
         for o in self.outputs:
@@ -227,6 +272,7 @@ class HecOutput(Output):
     def __init__(self, url: str, token: str, spool_dir: str, ca_file: Optional[str] = None,
                  insecure: bool = False, default_index: Optional[str] = None,
                  health_index: Optional[str] = None, force_index: Optional[str] = None,
+                 audit_index: str = "wd2l_audit", stat_prefix: str = "",
                  batch_events: int = 500,
                  batch_bytes: int = 1024 * 1024, queue_size: int = 100000,
                  retry_interval: float = 10.0, max_spool_bytes: int = 10 * 1024 ** 3,
@@ -242,6 +288,8 @@ class HecOutput(Output):
             self.ctx = None
         self.default_index = default_index
         self.force_index = force_index
+        self.audit_index = audit_index
+        self.stat_prefix = stat_prefix
         self.health_index = health_index or force_index or default_index
         self.batch_events = batch_events
         self.batch_bytes = batch_bytes
@@ -254,7 +302,8 @@ class HecOutput(Output):
         self.hostname = socket.gethostname()
         self.counters = {"hec_events_sent": 0, "hec_posts_failed": 0, "hec_spooled_batches": 0,
                          "hec_rejected_batches": 0, "hec_rejected_events": 0,
-                         "hec_spool_overflow_events": 0, "hec_queue_overflow_events": 0}
+                         "hec_spool_overflow_events": 0, "hec_queue_overflow_events": 0,
+                         "hec_audit_index_refused": 0, "hec_records_lost": 0}
         self.retry_after = 0.0
         self._plock = threading.Lock()
         self._pending: Dict[int, Set[int]] = {}
@@ -301,9 +350,11 @@ class HecOutput(Output):
         except queue.Full:
             pass
         if key is None:
-            # Health records are few and they are how loss gets reported: never drop one.
+            # Health and audit records are few and they are how loss gets reported: never drop
+            # one quietly.
             if not self.spool.write(line + b"\n"):
-                log.error("health record lost: queue and spool both full")
+                self.counters["hec_records_lost"] += 1
+                log.error("health or audit record lost: queue and spool both full")
             return
         self.counters["hec_queue_overflow_events"] += 1
         self._settle([key], failed=True)
@@ -319,22 +370,53 @@ class HecOutput(Output):
             rec["index"] = self.force_index
         elif "index" not in rec and self.default_index:
             rec["index"] = self.default_index
+        if rec.get("index") == self.audit_index:
+            # Only wd2l writes audit records: an imported event can't land among them.
+            self.counters["hec_audit_index_refused"] += 1
+            if self.default_index and self.default_index != self.audit_index:
+                rec["index"] = self.default_index
+            else:
+                del rec["index"]
         rec["fields"] = dict(evt.get("fields", {}), wd2l_stream="%016x" % stream_id, wd2l_seq=seq)
         self._put(rec, (stream_id, seq))
 
-    def health(self, rec):
-        out: Dict[str, Any] = {"time": rec.get("time", time.time()), "host": self.hostname,
-                               "source": "wd2l-receiver", "sourcetype": "wd2l:health",
-                               "event": rec}
-        if self.health_index:
-            out["index"] = self.health_index
+    def _record(self, event: Any, sourcetype: str, source: str, index: Optional[str],
+                t: Any) -> None:
+        out: Dict[str, Any] = {"time": t, "host": self.hostname, "source": source,
+                               "sourcetype": sourcetype, "event": event}
+        if index:
+            out["index"] = index
         self._put(out, None)
+
+    def health(self, rec):
+        self._record(rec, "wd2l:health", "wd2l-receiver", self.health_index,
+                     rec.get("time", time.time()))
+
+    def audit(self, rec):
+        """The exact canonical text goes in, so a SIEM export can be checked against the chain.
+        force_index never moves audit records."""
+        ts = rec.get("ts")
+        t = ts_epoch(ts) if isinstance(ts, str) else time.time()
+        self._record(canonical(rec).decode("utf-8"), "wd2l:audit",
+                     "wd2l-%s" % rec.get("component", "receiver"), self.audit_index, t)
+
+    def forwarded(self, evt, stream_id, seq, kind):
+        rec: Dict[str, Any] = {"time": evt.get("_time", time.time()),
+                               "host": evt.get("host", self.hostname),
+                               "source": evt.get("source", "wd2l-sender"),
+                               "sourcetype": "wd2l:sender:" + kind, "event": evt["_raw"],
+                               "fields": {"wd2l_stream": "%016x" % stream_id, "wd2l_seq": seq}}
+        index = self.audit_index if kind == "audit" else self.health_index
+        if index:
+            rec["index"] = index
+        self._put(rec, (stream_id, seq))
 
     def stats(self):
         s = dict(self.counters)
         s["hec_queue"] = self.q.qsize()
         s["hec_spool_files"] = len(self.spool.files())
-        return s
+        s["hec_spool_bytes"] = self.spool.size()   # kept as files come and go: no directory walk
+        return {self.stat_prefix + k: v for k, v in s.items()}
 
     # -- consumer side (hec thread)
 

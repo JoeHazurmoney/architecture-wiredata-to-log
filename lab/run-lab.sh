@@ -12,6 +12,7 @@
 #
 # Usage: sudo lab/run-lab.sh [--events N] [--eps N] [--loss PCT] [--receiver-outage]
 #                            [--receiver-crash] [--maintenance] [--keep] [--interleave]
+#                            [--fault NAME]
 #                            [--files FILE...]
 #   --loss PCT          drop PCT% of packets on the cable (before the tap): gaps must be reported
 #   --receiver-outage   stop the receiver mid-run, restart it, then replay the pcap archive:
@@ -22,6 +23,9 @@
 #                       events, then hold the aggregator, stop the sender, stop the receiver and
 #                       the capture (receiver host down), start the capture and receiver, start
 #                       the sender, send the rest. Two linked sender runs, nothing lost, no replay
+#   --fault NAME        inject one fault and check the receiver names its segment (aggregator-stop,
+#                       sender-stop, sender-hang, tap-down, foreign-only, wire-loss, receiver-slow,
+#                       siem-down, clock); see docs/running-the-lab.md
 #   --keep              leave namespaces up afterwards (lab/teardown.sh removes them)
 #   --interleave        with --files: merge the files by each line's timestamp, as if they were
 #                       being written at the same time and tailed by a forwarder. The sender
@@ -35,6 +39,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(dirname "$HERE")"
 OUT="${OUT:-$HERE/out}"
 EVENTS=5000
+EVENTS_SET=0
 EPS=1000
 LOSS=""
 OUTAGE=0
@@ -44,15 +49,18 @@ MAX_EVENT=262144
 FILES=()
 INTERLEAVE=0
 MAINT=0
+FAULT=""
+CHRONYC="python3 $HERE/fake_chronyc.py"   # the clock-bad flag file is added once OUT is known
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --events) EVENTS="$2"; shift 2 ;;
+    --events) EVENTS="$2"; EVENTS_SET=1; shift 2 ;;
     --eps) EPS="$2"; shift 2 ;;
     --loss) LOSS="$2"; shift 2 ;;
     --receiver-outage) OUTAGE=1; shift ;;
     --receiver-crash) OUTAGE=1; KILLSIG=KILL; shift ;;
     --maintenance) MAINT=1; shift ;;
+    --fault) FAULT="$2"; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --interleave) INTERLEAVE=1; shift ;;
     --files) shift; FILES=("$@"); [ ${#FILES[@]} -gt 0 ] || { echo "--files needs files" >&2; exit 2; }; break ;;
@@ -62,6 +70,13 @@ done
 
 if [ "$MAINT" = 1 ] && { [ "$OUTAGE" = 1 ] || [ -n "$LOSS" ] || [ ${#FILES[@]} -gt 0 ]; }; then
   echo "--maintenance runs on its own (with --events / --eps)" >&2; exit 2
+fi
+if [ -n "$FAULT" ] && { [ "$OUTAGE" = 1 ] || [ "$MAINT" = 1 ] || [ -n "$LOSS" ] || [ ${#FILES[@]} -gt 0 ]; }; then
+  echo "--fault runs on its own (with --events / --eps)" >&2; exit 2
+fi
+if [ -n "$FAULT" ]; then
+  [ "$EVENTS_SET" = 1 ] || EVENTS=20000
+  [ "$FAULT" != receiver-slow ] || EPS=5000
 fi
 [ "$(id -u)" = 0 ] || { echo "run as root (needs network namespaces)" >&2; exit 1; }
 for c in ip tc nft tcpdump python3; do
@@ -84,15 +99,29 @@ v6off() {
 }
 
 cleanup() {
-  for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill "$p" 2>/dev/null || true; done
-  wait 2>/dev/null || true
-  [ "$KEEP" = 1 ] || "$HERE/teardown.sh" >/dev/null 2>&1 || true
+  set +e
+  # Every process this run started, including any a fault left frozen (SIGSTOP): wake them
+  # first so they can act on SIGTERM, and never wait forever (an aborted run must not hang CI).
+  local all=("${PIDS[@]:-}" $(jobs -p)) p alive
+  for p in "${all[@]}"; do [ -n "$p" ] && kill -CONT "$p" 2>/dev/null; done
+  for p in "${all[@]}"; do [ -n "$p" ] && kill -TERM "$p" 2>/dev/null; done
+  for _ in $(seq 50); do
+    alive=0
+    for p in "${all[@]}"; do [ -n "$p" ] && kill -0 "$p" 2>/dev/null && alive=1; done
+    [ "$alive" = 0 ] && break
+    sleep 0.1
+  done
+  for p in "${all[@]}"; do [ -n "$p" ] && kill -KILL "$p" 2>/dev/null; done
+  wait 2>/dev/null
+  [ "$KEEP" = 1 ] || "$HERE/teardown.sh" >/dev/null 2>&1
+  return 0
 }
 trap cleanup EXIT
 
 "$HERE/teardown.sh" >/dev/null 2>&1 || true
 rm -rf "$OUT"
 mkdir -p "$OUT/pcap" "$OUT/received"
+CHRONYC="$CHRONYC $OUT/clock-bad"
 
 echo "== building namespaces"
 for ns in wd2l-enc1 wd2l-bh wd2l-enc2; do
@@ -170,7 +199,19 @@ start_capture() {
 }
 RX_ARGS=(--live cap0 --dst-ip 10.255.255.2 --dst-port 5514 --src-ip 10.255.255.1 --src-port 5514
          --out-dir "$OUT/received" --state "$OUT/state.json"
-         --gap-window 2 --health-interval 5 --max-event "$MAX_EVENT")
+         --gap-window 2 --health-interval 5 --max-event "$MAX_EVENT"
+         --audit-dir "$OUT/audit-e2" --chronyc "$CHRONYC"
+         --pcap-dir "$OUT/pcap" --fault-interval 1)
+if [ -n "$FAULT" ]; then
+  RX_ARGS+=(--fault-window 10 --input-flat-after 5 --time-check-interval 1)
+  [ "$FAULT" != receiver-slow ] || RX_ARGS+=(--capture-rcvbuf 65536)
+  if [ "$FAULT" = siem-down ]; then
+    echo lab-token > "$OUT/hec.token"
+    RX_ARGS+=(--hec-url http://127.0.0.1:8088 --hec-token-file "$OUT/hec.token"
+              --hec-audit-token-file "$OUT/hec.token"
+              --spool-dir "$OUT/spool")
+  fi
+fi
 start_receiver() {
   $ENC2 python3 -m wd2l.receiver "${RX_ARGS[@]}" >>"$OUT/receiver.log" 2>&1 &
   RX_PID=$!
@@ -179,12 +220,17 @@ start_receiver() {
 start_sender() {
   $ENC1 python3 -m wd2l.sender --listen 127.0.0.1:10070 --dst 10.255.255.2:5514 \
     --bind 10.255.255.1:5514 --max-event "$MAX_EVENT" --stats-interval 5 \
-    --state "$OUT/sender.json" "${SENDER_EXTRA[@]}" >>"$OUT/sender.log" 2>&1 &
+    --state "$OUT/sender.json" --audit-dir "$OUT/audit-e1" --chronyc "$CHRONYC" \
+    --egress-iface enc1nic \
+    "${SENDER_EXTRA[@]}" >>"$OUT/sender.log" 2>&1 &
   TX_PID=$!
   PIDS+=($TX_PID)
 }
 
 echo "== starting Enclave 2: capture archive + receiver"
+if [ "$FAULT" = siem-down ]; then
+  $ENC2 python3 "$HERE/fake_siem.py" --port 8088 --out "$OUT/siem.ndjson" & SIEM_PID=$!; PIDS+=($SIEM_PID)
+fi
 start_capture
 start_receiver
 sleep 1
@@ -193,7 +239,48 @@ echo "== starting Enclave 1: wd2l-sender + stand-in log aggregator"
 start_sender
 sleep 1
 
-if [ "$MAINT" = 1 ]; then
+FAULT_S=10
+if [ -n "$FAULT" ]; then
+  echo "== fault run: $FAULT"
+  case "$FAULT" in
+    aggregator-stop)
+      $ENC1 python3 "$HERE/fake_cribl.py" --eps "$EPS" --pause-after 3000 --pause-s 12 \
+        "$OUT/sent.jsonl" & AGG_PID=$! ;;
+    sender-stop)
+      HALF=$(( $(wc -l < "$OUT/sent.jsonl") / 2 ))
+      head -n "$HALF" "$OUT/sent.jsonl" > "$OUT/sent-part1.jsonl"
+      tail -n +"$((HALF + 1))" "$OUT/sent.jsonl" > "$OUT/sent-part2.jsonl"
+      $ENC1 python3 "$HERE/fake_cribl.py" --eps "$EPS" "$OUT/sent-part1.jsonl"
+      sleep 1; kill -TERM "$TX_PID"; wait "$TX_PID" 2>/dev/null || true
+      sleep "$FAULT_S"; start_sender; sleep 1
+      $ENC1 python3 "$HERE/fake_cribl.py" --eps "$EPS" "$OUT/sent-part2.jsonl" & AGG_PID=$! ;;
+    *)
+      $ENC1 python3 "$HERE/fake_cribl.py" --eps "$EPS" "$OUT/sent.jsonl" & AGG_PID=$!
+      sleep 3
+      case "$FAULT" in
+        sender-hang)   kill -STOP "$TX_PID"; sleep "$FAULT_S"; kill -CONT "$TX_PID" ;;
+        tap-down)      $BH ip link set tap0 down; sleep "$FAULT_S"; $BH ip link set tap0 up ;;
+        foreign-only)  kill -STOP "$TX_PID"
+                       $ENC1 python3 -c "import socket,time
+s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+for _ in range($FAULT_S*10): s.sendto(b'x'*100,('10.255.255.2',9999)); time.sleep(0.1)"
+                       kill -CONT "$TX_PID" ;;
+        wire-loss)     $ENC1 nft -f - <<'EOF'
+table netdev faultloss {
+  chain out { type filter hook egress device "enc1nic" priority 0; policy accept; numgen random mod 10 < 2 drop; }
+}
+EOF
+                       sleep "$FAULT_S"; $ENC1 nft delete table netdev faultloss ;;
+        receiver-slow) kill -STOP "$RX_PID"; sleep 4; kill -CONT "$RX_PID" ;;
+        siem-down)     kill "$SIEM_PID"; wait "$SIEM_PID" 2>/dev/null || true; sleep 12
+                       $ENC2 python3 "$HERE/fake_siem.py" --port 8088 --out "$OUT/siem.ndjson" &
+                       SIEM_PID=$!; PIDS+=($SIEM_PID) ;;
+        clock)         touch "$OUT/clock-bad"; sleep "$FAULT_S"; rm -f "$OUT/clock-bad" ;;
+        *) echo "unknown fault $FAULT" >&2; exit 2 ;;
+      esac ;;
+  esac
+  sleep 13   # longer than --fault-window, so the "ok again" record is written
+elif [ "$MAINT" = 1 ]; then
   HALF=$(( $(wc -l < "$OUT/sent.jsonl") / 2 ))
   head -n "$HALF" "$OUT/sent.jsonl" > "$OUT/sent-part1.jsonl"
   tail -n +"$((HALF + 1))" "$OUT/sent.jsonl" > "$OUT/sent-part2.jsonl"
@@ -247,6 +334,7 @@ if [ "$OUTAGE" = 1 ]; then
   python3 -m wd2l.receiver --pcap "$OUT"/pcap/*.pcap --dst-ip 10.255.255.2 --dst-port 5514 \
     --src-ip 10.255.255.1 --src-port 5514 \
     --out-dir "$OUT/received" --state "$OUT/state.json" --max-event "$MAX_EVENT" \
+    --audit-dir "$OUT/audit-e2" --chronyc "$CHRONYC" \
     >"$OUT/replay.log" 2>&1
 fi
 
@@ -255,11 +343,18 @@ BACK=$($BH cat /sys/class/net/tap0/statistics/rx_packets)
 echo "== frames sent back toward Enclave 1 from Enclave 2: $BACK"
 
 echo "== verifying"
-VERIFY_ARGS=("$OUT/sent.jsonl" "$OUT/received" --max-event "$MAX_EVENT" "${SENDER_EXTRA[@]}")
+VERIFY_ARGS=("$OUT/sent.jsonl" "$OUT/received" --max-event "$MAX_EVENT" "${SENDER_EXTRA[@]}"
+             --audit-dir "$OUT/audit-e1" --audit-dir "$OUT/audit-e2"
+             --e1-audit-dir "$OUT/audit-e1" --reconcile-dir "$OUT/audit-e2")
 if [ -n "$LOSS" ]; then VERIFY_ARGS+=(--expect-gaps); fi
 if [ "$OUTAGE" = 1 ]; then VERIFY_ARGS+=(--state "$OUT/state.json"); fi
 if [ "$KILLSIG" = KILL ]; then VERIFY_ARGS+=(--allow-duplicates); fi
 if [ "$MAINT" = 1 ]; then VERIFY_ARGS+=(--sender-runs 2); fi
+case "$FAULT" in
+  sender-stop) VERIFY_ARGS+=(--sender-runs 2) ;;
+  tap-down|wire-loss|receiver-slow) VERIFY_ARGS+=(--expect-gaps) ;;
+  foreign-only) VERIFY_ARGS+=(--allow-other-packets) ;;
+esac
 set +e
 python3 "$HERE/verify.py" "${VERIFY_ARGS[@]}"
 RC=$?
@@ -268,6 +363,21 @@ if [ "$OUTAGE" = 1 ]; then
   echo "(during the outage the live receiver reported $(grep -c '"type": "gap"' "$OUT/received/health.jsonl" || true) gap record(s); the archive replay filled them)"
 fi
 [ "$BACK" = 0 ] || { echo "FAIL: Enclave 2 transmitted $BACK frames"; RC=1; }
+if [ -n "$FAULT" ]; then
+  echo "== checking where the receiver placed the fault"
+  case "$FAULT" in
+    aggregator-stop) EXPECT=(--segment e1-input --status amber --rule 5) ;;
+    sender-stop)     EXPECT=(--segment e1-sender --status amber --rule 2) ;;
+    sender-hang)     EXPECT=(--segment e1-sender/boundary --status red --rule 3) ;;
+    tap-down)        EXPECT=(--segment boundary --status red --rule 1) ;;
+    foreign-only)    EXPECT=(--segment boundary --status red --rule 4) ;;
+    wire-loss)       EXPECT=(--segment boundary --status amber --rule 9) ;;
+    receiver-slow)   EXPECT=(--segment e2-capture --status red --rule 8) ;;
+    siem-down)       EXPECT=(--segment e2-siem --status amber --rule 10) ;;
+    clock)           EXPECT=(--time-alarm) ;;
+  esac
+  python3 "$HERE/check_fault.py" "$OUT/received/health.jsonl" "${EXPECT[@]}" || RC=1
+fi
 if [ ${#FILES[@]} -gt 0 ]; then
   echo
   echo "== rebuilding the files in Enclave 2 and comparing SHA-256 hashes"

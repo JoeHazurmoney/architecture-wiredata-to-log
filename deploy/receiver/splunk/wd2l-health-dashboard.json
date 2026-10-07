@@ -1,0 +1,764 @@
+{
+  "title": "wd2l state of health",
+  "description": "Where is the fault? Transfer status, pipeline, loss, reconciliation, time and audit trail. See docs/state-of-health.md in the wd2l repo.",
+  "inputs": {
+    "input_time": {
+      "type": "input.timerange",
+      "title": "Time range",
+      "options": {
+        "token": "tr",
+        "defaultValue": "-12h@m,now"
+      }
+    }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$tr.earliest$",
+            "latest": "$tr.latest$"
+          }
+        }
+      }
+    }
+  },
+  "dataSources": {
+    "ds_latest": {
+      "type": "ds.search",
+      "name": "ds_latest",
+      "options": {
+        "query": "index=wd2l sourcetype=wd2l:health type=health | head 1"
+      }
+    },
+    "ds_status": {
+      "type": "ds.chain",
+      "name": "ds_status",
+      "options": {
+        "extend": "ds_latest",
+        "query": "| eval status=upper(coalesce(fault_status,\"unknown\")) | table status"
+      }
+    },
+    "ds_where": {
+      "type": "ds.chain",
+      "name": "ds_where",
+      "options": {
+        "extend": "ds_latest",
+        "query": "| eval where=if(fault_status=\"ok\",\"All segments ok\",fault_segment.\" (rule \".fault_rule.\")\") | table where fault_detail"
+      }
+    },
+    "ds_segments": {
+      "type": "ds.chain",
+      "name": "ds_segments",
+      "options": {
+        "extend": "ds_latest",
+        "query": "| table seg_e1_input seg_e1_sender seg_boundary seg_e2_capture seg_e2_receiver seg_e2_siem | foreach seg_* [eval <<FIELD>>=upper('<<FIELD>>')]"
+      }
+    },
+    "ds_open_gaps": {
+      "type": "ds.chain",
+      "name": "ds_open_gaps",
+      "options": {
+        "extend": "ds_latest",
+        "query": "| table open_gap_events"
+      }
+    },
+    "ds_time": {
+      "type": "ds.chain",
+      "name": "ds_time",
+      "options": {
+        "extend": "ds_latest",
+        "query": "| eval time=upper(coalesce(time_status,\"unknown\")), skew_ms=round(clock_offset_s*1000,1) | table time skew_ms"
+      }
+    },
+    "ds_d_boundary": {
+      "type": "ds.chain",
+      "name": "ds_d_boundary",
+      "options": {
+        "extend": "ds_latest",
+        "query": "| table nic_carrier nic_carrier_changes nic_rx_crc_errors nic_rx_frame_errors other_packets bad_frames | transpose 0 column_name=signal | rename \"row 1\" as value"
+      }
+    },
+    "ds_d_capture": {
+      "type": "ds.chain",
+      "name": "ds_d_capture",
+      "options": {
+        "extend": "ds_latest",
+        "query": "| table nic_rx_packets kernel_drops archive_file archive_age_s | transpose 0 column_name=signal | rename \"row 1\" as value"
+      }
+    },
+    "ds_d_receiver": {
+      "type": "ds.chain",
+      "name": "ds_d_receiver",
+      "options": {
+        "extend": "ds_latest",
+        "query": "| table heartbeat_age_s open_gap_events reasm_expired cpu_pct rss_mb | transpose 0 column_name=signal | rename \"row 1\" as value"
+      }
+    },
+    "ds_d_siem": {
+      "type": "ds.chain",
+      "name": "ds_d_siem",
+      "options": {
+        "extend": "ds_latest",
+        "query": "| table hec_queue hec_spool_files hec_spool_bytes hec_posts_failed hec_rejected_events output_dropped | transpose 0 column_name=signal | rename \"row 1\" as value"
+      }
+    },
+    "ds_heard": {
+      "type": "ds.search",
+      "name": "ds_heard",
+      "options": {
+        "query": "| tstats latest(_time) as t where index=wd2l sourcetype=wd2l:health | eval age_s=round(now()-t) | table age_s"
+      }
+    },
+    "ds_reconcile": {
+      "type": "ds.search",
+      "name": "ds_reconcile",
+      "options": {
+        "query": "index=wd2l sourcetype=wd2l:health type=reconcile earliest=-25h | stats latest(balanced) as b by stream | stats count as streams count(eval(b=\"true\")) as ok | eval shown=ok.\" of \".streams.\" balanced\", state=if(streams=0,\"UNKNOWN\",if(ok=streams,\"OK\",\"RED\")) | table shown state"
+      }
+    },
+    "ds_audit": {
+      "type": "ds.search",
+      "name": "ds_audit",
+      "options": {
+        "query": "index=wd2l type=health ((sourcetype=wd2l:health component!=sender) OR (sourcetype=wd2l:sender:health component=sender)) | stats latest(audit_ok) as ok latest(audit_verify) as verify by component | eval good=if(ok=\"true\" AND coalesce(verify,\"\")!=\"failed\",1,0) | stats min(good) as all_good values(component) as sides | eval state=if(all_good=1,\"OK\",\"RED\") | table state sides"
+      }
+    },
+    "ds_flow": {
+      "type": "ds.search",
+      "name": "ds_flow",
+      "options": {
+        "query": "index=wd2l sourcetype=wd2l:health type=health | sort 0 _time | streamstats current=f last(sender_events_in) as p_in last(events_delivered) as p_out | eval e1=if(sender_events_in>=p_in,sender_events_in-p_in,null()), e2=if(events_delivered>=p_out,events_delivered-p_out,null()) | timechart span=1m sum(e1) as \"Events in (Enclave 1)\" sum(e2) as \"Delivered (Enclave 2)\""
+      }
+    },
+    "ds_delay": {
+      "type": "ds.search",
+      "name": "ds_delay",
+      "options": {
+        "query": "index=enclave1 | eval e1=wd2l_tx_time-_time, link=wd2l_rx_time-wd2l_tx_time, siem=_indextime-wd2l_rx_time | timechart span=5m median(e1) as \"Enclave 1 (s)\" median(link) as \"Link (s)\" median(siem) as \"SIEM ingest (s)\""
+      }
+    },
+    "ds_skew": {
+      "type": "ds.search",
+      "name": "ds_skew",
+      "options": {
+        "query": "index=wd2l sourcetype=wd2l:health type=health | eval skew_ms=clock_offset_s*1000 | timechart span=1m max(skew_ms) as \"Clock skew (ms)\" | eval \"+50 ms\"=50, \"-50 ms\"=-50"
+      }
+    },
+    "ds_gaps": {
+      "type": "ds.search",
+      "name": "ds_gaps",
+      "options": {
+        "query": "index=wd2l sourcetype=wd2l:health type=gap | eval reason=coalesce(reason,\"not_received\").if(records=\"true\",\" (records)\",\"\") | timechart span=5m sum(count) by reason"
+      }
+    },
+    "ds_reconcile_table": {
+      "type": "ds.search",
+      "name": "ds_reconcile_table",
+      "options": {
+        "query": "index=wd2l sourcetype=wd2l:health type=reconcile | stats latest(_time) as t latest(cut) as cut latest(balanced) as balanced latest(gaps_open) as open_gaps by stream | sort - t | eval \"last check\"=strftime(t,\"%F %TZ\") | fields - t | head 10"
+      }
+    },
+    "ds_faults": {
+      "type": "ds.search",
+      "name": "ds_faults",
+      "options": {
+        "query": "index=wd2l sourcetype=wd2l:health type IN (fault, time_status) | eval what=if(type=\"fault\",fault_status.\" \".coalesce(fault_segment,\"\").if(fault_rule>0,\" rule \".fault_rule,\"\"),\"time \".time_status), detail=coalesce(fault_detail,time_reason) | table _time what detail | head 50"
+      }
+    },
+    "ds_sender": {
+      "type": "ds.search",
+      "name": "ds_sender",
+      "options": {
+        "query": "index=wd2l sourcetype=wd2l:sender:health type=health | head 1"
+      }
+    },
+    "ds_d_input": {
+      "type": "ds.chain",
+      "name": "ds_d_input",
+      "options": {
+        "extend": "ds_sender",
+        "query": "| table events_in clients input_backlog_bytes bad_input | transpose 0 column_name=signal | rename \"row 1\" as value"
+      }
+    },
+    "ds_d_sender": {
+      "type": "ds.chain",
+      "name": "ds_d_sender",
+      "options": {
+        "extend": "ds_sender",
+        "query": "| table stall_s sender_drops send_errors cpu_pct nic_carrier nic_tx_errors | transpose 0 column_name=signal | rename \"row 1\" as value"
+      }
+    },
+    "ds_audit_review": {
+      "type": "ds.search",
+      "name": "ds_audit_review",
+      "options": {
+        "query": "index=wd2l_audit event IN (start, stop, config_changed, state_reset, replay_run, debug_toggled, audit_failure, audit_verify) | table _time host component event outcome actor reason level | head 50"
+      }
+    }
+  },
+  "visualizations": {
+    "viz_status": {
+      "type": "splunk.singlevalue",
+      "title": "Transfer status",
+      "dataSources": {
+        "primary": "ds_status"
+      },
+      "options": {
+        "majorValue": "> primary | seriesByName('status') | lastPoint()",
+        "majorColor": "> majorValue | matchValue(statusColors)"
+      },
+      "context": {
+        "statusColors": [
+          {
+            "match": "OK",
+            "value": "#1a7f37"
+          },
+          {
+            "match": "AMBER",
+            "value": "#9a6700"
+          },
+          {
+            "match": "RED",
+            "value": "#cf222e"
+          },
+          {
+            "match": "UNKNOWN",
+            "value": "#6e7781"
+          }
+        ]
+      }
+    },
+    "viz_where": {
+      "type": "splunk.table",
+      "title": "Where and why",
+      "dataSources": {
+        "primary": "ds_where"
+      }
+    },
+    "viz_heard": {
+      "type": "splunk.singlevalue",
+      "title": "Receiver last heard",
+      "dataSources": {
+        "primary": "ds_heard"
+      },
+      "options": {
+        "majorValue": "> primary | seriesByName('age_s') | lastPoint()",
+        "majorColor": "> majorValue | rangeValue(ranges)"
+      },
+      "context": {
+        "ranges": [
+          {
+            "to": 90,
+            "value": "#1a7f37"
+          },
+          {
+            "from": 90,
+            "to": 900,
+            "value": "#9a6700"
+          },
+          {
+            "from": 900,
+            "value": "#cf222e"
+          }
+        ]
+      }
+    },
+    "viz_pipeline": {
+      "type": "splunk.table",
+      "title": "Pipeline",
+      "dataSources": {
+        "primary": "ds_segments"
+      },
+      "options": {
+        "columnFormat": {
+          "seg_e1_input": {
+            "rowBackgroundColors": "> table | seriesByName(\"seg_e1_input\") | matchValue(statusColors)"
+          },
+          "seg_e1_sender": {
+            "rowBackgroundColors": "> table | seriesByName(\"seg_e1_sender\") | matchValue(statusColors)"
+          },
+          "seg_boundary": {
+            "rowBackgroundColors": "> table | seriesByName(\"seg_boundary\") | matchValue(statusColors)"
+          },
+          "seg_e2_capture": {
+            "rowBackgroundColors": "> table | seriesByName(\"seg_e2_capture\") | matchValue(statusColors)"
+          },
+          "seg_e2_receiver": {
+            "rowBackgroundColors": "> table | seriesByName(\"seg_e2_receiver\") | matchValue(statusColors)"
+          },
+          "seg_e2_siem": {
+            "rowBackgroundColors": "> table | seriesByName(\"seg_e2_siem\") | matchValue(statusColors)"
+          }
+        }
+      },
+      "context": {
+        "statusColors": [
+          {
+            "match": "OK",
+            "value": "#1a7f37"
+          },
+          {
+            "match": "AMBER",
+            "value": "#9a6700"
+          },
+          {
+            "match": "RED",
+            "value": "#cf222e"
+          },
+          {
+            "match": "UNKNOWN",
+            "value": "#6e7781"
+          }
+        ]
+      }
+    },
+    "viz_open_gaps": {
+      "type": "splunk.singlevalue",
+      "title": "Open gap events",
+      "dataSources": {
+        "primary": "ds_open_gaps"
+      },
+      "options": {
+        "majorValue": "> primary | seriesByName('open_gap_events') | lastPoint()",
+        "majorColor": "> majorValue | rangeValue(ranges)"
+      },
+      "context": {
+        "ranges": [
+          {
+            "to": 1,
+            "value": "#1a7f37"
+          },
+          {
+            "from": 1,
+            "value": "#cf222e"
+          }
+        ]
+      }
+    },
+    "viz_reconcile": {
+      "type": "splunk.singlevalue",
+      "title": "Reconciliation",
+      "dataSources": {
+        "primary": "ds_reconcile"
+      },
+      "options": {
+        "majorValue": "> primary | seriesByName('state') | lastPoint()",
+        "majorColor": "> majorValue | matchValue(statusColors)"
+      },
+      "context": {
+        "statusColors": [
+          {
+            "match": "OK",
+            "value": "#1a7f37"
+          },
+          {
+            "match": "AMBER",
+            "value": "#9a6700"
+          },
+          {
+            "match": "RED",
+            "value": "#cf222e"
+          },
+          {
+            "match": "UNKNOWN",
+            "value": "#6e7781"
+          }
+        ]
+      }
+    },
+    "viz_time": {
+      "type": "splunk.singlevalue",
+      "title": "Time",
+      "dataSources": {
+        "primary": "ds_time"
+      },
+      "options": {
+        "majorValue": "> primary | seriesByName('time') | lastPoint()",
+        "majorColor": "> majorValue | matchValue(statusColors)"
+      },
+      "context": {
+        "statusColors": [
+          {
+            "match": "OK",
+            "value": "#1a7f37"
+          },
+          {
+            "match": "AMBER",
+            "value": "#9a6700"
+          },
+          {
+            "match": "ALARM",
+            "value": "#cf222e"
+          },
+          {
+            "match": "RED",
+            "value": "#cf222e"
+          },
+          {
+            "match": "UNKNOWN",
+            "value": "#6e7781"
+          }
+        ]
+      }
+    },
+    "viz_audit": {
+      "type": "splunk.singlevalue",
+      "title": "Audit trail",
+      "dataSources": {
+        "primary": "ds_audit"
+      },
+      "options": {
+        "majorValue": "> primary | seriesByName('state') | lastPoint()",
+        "majorColor": "> majorValue | matchValue(statusColors)"
+      },
+      "context": {
+        "statusColors": [
+          {
+            "match": "OK",
+            "value": "#1a7f37"
+          },
+          {
+            "match": "AMBER",
+            "value": "#9a6700"
+          },
+          {
+            "match": "RED",
+            "value": "#cf222e"
+          },
+          {
+            "match": "UNKNOWN",
+            "value": "#6e7781"
+          }
+        ]
+      }
+    },
+    "viz_flow": {
+      "type": "splunk.line",
+      "title": "Events in vs delivered",
+      "dataSources": {
+        "primary": "ds_flow"
+      },
+      "options": {
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_delay": {
+      "type": "splunk.line",
+      "title": "Delay by segment",
+      "dataSources": {
+        "primary": "ds_delay"
+      },
+      "options": {
+        "legendDisplay": "bottom",
+        "yAxisScale": "log"
+      }
+    },
+    "viz_skew": {
+      "type": "splunk.line",
+      "title": "Clock skew",
+      "dataSources": {
+        "primary": "ds_skew"
+      },
+      "options": {
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_gaps": {
+      "type": "splunk.column",
+      "title": "Gaps by reason",
+      "dataSources": {
+        "primary": "ds_gaps"
+      },
+      "options": {
+        "legendDisplay": "bottom"
+      }
+    },
+    "viz_reconcile_table": {
+      "type": "splunk.table",
+      "title": "Reconciliation by stream",
+      "dataSources": {
+        "primary": "ds_reconcile_table"
+      }
+    },
+    "viz_faults": {
+      "type": "splunk.table",
+      "title": "Fault history",
+      "dataSources": {
+        "primary": "ds_faults"
+      }
+    },
+    "viz_d_input": {
+      "type": "splunk.table",
+      "title": "Enclave 1 input",
+      "dataSources": {
+        "primary": "ds_d_input"
+      }
+    },
+    "viz_d_sender": {
+      "type": "splunk.table",
+      "title": "Enclave 1 sender",
+      "dataSources": {
+        "primary": "ds_d_sender"
+      }
+    },
+    "viz_d_boundary": {
+      "type": "splunk.table",
+      "title": "Boundary",
+      "dataSources": {
+        "primary": "ds_d_boundary"
+      }
+    },
+    "viz_d_capture": {
+      "type": "splunk.table",
+      "title": "Enclave 2 capture",
+      "dataSources": {
+        "primary": "ds_d_capture"
+      }
+    },
+    "viz_d_receiver": {
+      "type": "splunk.table",
+      "title": "Enclave 2 receiver",
+      "dataSources": {
+        "primary": "ds_d_receiver"
+      }
+    },
+    "viz_d_siem": {
+      "type": "splunk.table",
+      "title": "Enclave 2 SIEM",
+      "dataSources": {
+        "primary": "ds_d_siem"
+      }
+    },
+    "viz_audit_review": {
+      "type": "splunk.table",
+      "title": "Audit events to review",
+      "dataSources": {
+        "primary": "ds_audit_review"
+      }
+    }
+  },
+  "layout": {
+    "type": "absolute",
+    "options": {
+      "width": 1440,
+      "height": 1730,
+      "backgroundColor": "#f4f5f7"
+    },
+    "globalInputs": [
+      "input_time"
+    ],
+    "structure": [
+      {
+        "item": "viz_status",
+        "type": "block",
+        "position": {
+          "x": 16,
+          "y": 72,
+          "w": 560,
+          "h": 80
+        }
+      },
+      {
+        "item": "viz_where",
+        "type": "block",
+        "position": {
+          "x": 16,
+          "y": 152,
+          "w": 560,
+          "h": 80
+        }
+      },
+      {
+        "item": "viz_heard",
+        "type": "block",
+        "position": {
+          "x": 592,
+          "y": 72,
+          "w": 160,
+          "h": 160
+        }
+      },
+      {
+        "item": "viz_open_gaps",
+        "type": "block",
+        "position": {
+          "x": 768,
+          "y": 72,
+          "w": 152,
+          "h": 160
+        }
+      },
+      {
+        "item": "viz_reconcile",
+        "type": "block",
+        "position": {
+          "x": 936,
+          "y": 72,
+          "w": 152,
+          "h": 160
+        }
+      },
+      {
+        "item": "viz_time",
+        "type": "block",
+        "position": {
+          "x": 1104,
+          "y": 72,
+          "w": 152,
+          "h": 160
+        }
+      },
+      {
+        "item": "viz_audit",
+        "type": "block",
+        "position": {
+          "x": 1272,
+          "y": 72,
+          "w": 152,
+          "h": 160
+        }
+      },
+      {
+        "item": "viz_pipeline",
+        "type": "block",
+        "position": {
+          "x": 16,
+          "y": 248,
+          "w": 1408,
+          "h": 160
+        }
+      },
+      {
+        "item": "viz_flow",
+        "type": "block",
+        "position": {
+          "x": 16,
+          "y": 424,
+          "w": 1408,
+          "h": 240
+        }
+      },
+      {
+        "item": "viz_delay",
+        "type": "block",
+        "position": {
+          "x": 16,
+          "y": 680,
+          "w": 696,
+          "h": 200
+        }
+      },
+      {
+        "item": "viz_skew",
+        "type": "block",
+        "position": {
+          "x": 728,
+          "y": 680,
+          "w": 696,
+          "h": 200
+        }
+      },
+      {
+        "item": "viz_gaps",
+        "type": "block",
+        "position": {
+          "x": 16,
+          "y": 896,
+          "w": 696,
+          "h": 200
+        }
+      },
+      {
+        "item": "viz_reconcile_table",
+        "type": "block",
+        "position": {
+          "x": 728,
+          "y": 896,
+          "w": 696,
+          "h": 200
+        }
+      },
+      {
+        "item": "viz_faults",
+        "type": "block",
+        "position": {
+          "x": 16,
+          "y": 1112,
+          "w": 1408,
+          "h": 160
+        }
+      },
+      {
+        "item": "viz_d_input",
+        "type": "block",
+        "position": {
+          "x": 16,
+          "y": 1288,
+          "w": 218,
+          "h": 240
+        }
+      },
+      {
+        "item": "viz_d_sender",
+        "type": "block",
+        "position": {
+          "x": 254,
+          "y": 1288,
+          "w": 218,
+          "h": 240
+        }
+      },
+      {
+        "item": "viz_d_boundary",
+        "type": "block",
+        "position": {
+          "x": 492,
+          "y": 1288,
+          "w": 218,
+          "h": 240
+        }
+      },
+      {
+        "item": "viz_d_capture",
+        "type": "block",
+        "position": {
+          "x": 730,
+          "y": 1288,
+          "w": 218,
+          "h": 240
+        }
+      },
+      {
+        "item": "viz_d_receiver",
+        "type": "block",
+        "position": {
+          "x": 968,
+          "y": 1288,
+          "w": 218,
+          "h": 240
+        }
+      },
+      {
+        "item": "viz_d_siem",
+        "type": "block",
+        "position": {
+          "x": 1206,
+          "y": 1288,
+          "w": 218,
+          "h": 240
+        }
+      },
+      {
+        "item": "viz_audit_review",
+        "type": "block",
+        "position": {
+          "x": 16,
+          "y": 1544,
+          "w": 1408,
+          "h": 170
+        }
+      }
+    ]
+  }
+}

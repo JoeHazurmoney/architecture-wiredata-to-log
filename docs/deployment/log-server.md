@@ -26,7 +26,14 @@ sudo cp -r wd2l deploy /opt/wd2l/          # from this repo
 sudo cp deploy/log-server/egress.env.example /etc/wd2l/egress.env   # edit IFACE etc.
 uuidgen | sudo tee /etc/wd2l/aggregator.token >/dev/null
 sudo chown root:wd2l /etc/wd2l/aggregator.token && sudo chmod 640 /etc/wd2l/aggregator.token
+sudo groupadd --system wd2l-audit                                # who may read audit files
+sudo install -d -o wd2l -g wd2l-audit -m 2750 /var/log/wd2l      # setgid: files get the group
+sudo usermod -aG wd2l-audit <aggregator service account>         # it copies them (section 5)
+git rev-parse HEAD | sudo tee /opt/wd2l/wd2l/BUILD >/dev/null    # the build audit records name
 ```
+
+The log aggregator copies the audit files to the log retention server, so its service account
+needs to be in `wd2l-audit`. Restart the aggregator afterwards so it picks up the new group.
 
 ## 2. Egress NIC
 
@@ -95,6 +102,58 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | `--state` | none | Restart count and previous stream, so the receiver can link runs and report a missed one. The unit uses `/var/lib/wd2l/sender.json` |
 | `--drain-timeout` | `2` s | On shutdown, how long to keep reading input that is already arriving |
 | `--input-rcvbuf` | `262144` | TCP receive buffer for the aggregator connection. Bounds input that is acknowledged but not yet read |
+| `--audit-dir` | none | The unit uses `/var/log/wd2l`. Hash-chained audit records, see [the audit plan](../audit-and-health-plan.md) and **Audit files** below |
+| `--audit-min-free-mb` | `256` | Free space the audit directory must keep. Below it, nothing more goes in the audit files: records are still forwarded, counted as missed, and `audit_ok` is false until there is space again |
+| `--egress-iface` | none | The unit uses `ens224`. NIC carrier and transmit counters go into every heartbeat |
+| `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
+| `--log-format` | text | The unit uses `json`: one JSON object per log line |
+
+### Audit files
+
+The sender writes audit records to `/var/log/wd2l/audit-*.jsonl`. Each record carries the hash of
+the one before it, so a removed or changed record breaks the chain.
+
+**Disk space.** Put `/var/log/wd2l` on a filesystem of its own (a partition or logical volume),
+so audit files can never fill the disk that holds the sender's state file and the aggregator's
+data. If it must share one, size it for them all. The audit files stay under 2 GB a year
+([audit plan, section 15](../audit-and-health-plan.md#15-storage-estimate-storage-capacity-retention)).
+The sender keeps `--audit-min-free-mb` free on that filesystem: below it, it writes nothing more
+to the audit files until there is space again, and keeps sending. The records still cross
+in-band.
+
+A timer makes the files append-only and deletes them after a year:
+
+```bash
+sudo cp deploy/common/wd2l-audit-seal.service deploy/common/wd2l-audit-seal.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-audit-seal.timer
+```
+
+auditd rules record who changes wd2l's programs, settings, units and files:
+
+```bash
+sudo cp deploy/log-server/wd2l.rules /etc/audit/rules.d/
+sudo augenrules --load
+```
+
+Check the chain:
+
+```bash
+sudo -u wd2l python3 -m wd2l.audit verify /var/log/wd2l
+wd2l-audit-report verify --dir /var/log/wd2l      # once installed with pip
+```
+
+The aggregator copies these files to the log retention server
+([retention-server.md](retention-server.md#6-wd2l-audit-files)).
+
+To turn debug logging on or off so that the audit record names you, signal the sender from your
+own session:
+
+```bash
+sudo kill -USR1 "$(systemctl show -p MainPID --value wd2l-sender)"
+```
+
+Don't use `systemctl kill`: systemd becomes the sender of the signal, and the record can't name
+you.
 
 ## 5. Log aggregator
 
@@ -135,8 +194,9 @@ A second output keeps the 1-year Enclave 1 copy ([retention-server.md](retention
 * The aggregator must be able to read a time window back from the retention server and route it
   to the sender output. Route replayed events to the sender output only, not back to the
   retention server.
-* Once wd2l writes audit files (audit plan, phase 1), also read `/var/log/wd2l/audit.jsonl` and
-  route it to the retention server only, with each line unchanged.
+* Also read `/var/log/wd2l/audit-*.jsonl` and route those lines to the retention server only,
+  with each line unchanged ([retention-server.md](retention-server.md#6-wd2l-audit-files)). The
+  aggregator's service account must be in group `wd2l-audit` to read them (section 1).
 
 ### Example: Cribl Stream
 

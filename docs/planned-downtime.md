@@ -48,8 +48,11 @@ and every event byte for byte.
 * **Agree the window with the other enclave's team**, by phone or ticket. Enclave 2 can't send
   anything to Enclave 1, so the people have to coordinate. Several steps below are "tell the
   other side".
-* **Mute two SIEM alerts for the window:** "WD2L - Heartbeat stale" (fires while the sender is
-  stopped) and "WD2L - Receiver silent" (fires if the receiver is down for more than 15 minutes).
+* **Mute three SIEM alerts for the window:** "WD2L - Heartbeat stale" (fires while the sender is
+  stopped), "WD2L - Receiver silent" (fires if the receiver is down for more than 15 minutes)
+  and "WD2L - Fault segment" (fires on any fault status that isn't `ok`). While the sender is
+  stopped cleanly, the dashboard shows amber, `e1-sender`, rule 2, not red
+  ([state-of-health.md](state-of-health.md#planned-downtime-sender-stopped-cleanly-rule-2)).
   In Splunk: Settings → Searches, reports, and alerts → disable, then re-enable afterwards.
 * **Check the aggregator's queue is big enough** for the window. At 1,000 events/s and about
   1 KB each, that's about 3.6 GB per hour. wd2l itself has no time limit on the window.
@@ -86,11 +89,21 @@ sudo tcpdump -i ens224 -nn -c 5                 # only ~1 packet per second: hea
 
 ```bash
 sudo systemctl stop wd2l-sender
-journalctl -u wd2l-sender -n 3 --no-pager
+journalctl -u wd2l-sender -n 50 --no-pager
 ```
 
-The last line reads `final: last_seq=<N> {… "shutdown_unread_bytes": 0 …}`. Note `<N>` and tell
-Enclave 2. If `shutdown_unread_bytes` isn't 0, input was still arriving: see
+The sender's last line (systemd may log a few lines of its own about the unit after it) reads
+`final: last_seq=<N> {… "shutdown_unread_bytes": 0 …}`. With
+`--log-format json` the line is a JSON object, and this shows the message from `final:` on:
+
+```bash
+journalctl -u wd2l-sender -n 50 -o cat | grep -o 'final: last_seq=.*'
+```
+
+In JSON logs the quotes inside the counters appear escaped, so look for
+`\"shutdown_unread_bytes\": 0`.
+
+Note `<N>` and tell Enclave 2. If `shutdown_unread_bytes` isn't 0, input was still arriving: see
 [If something went wrong](#if-something-went-wrong).
 
 If the log server will **reboot while Enclave 2 is still down**, also keep the sender from
@@ -177,7 +190,17 @@ Expected: `stream_end` (old run), `stream_start` (new run), `heartbeat_stale` an
 
 Events from the queue carry their original `_time`, so `wd2l_tx_time − _time` (the Enclave 1
 delay, see [operations.md](operations.md#measuring-delays)) is high for the backlog and falls back
-to normal once it has drained. Re-enable the two alerts.
+to normal once it has drained.
+
+For auditors, check that the restart is on record (the `wd2l_auditor` role is needed):
+
+```
+index=wd2l_audit earliest=-2h event IN (stop, start, state_loaded, config_changed) | table _time host component event actor
+```
+
+Expect a `stop` and a `start` on each side you restarted, and `state_loaded`, not `state_reset`
+(a reset means the state file was lost). A `config_changed` is expected only if you changed
+something. Re-enable the three alerts.
 
 ## Shorter variants
 

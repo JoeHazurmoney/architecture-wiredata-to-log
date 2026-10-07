@@ -1,0 +1,7 @@
+[Unit]
+Description=wd2l: make audit files append-only; delete those older than 366 days
+ConditionPathIsDirectory=/var/log/wd2l
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /opt/wd2l/deploy/common/wd2l-audit-seal.sh

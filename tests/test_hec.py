@@ -161,6 +161,21 @@ def test_close_spools_unsent(tmp_path):
     assert spooled.count(b"\n") == 3
 
 
+def test_spool_bytes_are_reported(tmp_path):
+    """Final review Minor 1: the e2-siem panel shows spool bytes, not only files."""
+    probe = FakeSplunk()
+    port = probe.port
+    probe.stop()
+    o = hec("http://127.0.0.1:%d" % port, tmp_path, retry_interval=60)
+    assert o.stats()["hec_spool_bytes"] == 0
+    for i in range(3):
+        o.event({"_raw": "e"}, 1, i)
+    o.close()
+    on_disk = sum(os.path.getsize(tmp_path / "spool" / f)
+                  for f in os.listdir(tmp_path / "spool") if f.endswith(".ndjson"))
+    assert on_disk > 0 and o.stats()["hec_spool_bytes"] == on_disk
+
+
 def test_force_index(splunk, tmp_path):
     o = hec("http://127.0.0.1:%d" % splunk.port, tmp_path, force_index="imported")
     o.event({"_raw": "x", "index": "net"}, 1, 1)
@@ -227,3 +242,56 @@ def test_spool_size_is_tracked(tmp_path):
     sp.remove(name)
     assert sp.size() == 0 and sp.files() == []
     assert Spool(str(tmp_path / "s"), 10).size() == 0
+
+
+from wd2l import audit as auditlog
+
+
+def test_audit_records_go_to_the_audit_index_as_canonical_text(splunk, tmp_path):
+    o = hec("http://127.0.0.1:%d" % splunk.port, tmp_path, force_index="everything")
+    rec = {"ts": "2026-10-05T14:03:22.500000Z", "event": "gap", "component": "receiver",
+           "n": 1, "prev_hash": "0" * 64, "hash": "f" * 64}
+    o.audit(rec)
+    o.health({"type": "health", "time": 1})
+    assert wait_for(lambda: len(splunk.records()) == 2)
+    o.close()
+    a, h = sorted(splunk.records(), key=lambda r: r["sourcetype"])
+    assert (a["sourcetype"], a["index"], a["source"]) == ("wd2l:audit", "wd2l_audit", "wd2l-receiver")
+    assert a["event"] == auditlog.canonical(rec).decode() and a["time"] == 1791209002.5
+    assert h["index"] == "everything"
+
+
+def test_data_event_cannot_land_in_the_audit_index(splunk, tmp_path):
+    """Review focus 4: an imported event naming the audit index stays with the data."""
+    o = hec("http://127.0.0.1:%d" % splunk.port, tmp_path)
+    o.event({"_raw": "x", "index": "wd2l_audit"}, 1, 1)
+    assert wait_for(lambda: len(splunk.records()) == 1)
+    o.close()
+    assert splunk.records()[0]["index"] == "enclave1"
+    assert o.stats()["hec_audit_index_refused"] == 1
+
+
+def test_audit_output_with_its_own_token_and_prefixed_stats(splunk, tmp_path):
+    o = HecOutput("http://127.0.0.1:%d" % splunk.port, "audit-tok", str(tmp_path / "sp"),
+                  stat_prefix="audit_", retry_interval=0.2)
+    o.audit({"ts": "2026-10-05T14:03:22.500000Z", "event": "start", "component": "receiver"})
+    assert wait_for(lambda: len(splunk.records()) == 1)
+    o.close()
+    assert splunk.auth == ["Splunk audit-tok"]
+    assert o.stats()["audit_hec_events_sent"] == 1 and "hec_events_sent" not in o.stats()
+
+
+def test_forwarded_records_keep_their_index_whatever_force_index_says(splunk, tmp_path):
+    o = hec("http://127.0.0.1:%d" % splunk.port, tmp_path, force_index="everything",
+            health_index="wd2l")
+    o.forwarded({"_raw": '{"event":"start"}', "_time": 5, "host": "logsrv01",
+                 "source": "wd2l-sender"}, 0x22, 1, "audit")
+    o.forwarded({"_raw": '{"type":"health"}', "_time": 6, "host": "logsrv01"}, 0x22, 2, "health")
+    assert wait_for(lambda: len(splunk.records()) == 2)
+    assert wait_for(lambda: o.pending() == {})
+    o.close()
+    a, h = sorted(splunk.records(), key=lambda x: x["time"])
+    assert (a["index"], a["sourcetype"], a["host"], a["event"]) == \
+        ("wd2l_audit", "wd2l:sender:audit", "logsrv01", '{"event":"start"}')
+    assert (h["index"], h["sourcetype"]) == ("wd2l", "wd2l:sender:health")
+    assert a["fields"] == {"wd2l_stream": "0000000000000022", "wd2l_seq": 1}

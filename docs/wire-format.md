@@ -15,7 +15,7 @@ annotated captures, written for the interface control document, see
 | 0 | 4 | `magic` | ASCII `WD2L` |
 | 4 | 1 | `version` | `1` |
 | 5 | 1 | `type` | `1` = DATA, `2` = HEARTBEAT |
-| 6 | 2 | `flags` | reserved, `0` |
+| 6 | 2 | `flags` | bit 0 = records stream (below); other bits `0` |
 | 8 | 8 | `stream_id` | random, new every time the sender starts |
 | 16 | 8 | `seq` | DATA: event number in this stream, starting at 1. HEARTBEAT: last event number sent |
 | 24 | 2 | `chunk_idx` | 0-based piece number |
@@ -60,17 +60,31 @@ aggregator sent, so only the sender can set them. See
 One piece, JSON, sent every second and once more on clean shutdown:
 
 ```json
-{"bad_input":0,"boot":42,"datagrams_sent":8673,"events_sent":5001,"final":true,
- "opaque_events":0,"prev_last_seq":1837204,"prev_stream":9140175346201236511,"send_errors":0,
- "sender_drops":0,"sender_time":1790360018.66,"shutdown_unread_bytes":0,"truncated":1,
- "uptime":12.3}
+{"audit_n":412,"audit_ok":true,"bad_input":0,"boot":42,"clients":1,"cpu_pct":1.4,
+ "datagrams_sent":8673,"events_hash":"3f9a0c51d27be4468a1d90c7e25b6f83b04c7d19e8a2f5603d1b94ce7a08f26d",
+ "events_in":5001,"events_sent":5001,"final":true,
+ "heartbeat_trimmed":0,
+ "input_backlog_bytes":0,"nic_carrier":true,"nic_tx_dropped":0,"nic_tx_errors":0,
+ "nic_tx_packets":8673,"opaque_events":0,"prev_last_seq":1837204,
+ "prev_stream":9140175346201236511,"rss_mb":31.2,"send_errors":0,"sender_drops":0,
+ "sender_time":1790360018.66,"shutdown_unread_bytes":0,"stall_s":0.0,"time_offset_ms":0.021,
+ "time_stratum":1,"time_synced":true,"truncated":1,"uptime":12.3}
 ```
 
-Keys are sent in sorted order, as shown.
+Keys are sent in sorted order, as shown. Since wd2l 0.2.0 the heartbeat also carries a snapshot of
+Enclave 1 (input, sender process, egress NIC, time, audit); see the ICD §8 for every key. When the
+sender can't read chrony, `time_offset_ms`, `time_stratum` and `time_synced` are left out and
+`"time_unavailable":true` is sent instead.
 
 `seq` in the header is the last event number sent. That's what lets the receiver notice events
 lost at the very end of a burst, when nothing newer arrives to reveal the hole. `final` is present
 only on the shutdown heartbeat, and is always the last frame of a stream.
+
+`events_hash` is the set hash of this run's events 1 … `seq` (the heartbeat's `seq` is the cut): the
+sum modulo 2²⁵⁶ of SHA-256(`seq` as 8 bytes big-endian ‖ the event's SHA-256 `digest`). It is 64
+lowercase hex digits, all zeros before the first event. Enclave 2 computes the same sum over what
+it received and compares, which proves it delivered exactly these events. It is always present and
+is never dropped from a trimmed heartbeat.
 
 `shutdown_unread_bytes` is input the log aggregator had already handed over (TCP acknowledged)
 that the sender could not read before it stopped. It is normally 0.
@@ -85,6 +99,23 @@ fiber.
 * `boot` counts sender runs (1, 2, 3, …). It lives in the sender's state file.
 * `prev_stream` / `prev_last_seq` name the run before this one and the last event number it
   recorded (saved at every heartbeat, so after a crash it can be up to one heartbeat behind).
+
+## Records stream
+
+With `--audit-dir`, the sender runs a second stream beside the data stream. It carries the
+sender's own audit and health records. It has its own random `stream_id`, its own `seq` from 1 and
+its own heartbeat, and every frame has `flags` bit 0 set. Its DATA bodies use the same event
+layout, but they are records, not logs: `host` is the log server, `source` is `wd2l-sender`,
+`sourcetype` is `wd2l:sender:audit` or `wd2l:sender:health`, and `_raw` is the record as canonical
+JSON. There is no `index`.
+
+The heartbeat has `events_sent`, `records_too_big`, `outbox_dropped`, `sender_time`, `uptime` and
+`final`. It has no `boot` or `prev_*`: records streams aren't linked across runs. Receivers older
+than wd2l 0.2.0 ignore `flags`, so **update the receiver first**.
+
+Receiver rule: frames with `flags` bit 0 set are tracked as their own stream, delivered to the
+audit or health index, and never linked to the run chain. Only records whose `enclave` is 1 and
+whose `component` is `sender` are delivered; anything else is dropped and counted in `records_bad`.
 
 ## Why the sequence number never resets
 

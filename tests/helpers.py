@@ -38,12 +38,20 @@ class MemOutput(Output):
     def __init__(self):
         self.events = []
         self.records = []
+        self.audits = []
+        self.forwarded_records = []
 
     def event(self, evt, stream_id, seq):
         self.events.append((stream_id, seq, evt))
 
     def health(self, rec):
         self.records.append(rec)
+
+    def audit(self, rec):
+        self.audits.append(rec)
+
+    def forwarded(self, evt, stream_id, seq, kind):
+        self.forwarded_records.append((kind, stream_id, seq, evt))
 
     def kinds(self, kind):
         return [r for r in self.records if r["type"] == kind]
@@ -104,3 +112,23 @@ class SlowOutput(MemOutput):
     def take_failed(self):
         f, self.failed = self.failed, []
         return f
+
+
+def read_audit(directory):
+    """Every audit record on disk in this directory, oldest first (torn lines skipped)."""
+    import json as _json
+    from wd2l import audit as _audit
+    out = []
+    for path in _audit.audit_files(str(directory)):
+        with open(path, "rb") as f:
+            for line in _audit.split_lines(f.read()):
+                if line.endswith(b"\n"):
+                    out.append(_json.loads(line))
+    return out
+
+
+def write_pcap(path, datagrams, t0=1000.0):
+    with open(path, "wb") as f:
+        w = packets.PcapWriter(f)
+        for i, d in enumerate(datagrams):
+            w.write(t0 + i * 0.0005, eth(d, i))

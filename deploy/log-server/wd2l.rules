@@ -1,0 +1,13 @@
+## wd2l host audit rules, Enclave 1 log server (docs/audit-and-health-plan.md section 10).
+## Copy to /etc/audit/rules.d/wd2l.rules, then: sudo augenrules --load
+## Who changes wd2l's programs, settings and units:
+-w /opt/wd2l/ -p wa -k wd2l-code
+-w /etc/wd2l/ -p wa -k wd2l-config
+-w /etc/systemd/system/wd2l-sender.service -p wa -k wd2l-units
+-w /etc/systemd/system/wd2l-egress-nic.service -p wa -k wd2l-units
+-w /etc/systemd/system/wd2l-audit-seal.service -p wa -k wd2l-units
+-w /etc/systemd/system/wd2l-audit-seal.timer -p wa -k wd2l-units
+## State and audit files: only changes made from a login session (auid set). The daemons write
+## there all the time.
+-a always,exit -F dir=/var/lib/wd2l -F perm=wa -F auid!=unset -k wd2l-state
+-a always,exit -F dir=/var/log/wd2l -F perm=wa -F auid!=unset -k wd2l-audit-files
