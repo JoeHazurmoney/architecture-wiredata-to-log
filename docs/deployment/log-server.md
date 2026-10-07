@@ -28,8 +28,12 @@ uuidgen | sudo tee /etc/wd2l/aggregator.token >/dev/null
 sudo chown root:wd2l /etc/wd2l/aggregator.token && sudo chmod 640 /etc/wd2l/aggregator.token
 sudo groupadd --system wd2l-audit                                # who may read audit files
 sudo install -d -o wd2l -g wd2l-audit -m 2750 /var/log/wd2l      # setgid: files get the group
+sudo usermod -aG wd2l-audit <aggregator service account>         # it copies them (section 5)
 git rev-parse HEAD | sudo tee /opt/wd2l/wd2l/BUILD >/dev/null    # the build audit records name
 ```
+
+The log aggregator copies the audit files to the log retention server, so its service account
+needs to be in `wd2l-audit`. Restart the aggregator afterwards so it picks up the new group.
 
 ## 2. Egress NIC
 
@@ -151,9 +155,6 @@ sudo kill -USR1 "$(systemctl show -p MainPID --value wd2l-sender)"
 Don't use `systemctl kill`: systemd becomes the sender of the signal, and the record can't name
 you.
 
-The log aggregator copies these files to the log retention server
-([retention-server.md](retention-server.md)).
-
 ## 5. Log aggregator
 
 Any log aggregator works if it can do the following. (Examples of products in this role: Cribl
@@ -194,7 +195,8 @@ A second output keeps the 1-year Enclave 1 copy ([retention-server.md](retention
   to the sender output. Route replayed events to the sender output only, not back to the
   retention server.
 * Also read `/var/log/wd2l/audit-*.jsonl` and route those lines to the retention server only,
-  with each line unchanged ([retention-server.md](retention-server.md#6-wd2l-audit-files)).
+  with each line unchanged ([retention-server.md](retention-server.md#6-wd2l-audit-files)). The
+  aggregator's service account must be in group `wd2l-audit` to read them (section 1).
 
 ### Example: Cribl Stream
 

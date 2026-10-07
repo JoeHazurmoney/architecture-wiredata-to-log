@@ -252,9 +252,9 @@ The receiver decides which segment of the path is at fault: Enclave 1's input, t
 | `sender-stop` | Half the logs, a clean sender stop, 10 seconds, sender start, the other half. | `e1-sender`, amber, rule 2 |
 | `sender-hang` | The sender is frozen (`kill -STOP`) for 10 seconds. | `e1-sender/boundary`, red, rule 3 |
 | `tap-down` | The tap's monitor port goes down for 10 seconds. | `boundary`, red, rule 1 |
-| `foreign-only` | The sender is stopped and other UDP traffic crosses the cable for 10 seconds. | `boundary`, red, rule 4 |
+| `foreign-only` | The sender is frozen (`kill -STOP`) and other UDP traffic crosses the cable for 10 seconds. | `boundary`, red, rule 4 |
 | `wire-loss` | 20% of packets are lost on the cable for 10 seconds. | `boundary`, amber, rule 9 |
-| `receiver-slow` | A small capture buffer, and the receiver is stopped for 4 seconds at 5,000 events a second. | `e2-capture`, red, rule 8 |
+| `receiver-slow` | A small capture buffer, and the receiver is frozen (`kill -STOP`) for 4 seconds at 5,000 events a second. | `e2-capture`, red, rule 8 |
 | `siem-down` | The stand-in SIEM is down for 12 seconds. | `e2-siem`, amber, rule 10 |
 | `clock` | The stand-in `chronyc` says "not synchronised" for 10 seconds. | a time alarm |
 

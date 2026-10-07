@@ -229,7 +229,9 @@ the very end of a burst, when nothing newer arrives to show the gap.
 The body is compact UTF-8 JSON with **keys in sorted order**, about 600–800 bytes with
 the deployed unit, so the datagram is about 670–870 bytes. It is always one packet: if the
 snapshot keys would not fit `--max-datagram`, they are left out of that heartbeat and
-`heartbeat_trimmed` counts it. Numbers are cumulative for this sender run unless noted.
+`heartbeat_trimmed` counts it. A snapshot value the sender can't read is left out too: "always"
+on a snapshot key means whenever the snapshot is sent and the value can be read. Numbers are
+cumulative for this sender run unless noted.
 
 | Name | Type | Units | When present | Meaning |
 |---|---|---|---|---|
@@ -253,7 +255,7 @@ snapshot keys would not fit `--max-datagram`, they are left out of that heartbea
 | `opaque_events` | integer | events | always | Events flagged `wd2l_opaque` |
 | `prev_last_seq` | integer ≥ 0 | | with `--state`, from the second run on | Last `seq` the previous run recorded (saved at each heartbeat) |
 | `prev_stream` | integer, 0 … 2⁶⁴−1 | | with `--state`, from the second run on | The previous run's `stream_id`. Up to 20 digits; parse it as an integer, not a double |
-| `rss_mb` | number | MiB | always | Sender memory |
+| `rss_mb` | number | MiB | when `/proc/self/statm` can be read (normally always) | Sender memory |
 | `send_errors` | integer | packets | always | Sends that failed with an error other than "buffer full" (for example, too big for the MTU) |
 | `sender_drops` | integer | packets | always | Datagrams the sender gave up on (buffer full after retries, or an error) |
 | `sender_time` | number, 3 decimals | seconds since 1970-01-01 UTC | always | Sender's clock. Enclave 2 compares it to its own clock (`clock_offset_s`) |

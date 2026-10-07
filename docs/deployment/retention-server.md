@@ -97,8 +97,8 @@ To check a copy:
 wd2l-audit-report verify --dir <copy>
 ```
 
-It prints `ok`, or what is wrong with the chain. See
-[operations.md](../operations.md#audit-records).
+It prints a JSON result: `result` is `ok`, or `failed` with what is wrong with the chain. It
+exits 1 on a problem. See [operations.md](../operations.md#audit-records).
 
 ## 7. Checks
 
@@ -108,5 +108,10 @@ df -h /srv/log-retention              # disk use against the estimate above
 ```
 
 * The aggregator's queue for this output stays near empty.
+* **wd2l's audit files arrive.** The copy's newest `audit-*.jsonl` keeps growing (the sender
+  writes at least an hourly `reconcile` record), and `wd2l-audit-report verify --dir <copy>`
+  gives `"result": "ok"`. Nothing arriving usually means the aggregator's service account can't
+  read `/var/log/wd2l`: it must be in group `wd2l-audit`
+  ([log-server.md](log-server.md#1-install-wd2l)).
 * **Practice a replay** at deployment and after changes: replay a 5-minute window and confirm the
   events arrive in the Enclave 2 SIEM.

@@ -89,14 +89,15 @@ sudo tcpdump -i ens224 -nn -c 5                 # only ~1 packet per second: hea
 
 ```bash
 sudo systemctl stop wd2l-sender
-journalctl -u wd2l-sender -n 3 --no-pager
+journalctl -u wd2l-sender -n 50 --no-pager
 ```
 
-The last line's message reads `final: last_seq=<N> {… "shutdown_unread_bytes": 0 …}`. With
+The sender's last line (systemd may log a few lines of its own about the unit after it) reads
+`final: last_seq=<N> {… "shutdown_unread_bytes": 0 …}`. With
 `--log-format json` the line is a JSON object, and this shows the message from `final:` on:
 
 ```bash
-journalctl -u wd2l-sender -n 3 -o cat | grep -o 'final: last_seq=.*'
+journalctl -u wd2l-sender -n 50 -o cat | grep -o 'final: last_seq=.*'
 ```
 
 In JSON logs the quotes inside the counters appear escaped, so look for

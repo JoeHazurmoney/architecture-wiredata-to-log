@@ -45,18 +45,18 @@ names the difference. Each section's **As built** note has the details.
 | [3. Gaps](#3-what-exists-today-and-the-gaps) | Close gaps G1–G9 | All nine closed (the `Closed by` column) | `wd2l/audit.py`, `wd2l/sender.py`, `wd2l/receiver.py`, `deploy/` |
 | [4. Three kinds of records](#4-three-kinds-of-records) | Operational log, health, audit; JSON logs; `SIGUSR1` | As proposed. Enclave 1 health lands in `wd2l` as `wd2l:sender:health` | `wd2l/logsetup.py`, `wd2l/outputs.py`, `tests/test_logsetup.py`, `tests/test_records_stream.py` |
 | [5. Record format](#5-common-record-format) | Common fields, hash chain; identity in health records | As proposed, plus `code_sha256` and `python` on `start`; unchained copies; unusable values written as null or text | `wd2l/audit.py`, `wd2l/hostinfo.py`, `tests/test_audit.py`, `tests/test_hostinfo.py` |
-| [6. Event catalog](#6-audit-event-catalog-event-logging) | The audit events, some summarised | As proposed, plus `sender_boot_reset` and `stream_evicted`; `auth_failure` and `gap_filled` summarised too; `config_changed` needs `--state` | `wd2l/sender.py`, `wd2l/receiver.py`, `tests/test_sender_audit.py`, `tests/test_receiver_audit.py` |
-| [7. Records stream](#7-getting-enclave-1s-records-to-enclave-2-no-enclave-1-siem) | Enclave 1 records in-band on a flagged stream; heartbeat snapshot | As proposed; only with `--audit-dir`; not linked across runs; the receiver picks the index; `heartbeat_trimmed` | `wd2l/wire.py`, `wd2l/sender.py`, `wd2l/outputs.py`, `docs/interface-description.md`, `docs/wire-format.md`, `tests/test_records_stream.py`, `tests/test_sender_health.py` |
-| [8. Health signals](#8-health-signals-by-segment) | New signals per segment | As proposed; "tcpdump running" is `archive_stale`; spool bytes not reported | `wd2l/hostinfo.py`, `wd2l/receiver.py`, `tests/test_hostinfo.py`, `tests/test_receiver_signals.py` |
-| [9. Reconciliation](#9-reconciliation-completeness-and-accuracy) | Set hashes, hourly `reconcile`, `wd2l-audit-report` | As proposed, plus `type=reconcile` health records and a record when an ended stream's balance changes; report has `--export` and `--complete` | `wd2l/reconcile.py`, `wd2l/audit_report.py`, `tests/test_reconcile.py`, `tests/test_receiver_reconcile.py`, `tests/test_audit_report.py` |
-| [10. Protection](#10-protecting-the-audit-trail-protection-storage-failure-response) | Chain, self-check, append-only files, 1 year, own index, auditd rules, keep transferring | As proposed; self-check in a child process; new file after a failed write; torn and hostile lines reported | `wd2l/audit.py`, `deploy/common/wd2l-audit-seal.sh`, `deploy/common/wd2l-audit-seal.timer`, `deploy/log-server/wd2l.rules`, `deploy/receiver/wd2l.rules`, `tests/test_audit.py`, `tests/test_deploy.py` |
-| [11. Time](#11-time-time-stamps) | chrony every 60 s; thresholds; skew alarm | As proposed, plus `type=time_status` records | `wd2l/hostinfo.py`, `wd2l/fault.py`, `tests/test_hostinfo.py`, `tests/test_fault.py` |
-| [12. Fault dashboard](#12-the-where-is-the-fault-dashboard) | Rules 1–11 in the receiver; six-part layout | Rules as proposed; `unknown` segments; rule 3 `e1-sender/boundary`, rule 8 `e2-capture`; 20 panels | `wd2l/fault.py`, `wd2l/receiver.py`, `docs/state-of-health.md`, `deploy/receiver/splunk/wd2l-health-dashboard.json`, `tests/test_fault.py`, `tests/test_dashboard.py` |
-| [13. Alerts](#13-alerts-added-or-changed) | Fault, reconciliation, audit and time alerts; daily review report | As proposed; every alert reads only the health index | `deploy/receiver/splunk/savedsearches.conf`, `docs/operations.md`, `docs/planned-downtime.md`, `tests/test_siem_config.py` |
+| [6. Event catalog](#6-audit-event-catalog-event-logging) | The audit events, some summarised | As proposed, plus `sender_boot_reset` and `stream_evicted`; `auth_failure`, `gap_filled` and (final review) `gap` summarised too; `config_changed` needs `--state` | `wd2l/sender.py`, `wd2l/receiver.py`, `tests/test_sender_audit.py`, `tests/test_receiver_audit.py` |
+| [7. Records stream](#7-getting-enclave-1s-records-to-enclave-2-no-enclave-1-siem) | Enclave 1 records in-band on a flagged stream; heartbeat snapshot | As proposed; only with `--audit-dir`; not linked across runs; the receiver picks the index and passes on only the Enclave 1 sender's records; `heartbeat_trimmed`; `time_unavailable` | `wd2l/wire.py`, `wd2l/sender.py`, `wd2l/outputs.py`, `docs/interface-description.md`, `docs/wire-format.md`, `tests/test_records_stream.py`, `tests/test_sender_health.py` |
+| [8. Health signals](#8-health-signals-by-segment) | New signals per segment | As proposed; "tcpdump running" is `archive_stale`; spool bytes added in the final review | `wd2l/hostinfo.py`, `wd2l/receiver.py`, `wd2l/outputs.py`, `tests/test_hostinfo.py`, `tests/test_receiver_signals.py`, `tests/test_hec.py` |
+| [9. Reconciliation](#9-reconciliation-completeness-and-accuracy) | Set hashes, hourly `reconcile`, `wd2l-audit-report` | As proposed, plus `type=reconcile` health records and a record when an ended stream's balance changes; report has `--export` and `--complete`; a gap closed by a re-send stays unbalanced for good (open item 7) | `wd2l/reconcile.py`, `wd2l/audit_report.py`, `tests/test_reconcile.py`, `tests/test_receiver_reconcile.py`, `tests/test_audit_report.py` |
+| [10. Protection](#10-protecting-the-audit-trail-protection-storage-failure-response) | Chain, self-check, append-only files, 1 year, own index, auditd rules, keep transferring | As proposed; self-check in a child process (output to temporary files, killed after 6 h); new file after a failed write; torn and hostile lines reported; free-space floor enforced; audit records to the SIEM need their own token | `wd2l/audit.py`, `deploy/common/wd2l-audit-seal.sh`, `deploy/common/wd2l-audit-seal.timer`, `deploy/log-server/wd2l.rules`, `deploy/receiver/wd2l.rules`, `tests/test_audit.py`, `tests/test_deploy.py` |
+| [11. Time](#11-time-time-stamps) | chrony every 60 s; thresholds; skew alarm | As proposed, plus `type=time_status` records; a sender that can't read chrony is an alarm too | `wd2l/hostinfo.py`, `wd2l/fault.py`, `tests/test_hostinfo.py`, `tests/test_fault.py` |
+| [12. Fault dashboard](#12-the-where-is-the-fault-dashboard) | Rules 1–11 in the receiver; six-part layout | Rules as proposed; `unknown` segments; rule 3 `e1-sender/boundary`, rule 8 `e2-capture`; the rules read the run with the newest heartbeat; 20 panels | `wd2l/fault.py`, `wd2l/receiver.py`, `docs/state-of-health.md`, `deploy/receiver/splunk/wd2l-health-dashboard.json`, `tests/test_fault.py`, `tests/test_dashboard.py` |
+| [13. Alerts](#13-alerts-added-or-changed) | Fault, reconciliation, audit and time alerts; daily review report | As proposed; every alert reads only the health index; the reconciliation alert fires only without open gaps; the daily report shows `sourcetype` | `deploy/receiver/splunk/savedsearches.conf`, `docs/operations.md`, `docs/planned-downtime.md`, `tests/test_siem_config.py` |
 | [14. Control mapping](#14-control-mapping-examples) | Examples per control | Unchanged; the rows point at built features | This table's `Where` column |
-| [15. Storage](#15-storage-estimate-storage-capacity-retention) | Audit 1–5 MB/day per side; health ~10 MB/day | Measured: audit about 16 KB on a quiet day, about 2.8 MB with three summaries a minute; health about 5.4 MB/day; heavy loss writes far more (one record per gap) | `lab/run-lab.sh`, `lab/verify.py` |
-| [16. Phases](#16-implementation-phases) | Four phases; unit tests; nine lab fault runs | Done: four phases, 354 tests; all nine fault runs pass | `tests/`, `lab/run-lab.sh`, `lab/check_fault.py`, `.github/workflows/tests.yml` |
-| [17. Open items](#17-open-items-for-the-security-and-system-owners) | Six questions for the owners | Still open; the code uses the proposed defaults | `deploy/receiver/splunk/authorize.conf`, `docs/deployment/retention-server.md` |
+| [15. Storage](#15-storage-estimate-storage-capacity-retention) | Audit 1–5 MB/day per side; health ~10 MB/day | Measured: audit about 16 KB on a quiet day, about 2.8 MB with three summaries a minute, and heavy loss adds about 1 MB a day (gaps summarised); health about 5.4 MB/day, plus one `gap` record per gap | `lab/run-lab.sh`, `lab/verify.py` |
+| [16. Phases](#16-implementation-phases) | Four phases; unit tests; nine lab fault runs | Done: four phases, then the final review fixes; 378 tests; all nine fault runs passed at f0c5cbd | `tests/`, `lab/run-lab.sh`, `lab/check_fault.py`, `.github/workflows/tests.yml` |
+| [17. Open items](#17-open-items-for-the-security-and-system-owners) | Six questions for the owners | Still open, plus a seventh from the final review (permanent gaps); the code uses the proposed defaults | `deploy/receiver/splunk/authorize.conf`, `docs/deployment/retention-server.md` |
 
 ## 3. What exists today, and the gaps
 
@@ -204,20 +204,24 @@ alerts, the runbooks and the lab's checks use them. They gain the identity field
 > differences:
 >
 > * **Summarised per minute:** `input_rejected`, `truncated`, `opaque_content` and
->   `send_failure`, as proposed, and also `auth_failure` and `gap_filled`. An aggregator retrying
->   a bad token every second would write 86,400 records a day, and an archive replay can fill
->   100,000 events at once. Each summary is one record per event, key and minute, with a
->   `count`. The key is, for example, the client and reason, the host and source, or the stream
->   (`gap_filled` gives `seq_first` and `seq_last`). Past 100 keys in a minute, the rest share
->   one `overflow` record.
+>   `send_failure`, as proposed, and also `auth_failure`, `gap_filled` and `gap`. An aggregator
+>   retrying a bad token every second would write 86,400 records a day, an archive replay can
+>   fill 100,000 events at once, and chronic loss can declare ten gaps a second. Each summary is
+>   one record per event, key and minute, with a `count`. The key is, for example, the client
+>   and reason, the host and source, or the stream (`gap_filled` gives `seq_first` and
+>   `seq_last`). Past 100 keys in a minute, the rest share one `overflow` record.
 > * **`boundary_anomaly` and `output_failure`** are written once a minute from the growth of
 >   the receiver's counters. `reason` names the counter: for example `other_packets` (which
 >   includes the wrong UDP source port), `bad_frames`, `digest_mismatch`, `output_dropped` or
 >   `hec_rejected_events`.
 > * **Two added events:** `sender_boot_reset` and `stream_evicted`. Like `stream_missing`, they
 >   are evidence about completeness.
-> * **`gap`** is one record per declared gap, with `seq_first`, `seq_last`, `count` and
->   `reason`.
+> * **`gap`** is one audit record a minute per stream and `reason` (final review): `count` is the
+>   events lost, `gaps` the number of gaps, and `seq_first` and `seq_last` the lowest and highest
+>   number lost; the outcome is still `failure`. Before, it was one record per gap, and the
+>   lab's `wire-loss` run wrote 2,076 of them in 10 s. The health index still gets one `gap`
+>   record per gap, with its range, so every range still reaches the SIEM. Summaries noted
+>   just before a stop are written at the stop.
 > * **`config_changed`** compares with the config hash saved in the state file, so it needs
 >   `--state`. Archive replays (`wd2l-receiver --pcap …`) don't update that hash: otherwise every
 >   replay sharing `--state` would make the next live start log a false `config_changed`.
@@ -228,7 +232,10 @@ alerts, the runbooks and the lab's checks use them. They gain the identity field
 > * **`time_quality`** is written at start and then whenever the alarm state changes, with
 >   `reason` `ok` or what is wrong.
 > * **`audit_failure`** has `reason` `write_failed`, `recovered` (with `missed`), `torn_write`,
->   `low_space` or `space_ok`.
+>   `low_space` or `space_ok`. Below the free-space floor, `low_space` is forwarded only: the
+>   file takes no records until `space_ok` (section 10).
+> * **`audit_verify`** also records a self-check that couldn't run: `reason` `could not start`
+>   or `timeout`, with the error (section 10).
 > * **`start`** has `pid`, `config_sha256`, `code_sha256` and `python`. **`stop`** has the final
 >   counters and, for a live process, the stop signal. The sender's also name its stream.
 > * **`reconcile`:** the sender writes one hourly and at its stop. The receiver's timing is in
@@ -287,6 +294,12 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 >   smuggle an extra line into a file. Its file output writes forwarded audit records to
 >   `audit.jsonl` and forwarded health to `e1-health.jsonl`, which keeps the lab's
 >   `health.jsonl` the receiver's own.
+> * The receiver passes on only records that name the Enclave 1 sender (`enclave` 1,
+>   `component` `sender`). Anything else on the records stream, including JSON too deeply
+>   nested to read, is dropped and counted in `records_bad` (final review). So Enclave 1 can't
+>   plant records about Enclave 2 in the audit index. As a second line, the dashboard's audit
+>   tile takes each side's health only from that side's sourcetype, and the daily review report
+>   shows the sourcetype.
 > * Data events can't reach the audit index. An aggregator event claiming
 >   `sourcetype=wd2l:sender:audit` stays in the data stream. A data event naming `wd2l_audit` is
 >   moved to the default index and counted (`hec_audit_index_refused`), and the data token's
@@ -296,7 +309,8 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 >   out of that heartbeat and `heartbeat_trimmed` counts it. `events_hash` is never left out.
 >   With the deployed unit the body is about 600–800 bytes.
 > * The heartbeat carries `audit_ok` and `audit_n`; the hash of the last record is in the
->   sender's health summary (`audit_hash`).
+>   sender's health summary (`audit_hash`). When chrony can't be read, it carries
+>   `time_unavailable: true` in place of the time keys (section 11).
 > * [interface-description.md](interface-description.md) (sections 8 and 9) and
 >   [wire-format.md](wire-format.md) describe the flag, the records stream and every new
 >   heartbeat key.
@@ -312,9 +326,10 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 | `e2-receiver` | Enclave 2 | gaps by reason, reassembly expiry, lag from sender time to delivery (built: `wd2l_rx_time − wd2l_tx_time`), **chrony stratum/offset**, process CPU/memory |
 | `e2-siem` | Enclave 2 | spool files/bytes, collector errors and rejections, SIEM ingest delay (built: index time − `wd2l_rx_time`) |
 
-> **As built:** Every signal is built except spool bytes (`wd2l/hostinfo.py`,
-> `wd2l/sender.py`, `wd2l/receiver.py`). The receiver reads its own probes every 5 s and puts
-> them in every summary. Field names by segment:
+> **As built:** Every signal is built (`wd2l/hostinfo.py`, `wd2l/sender.py`,
+> `wd2l/receiver.py`, `wd2l/outputs.py`); spool bytes came last, in the final review. The
+> receiver reads its own probes every 5 s and puts them in every summary. Field names by
+> segment:
 >
 > * `e1-input`: `events_in`, `clients`, `input_backlog_bytes` and `bad_input`, in every
 >   heartbeat and in the sender's summary. Events in per second is the growth of `events_in`.
@@ -330,9 +345,10 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 >   `archive_file`, `archive_age_s` and `archive_bytes`.
 > * `e2-receiver`: `gap` records by `reason`, `reasm_expired`, `time_quality`, `cpu_pct` and
 >   `rss_mb`, plus `packet_age_s` and `frame_age_s`. The lag is a SIEM search, as before.
-> * `e2-siem`: `hec_spool_files`, `hec_queue`, `hec_posts_failed`, `hec_rejected_events` and
->   `output_dropped`. **Spool bytes aren't reported**; the fault rule watches the number of
->   spool files. Ingest delay is a SIEM search, as before.
+> * `e2-siem`: `hec_spool_files`, `hec_spool_bytes`, `hec_queue`, `hec_posts_failed`,
+>   `hec_rejected_events` and `output_dropped` (with `audit_` in front for the audit records' own
+>   output). `hec_spool_bytes` is kept as files come and go, so reading it walks no directory.
+>   The fault rule watches the number of spool files. Ingest delay is a SIEM search, as before.
 > * **"tcpdump running"** is measured another way: packets arrive, but the newest archive file
 >   hasn't been written for 15 s (`archive_stale`, rule 11). This works without seeing other
 >   users' processes (`ProtectProc`, `hidepid`), and it catches a stuck tcpdump too.
@@ -397,7 +413,16 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 > * The stream-end record is written once the stream has ended, unless the last written record
 >   already states the same cut and balance. So if an hourly record just before the end already
 >   did, there is no separate stream-end record: the evidence is the same. (The lab found the
->   record missing; fixed in 205b7b0, with a test.)
+>   record missing; fixed in 205b7b0, with a test.) Writing it marks the state file to be saved,
+>   so a crash while idle doesn't write it a second time (final review).
+> * **Permanent gaps** (final review). A replay of the capture archive fills gaps whose packets
+>   reached the capture NIC (`receiver_restart`, `output_dropped`, kernel drops tcpdump still
+>   caught), and the stream balances again. Events re-sent from Enclave 1 come back with new
+>   numbers in the sender's current run, so they never fill the old stream's gaps: a stream
+>   with `not_received` loss stays unbalanced for good. It keeps its hourly record, because a
+>   stream with open gaps is never retired. The proposal assumed gaps get filled; a re-send
+>   doesn't fill them. So the alert fires only for an unbalanced stream with no open gaps
+>   (section 13), and how to close a permanent gap is open item 7 (section 17).
 > * At receiver stop, the final reconcile runs before the outputs close, so its records reach
 >   an open output.
 > * Each result is also a `type=reconcile` health record (`stream`, `cut`, `balanced`,
@@ -472,13 +497,27 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 >   `python3 -m wd2l.audit verify DIR --upto N --upto-hash H`, up to where the writer stood at
 >   that moment. A full read inside the receiver would compete with its capture loop for the
 >   interpreter lock. Health summaries carry `audit_verify` (`ok`, `failed`, or null before the
->   first check) next to `audit_ok`, `audit_n` and `audit_hash`.
+>   first check) next to `audit_ok`, `audit_n` and `audit_hash`. Final review:
+>   * The child writes its result to temporary files, not pipes. A pipe read only once the child
+>     has exited fills up (the result lists every file), and the child would never exit.
+>   * A child that can't start (for example, the fork fails for lack of memory) is a failed
+>     check with `reason` `could not start`. A child still running after 6 hours is killed, and
+>     the check fails with `reason` `timeout`. Neither stops the transfer.
+>   * `python3 -m wd2l.audit verify DIR` without `--upto` fails when it finds no records ("no
+>     audit records found"), as `wd2l-audit-report verify` does: an empty or wiped directory
+>     proves nothing.
 > * **Append-only and 1 year:** `deploy/common/wd2l-audit-seal.sh`, run hourly as root by
 >   `wd2l-audit-seal.timer`, sets `chattr +a` on the files and deletes those last written more
 >   than 366 days ago. The wd2l units grant no `CAP_LINUX_IMMUTABLE`.
 > * **SIEM:** the `wd2l_audit` index, kept 366 days, with its own collector token and the
 >   `wd2l_auditor` role. The Splunk examples are `indexes.conf`, `inputs.conf` and
 >   `authorize.conf` in `deploy/receiver/splunk/`. `--force-index` never moves audit records.
+>   With `--audit-dir` and `--hec-url`, the receiver refuses to start (exit 2) without
+>   `--hec-audit-token-file`: on the data token, whose index list leaves `wd2l_audit` out, the
+>   SIEM would refuse every audit record (final review). A site with one token names the same
+>   file twice. The replay runbook in [operations.md](operations.md#replay-from-the-capture-archive)
+>   passes `--audit-dir` and the audit token, so a replay writes `replay_run` records naming
+>   who ran it.
 > * **Host auditd rules:** `deploy/log-server/wd2l.rules` and `deploy/receiver/wd2l.rules`. They
 >   watch `/opt/wd2l/`, `/etc/wd2l/` and the wd2l units. On `/var/lib/wd2l` and `/var/log/wd2l`
 >   they match only changes with `auid` set.
@@ -488,6 +527,14 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 >   `--audit-min-free-mb` (256 by default) raises `audit_failure` with `reason=low_space`, and
 >   `space_ok` when it recovers; section 6 lists every `reason`. Field values JSON can't hold
 >   never make a write fail (section 5).
+> * **The free-space floor is enforced** (final review). Below it, every write is a failed
+>   write: the record is forwarded unchained and counted in `missed`, and `audit_ok` is false.
+>   So the audit files never take the room the state file, the spool and the capture archive
+>   need. Each process checks the floor at start, before its first record, and then once a
+>   minute; every write in between obeys the last check. When there is space again, writing
+>   resumes in a new file with the `recovered` record, then `space_ok`. The deployment guides
+>   put `/var/log/wd2l` on a filesystem of its own, or size the shared one, and name the audit
+>   spool (`<spool-dir>/audit`, capped at 10 GiB).
 > * **Stronger options** (a keyed hash, a separate backup copy) aren't built. The room for them
 >   is still there.
 
@@ -516,7 +563,8 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 >   `time_quality` audit record marks it a failure. It is also a time alarm, on either side. A
 >   sender that can't read chrony leaves the other time keys out of its heartbeat and sends
 >   `time_unavailable: true`, so `time_reason` says "sender: unavailable". The alarm clears with
->   the first heartbeat after chrony answers again.
+>   the first heartbeat after chrony answers again. (Before the final review the sender's
+>   "unavailable" never reached Enclave 2.)
 > * The receiver works out `time_status` (`ok` or `alarm`, with `time_reason`) from its own
 >   clock, the sender's heartbeat keys and the skew. It is in every summary, and each change is
 >   also a `type=time_status` record, so the time alert fires at once, not on the next summary.
@@ -580,6 +628,11 @@ says so before it goes quiet (rule 2).
 >   (`seg_e1_input` … `seg_e2_siem`).
 > * Segment names: rule 3 reports `e1-sender/boundary`, one value for alerts to group on. Rule 8
 >   reports `e2-capture`, and colors `e2-capture` and `e2-receiver`.
+> * The rules read the sender run whose latest heartbeat is the newest (final review). A
+>   placeholder for a run never seen (`stream_missing`) or a retired stream brought back has no
+>   heartbeat and is skipped. Before, either could count as the newest run: rule 5 then fired
+>   while events flowed, rule 6 and the sender's time check went blind, and a later crash read
+>   as rule 2 (planned stop) instead of rule 3.
 > * Every matching rule colors its own segments, so more than one box can be off green. Segments
 >   the receiver can't see while nothing arrives are `unknown` (grey): grey is more honest than
 >   green.
@@ -589,6 +642,12 @@ says so before it goes quiet (rule 2).
 >   hours by default, so a planned-downtime window and the nightly audit events fit on one
 >   screen. Panel 20 (audit review) also lists `start` and `stop`, which show change windows.
 >   The time tile shows ALARM in red.
+> * The reconciliation panels (5, 12) read the `type=reconcile` health records, and the audit
+>   tile (7) reads `audit_ok` and `audit_verify` from each side's health summary, each side from
+>   its own sourcetype. Both come from the health index, because operators can't read the audit
+>   index (sections 9 and 10). Final review: the reconciliation tile shows UNKNOWN (grey), not
+>   "0 of 0 balanced" in green, when there are no reconcile records; a stream with a permanent
+>   gap stays red (section 9); panel 19 also shows `hec_spool_bytes`.
 > * The example dashboard is `deploy/receiver/splunk/wd2l-health-dashboard.json`, for Splunk
 >   Dashboard Studio. The mockup is `docs/images/state-of-health-mockup.svg`.
 >
@@ -611,14 +670,20 @@ says so before it goes quiet (rule 2).
 > * "WD2L - Fault segment": a `type=fault` record whose `fault_status` isn't `ok`. The alert
 >   lists `fault_segment`, `fault_rule` and `fault_detail`.
 > * "WD2L - Reconciliation not balanced": a stream with no balanced `type=reconcile` record in
->   the last hour. It runs hourly.
+>   the last hour **whose latest record has no open gaps** (`gaps_open=0`), the case nothing
+>   explains. It runs hourly. Final review: a stream with open gaps is the job of
+>   "WD2L - Events lost in transfer", and one with a permanent gap never balances again
+>   (section 9). Before, the alert fired every hour for such a stream, for good, and would soon
+>   have been ignored.
 > * "WD2L - Audit trail": `audit_ok=false` or `audit_verify=failed` in either side's health
 >   records.
-> * "WD2L - Time quality": `time_status=alarm`, which covers both sides' time quality and the
->   skew.
+> * "WD2L - Time quality": `time_status=alarm`, which covers both sides' time quality, including
+>   a side that can't read chrony (section 11), and the skew.
 > * "WD2L - Audit review (daily)": a report, not an alert. Every morning it lists the previous
 >   day's `config_changed`, `state_reset`, `replay_run` and `debug_toggled`, and also
 >   `audit_failure`, `audit_verify` and `time_quality`. Its owner needs the `wd2l_auditor` role.
+>   Each row shows its `sourcetype`, so records that came in-band from Enclave 1
+>   (`wd2l:sender:audit`) stand apart from the receiver's own (`wd2l:audit`).
 >
 > Every alert reads only the health index (`wd2l`), so the people who own them don't need the
 > auditor role; only the daily report reads `wd2l_audit`. The planned-downtime runbook mutes
@@ -706,15 +771,21 @@ At the planned < 1,000 events/s:
 > estimate. Each summary kind adds one record per key a minute only while it happens, and past
 > 100 keys in a minute the rest share one record.
 >
-> * **Loss is the exception.** Each declared gap is its own `gap` record, in health and in
->   audit; gaps aren't summarised. In the lab's `wire-loss` run (20% of packets lost for 10 s,
->   at 1,000 events/s) the receiver's audit trail reached 2,076 records. Loss like that, left
->   running, would write over 10 GB a day. The alerts fire within minutes, and the free-space
->   check raises `audit_failure` before the disk fills (section 10).
+> * **Loss** (recomputed in the final review). `gap` audit records are summarised once a minute
+>   per stream and reason (section 6), so heavy loss adds at most 1,440 a day per stream and
+>   reason: about 1 MB a day, or 0.4 GB a year, at about 690 bytes each. The audit files stay
+>   under 2 GB a year even then. Measured at 2d4be5f: in the lab's `wire-loss` run (20% of
+>   packets lost for 10 s, at 1,000 events/s), 2,129 gaps became one `gap` audit record
+>   (`count` 2,847), and the receiver's whole trail was 13 records, 8,741 bytes. Before, the
+>   same run wrote 2,076 records, and loss like that left running would have written over
+>   10 GB a day. The free-space floor now also holds (section 10).
+> * The health index still gets one `gap` record per gap, about 234 bytes each, so every range
+>   reaches the SIEM. Chronic loss of ten gaps a second (1% at 1,000 events/s) adds about
+>   200 MB a day there. The alerts fire within minutes.
 > * The lab writes to files, so its receiver summary lacks the SIEM output's counters, a few
 >   hundred bytes more when deployed.
 > * The receiver's audit records have their own spool (`<spool-dir>/audit`), which fills only
->   while the SIEM is unreachable.
+>   while the SIEM is unreachable. It is capped at 10 GiB, like the data spool.
 
 ## 16. Implementation phases
 
@@ -754,6 +825,7 @@ At the planned < 1,000 events/s:
 > | 2. Records stream and fault location | 39cc5d6..719e938 | 298 |
 > | 3. Reconciliation and report | 719e938..205b7b0 | 342 |
 > | 4. SIEM, deployment, docs | 205b7b0 to the commit that adds these notes | 354 |
+> | Final review fixes | 6df6126 to the commit that records them in these notes | 378 |
 >
 > **Unit tests per area** (`tests/`):
 >
@@ -808,8 +880,8 @@ At the planned < 1,000 events/s:
 6. Which framework the system is assessed under, and its retention period (1 year is assumed
    throughout).
 
-> **As built:** All six items are still open for the security and system owners. Until they
-> decide, the code and the examples do this:
+> **As built:** All six items are still open for the security and system owners, and the final
+> review added a seventh (below). Until they decide, the code and the examples do this:
 >
 > 1. **Event list:** the catalog in section 6, as built.
 > 2. **Failure response:** keep transferring (section 10).
@@ -823,3 +895,11 @@ At the planned < 1,000 events/s:
 >    Until that is confirmed, the official copy is the one on the log server.
 > 6. **Framework and retention:** 1 year throughout: the seal timer deletes files after 366
 >    days, and the example keeps `wd2l_audit` for 366 days.
+> 7. **Permanent gaps** (new). Events lost before capture can only be re-sent from Enclave 1,
+>    and re-sent events come back under new numbers, so the old stream never balances again
+>    (section 9). Past such a gap, its set hash can't show a later event that was changed but
+>    still valid. Two ways to close this, for the owners to choose: an operator action that
+>    accepts a gap, written as an audit record that names the actor; or set hashes per block of
+>    sequence numbers, so the blocks after a permanent gap can still be checked. Until then the
+>    stream stays red on the dashboard, the `gap` records and the re-send are the evidence, and
+>    the reconciliation alert stays quiet for it (section 13).

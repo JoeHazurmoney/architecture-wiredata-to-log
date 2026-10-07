@@ -52,7 +52,7 @@ log flow.
 | `records_delivered`, `records_bad` | Audit and health records from Enclave 1 handed to the SIEM, and ones that were refused: malformed, or not naming the Enclave 1 sender (`enclave` 1, `component` `sender`) | growing; 0 |
 | `fault_status`, `fault_segment`, `fault_rule`, `fault_detail` | The receiver's verdict on where the fault is ([state-of-health.md](state-of-health.md)) | `ok`; the rest empty |
 | `seg_e1_input`, `seg_e1_sender`, `seg_boundary`, `seg_e2_capture`, `seg_e2_receiver`, `seg_e2_siem` | State of each segment | `ok` (`unknown` while it can't be seen) |
-| `time_status`, `time_reason`, `time_quality` | The time check, why it is in alarm, and chrony's own numbers (synced, stratum, offset) | `ok`; synced, stratum 2 |
+| `time_status`, `time_reason`, `time_quality` | The time check, why it is in alarm, and chrony's own numbers (synced, stratum, offset) | `ok`; synced, stratum 3 (the hosts' stratum by design) |
 | `audit_ok`, `audit_n`, `audit_hash`, `audit_verify` | This host's audit trail: writable, number and hash of the last record, result of the daily self-check | `true`, growing, a hash, `ok` (empty until the first check) |
 | `reconcile_unbalanced` | Sender runs whose last comparison did not balance | 0 |
 | `sender_events_in` | Events the aggregator has handed to the sender (from its heartbeat) | growing, at the rate of `events_delivered` |
@@ -135,13 +135,16 @@ record has no open gaps (`gaps_open=0`). A stream with open gaps is the job of
      unbalanced for good. That is expected: the gap is permanent, and the `gap` records and the
      re-send are the evidence. This alert stays quiet for it.
 2. **No open gaps** is not normal. Events were counted on one side and not the other, or changed
-   on the way, and nothing says why. Compare with the audit reports:
+   on the way, and nothing says why. Compare with the audit reports. The receiver's own files
+   (`--dir /var/log/wd2l`) hold only Enclave 2's side; a SIEM export of `index=wd2l_audit` for
+   those days holds both, because Enclave 1's records arrive in-band:
    ```bash
-   wd2l-audit-report reconcile --dir /var/log/wd2l --since 2026-10-05 --until 2026-10-06
-   wd2l-audit-report events --dir /var/log/wd2l --event digest_mismatch --event boundary_anomaly --since 2026-10-05
+   wd2l-audit-report reconcile --export siem-export.json --since 2026-10-05 --until 2026-10-06
+   wd2l-audit-report events --dir /var/log/wd2l --event boundary_anomaly --since 2026-10-05
    ```
-   A `digest_mismatch` or `boundary_anomaly` in the window points to damage or tampering on the
-   link. Treat it as an incident: tell the security owner and follow the incident process.
+   A `boundary_anomaly` record in the window, above all one with `reason` `digest_mismatch`,
+   `bad_frames` or `reasm_inconsistent`, points to damage or tampering on the link. Treat it as
+   an incident: tell the security owner and follow the incident process.
 3. **The part the receiver can't see** is whether the SIEM still holds what it accepted. Count
    what the SIEM has for a stream and compare it with what the receiver delivered:
    ```
@@ -237,16 +240,18 @@ wd2l-audit-report verify --dir <copy of the files>           # the retention ser
 wd2l-audit-report verify --export siem-export.json           # a SIEM export
 ```
 
-Each prints `ok` or the problems it found, and exits 1 on a problem. With `--export`, `--complete`
-also fails when records are missing from the export. Each host also runs the check by itself every
-day and reports it as `audit_verify`.
+Each prints a JSON result: `result` is `ok`, or `failed` with the problems it found. It exits 1 on
+a problem, and also when there is nothing to verify (an empty or wiped directory). With
+`--export`, `--complete` also fails when records are missing from the export. Each host also runs
+the check by itself every day and reports it as `audit_verify`.
 
 **Reports.** `--dir` can be repeated, `--export` reads a SIEM export, and `--format csv` gives a
 spreadsheet.
 
 ```bash
-# What the sender numbered against what the receiver delivered, per day and stream
-wd2l-audit-report reconcile --dir /var/log/wd2l --since 2026-10-05 --until 2026-10-06
+# What the sender numbered against what the receiver delivered, per day and stream. Both sides
+# are in a SIEM export of index=wd2l_audit; the receiver's own files hold only Enclave 2's.
+wd2l-audit-report reconcile --export siem-export.json --since 2026-10-05 --until 2026-10-06
 # Who changed the configuration this month
 wd2l-audit-report events --dir /var/log/wd2l --event config_changed --since 2026-10-01
 ```
