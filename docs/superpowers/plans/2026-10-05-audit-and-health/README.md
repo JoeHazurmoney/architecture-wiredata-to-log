@@ -196,3 +196,18 @@ what was built instead, and why. These differences are already decided by this p
 | 3.3 | §9, §12 | Each reconcile result is also a `type=reconcile` health record (stream, cut, balanced, open gaps) | Operators can't read the audit index; the dashboard and the alert need the balance |
 | 1.3 | §10, §12 | Health records carry `audit_verify` (the last self-check: `ok`, `failed` or null) next to `audit_ok` | Same reason: the audit-trail tile and alert read the health index |
 | 4.2 | §13 | Every alert reads only the health index; only the daily review report reads `wd2l_audit` | Alert owners don't need the auditor role |
+| 1.1 | §10 verify | Lines that aren't valid JSON for the chain (NaN/Infinity numbers, too deeply nested) are reported as problems; the verifier never crashes on them (`wd2l/audit.py` ChainChecker.add, verify_lines) | A tamper check must report hostile input, not stop |
+| 1.3 | §5, §10 | Field values JSON can't hold (NaN, Infinity, bytes, sets, paths) are written as null or as text before chaining (`_jsonable` in `wd2l/audit.py`); `write()` never raises on them | Audit trouble never stops the transfer |
+| 1.8 | §6 `config_changed` | Archive replays (`wd2l-receiver --pcap ...`) don't update the config hash saved in the state file | Otherwise every replay sharing `--state` would make the next live start log a false `config_changed` |
+| 2.2 | §5 `host` | The sender's in-band records use the audit log's host name (`Sender.hostname = audit.host`) | One name for the log server in local and forwarded records |
+| 3.3 | §9 | A stream restored from history (a retired stream seen again, e.g. in a replay) is not reconciled | Its earlier history is unknown; it would report a false "not balanced" |
+| 3.3 | §9 | An event is counted as delivered only after the outputs' failures are applied (snapshot, apply failures, then settle) | An event the SIEM output failed must not count as delivered |
+| 3.3 | §9 | At receiver stop, the final reconcile runs before the outputs close | Its health record must reach an open output |
+| 3.4 | §9 report | `wd2l-audit-report` treats its input as untrusted: `verify` lists unreadable lines (and fails), `reconcile` and `events` skip them and say how many; the first copy of each `n` is kept; exit 0 ok / 1 problem or nothing to verify / 2 missing dir or file | It is the tool assessors use on files that may have been tampered with |
+| 3.5 | §9 stream end | The stream-end `reconcile` record is written when the stream has ended and the last written record doesn't already state the same cut and balance. (Found by the lab: the record was never written; fixed in 205b7b0 with a test.) Note: if an hourly record just before the end already stated the same cut and balance, no separate stream-end record is written | No duplicate records; the evidence is the same |
+| 4.3 | §12 | The state-of-health mockup and the example dashboard default to the last 12 hours; panel 20 (audit review) also lists `start` and `stop` | 12 h fits a planned-downtime window and the nightly audit events on one screen; start/stop show change windows |
+| 4.4 | §12 time | The time tile shows ALARM in red | A time alarm must read red |
+
+**Closed by Task 4.6 (2026-10-06).** Every row above has a matching **As built** note in the
+[audit plan](../../../audit-and-health-plan.md), at the end of the section its Spec column names;
+section 2a of the page sums them up.
