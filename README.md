@@ -12,7 +12,7 @@ classification levels, an untrusted network feeding a trusted one (for example, 
 in a DMZ and sent into the internal network), or any similar distinction. Two separate enclaves
 at the same level qualify too.
 
-**Approach.** This repository presents an architecture and proof of concept that removes that
+**Approach.** This repository presents an architecture and proof of concept (POC) that removes that
 assumption. The wire itself is the transport. Enclave 1 emits each log event as sequenced,
 self-verifying UDP datagrams toward an address that never answers. A network tap copies that cable
 to Enclave 2 over a single transmit-only fiber strand, and Enclave 2 reconstructs every event from
@@ -72,7 +72,7 @@ flowchart TB
   replays the lost time window from it.
 
 The design is product-neutral: any log aggregator, network tap and SIEM that fill the roles
-work. The proof of concept was built against Cribl Stream (aggregator) and Splunk (SIEM) as
+work. The POC was built against Cribl Stream (aggregator) and Splunk (SIEM) as
 examples.
 
 Start with [docs/architecture.md](docs/architecture.md). Design choices, and the options weighed
