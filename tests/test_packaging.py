@@ -105,3 +105,80 @@ def test_sdist_must_carry_the_deploy_tree(tmp_path):
 def test_exactly_one_wheel_and_one_sdist(tmp_path):
     probs = check_dist.check(str(tmp_path), "0.3.0", "abc123")
     assert any("one wheel" in p for p in probs) and any("one sdist" in p for p in probs)
+
+
+import subprocess
+
+TOOLS = os.path.join(REPO, "packaging", "ci", "tools.Containerfile")
+TOOL = os.path.join(REPO, "packaging", "ci", "tool")
+PIN = os.path.join(REPO, "packaging", "ci", "pin-images.sh")
+PINNED_FROM = re.compile(r"^FROM (\S+?):(\S+?)@sha256:[0-9a-f]{64} AS (\S+)$")
+
+
+def tool_refs():
+    out = {}
+    for line in read("packaging/ci/tools.Containerfile").splitlines():
+        if line.startswith("FROM "):
+            m = PINNED_FROM.match(line)
+            assert m, "not pinned: " + line
+            out[m.group(3)] = line.split()[1]
+    return out
+
+
+def test_every_tool_is_pinned_by_digest():
+    assert set(tool_refs()) == {"cosign", "grype", "oras", "syft", "trivy", "hadolint",
+                                "ubi9", "ubi10"}
+
+
+def test_tool_runs_the_pinned_image_with_the_work_tree(tmp_path):
+    log = tmp_path / "args"
+    fake = tmp_path / "podman"
+    fake.write_text('#!/bin/sh\nfor a in "$@"; do echo "$a"; done > "%s"\n' % log)
+    fake.chmod(0o755)
+    env = dict(os.environ, PODMAN=str(fake), TOOL_ENV="COSIGN_PASSWORD", COSIGN_PASSWORD="x",
+               TOOL_NETWORK="none", XDG_RUNTIME_DIR=str(tmp_path))
+    r = subprocess.run(["bash", TOOL, "cosign", "verify", "--key", "k.pub", "img"],
+                       cwd=str(tmp_path), env=env, stdout=subprocess.PIPE,
+                       stderr=subprocess.PIPE)
+    assert r.returncode == 0, r.stderr
+    args = log.read_text().splitlines()
+    ref = tool_refs()["cosign"]
+    assert args[0] == "run" and args[args.index(ref) + 1:] == ["verify", "--key", "k.pub", "img"]
+    assert args[args.index("--network") + 1] == "none"
+    assert "COSIGN_PASSWORD" in args and "%s:/work" % tmp_path in args
+    assert "--userns=keep-id" in args
+    assert args[args.index("--user") + 1] == "%d:%d" % (os.getuid(), os.getgid())
+
+
+def test_tool_ref_and_unknown_tool():
+    r = subprocess.run(["bash", TOOL, "--ref", "syft"], stdout=subprocess.PIPE)
+    assert r.returncode == 0 and r.stdout.decode().strip() == tool_refs()["syft"]
+    r = subprocess.run(["bash", TOOL, "nope"], stderr=subprocess.PIPE)
+    assert r.returncode == 2 and b"no stage named nope" in r.stderr
+
+
+def test_pin_images_rewrites_only_from_lines(tmp_path):
+    f = tmp_path / "Containerfile"
+    old = "sha256:" + "a" * 64
+    f.write_text("FROM a.io/x:1 AS one\nFROM b.io/y:2@%s AS two\nRUN echo hi\nFROM c.io/z:3\n" % old)
+    resolver = tmp_path / "resolve"
+    resolver.write_text("#!/bin/sh\necho sha256:%s\n" % ("b" * 64))
+    resolver.chmod(0o755)
+    r = subprocess.run(["bash", PIN, str(f)], env=dict(os.environ, RESOLVE=str(resolver)),
+                       stderr=subprocess.PIPE)
+    assert r.returncode == 0, r.stderr
+    new = "sha256:" + "b" * 64
+    assert f.read_text() == ("FROM a.io/x:1@%s AS one\nFROM b.io/y:2@%s AS two\nRUN echo hi\n"
+                             "FROM c.io/z:3@%s\n" % (new, new, new))
+
+
+def test_pin_images_refuses_a_bad_digest(tmp_path):
+    f = tmp_path / "Containerfile"
+    f.write_text("FROM a.io/x:1\n")
+    resolver = tmp_path / "resolve"
+    resolver.write_text("#!/bin/sh\necho 'manifest unknown'\n")
+    resolver.chmod(0o755)
+    r = subprocess.run(["bash", PIN, str(f)], env=dict(os.environ, RESOLVE=str(resolver)),
+                       stderr=subprocess.PIPE)
+    assert r.returncode == 1 and b"no digest for a.io/x:1" in r.stderr
+    assert f.read_text() == "FROM a.io/x:1\n"
