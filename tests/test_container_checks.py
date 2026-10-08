@@ -86,3 +86,99 @@ def test_build_script_passes_labels_and_removes_the_base_product_labels(tmp_path
     unset = [args[i + 1] for i, a in enumerate(args) if a == "--unsetlabel"]
     for label in ("cpe", "com.redhat.component", "io.hummingbird-project.variant"):
         assert label in unset
+
+
+import base64
+import hashlib
+
+br = load_script("packaging/container/base_record.py")
+
+
+def write_evidence(d, i, ref_name, tag, sign_digest=None, prov_digest=None, fips=True,
+                   index_bytes=None):
+    """Evidence files for FROM number i, as the base-verify job writes them. Returns the
+    index digest the Containerfile must name."""
+    amd = "sha256:" + hashlib.sha256(b"amd%d" % i).hexdigest()
+    arm = "sha256:" + hashlib.sha256(b"arm%d" % i).hexdigest()
+    index = index_bytes or json.dumps({"manifests": [
+        {"digest": amd, "platform": {"os": "linux", "architecture": "amd64"}},
+        {"digest": arm, "platform": {"os": "linux", "architecture": "arm64"}}]}).encode()
+    digest = "sha256:" + hashlib.sha256(index).hexdigest()
+    (d / ("index-%d.json" % i)).write_bytes(index)
+    labels = {"version": "3.12.15", "release": "1791414125"}
+    if fips:
+        labels["io.hummingbird-project.variant.fips"] = "true"
+    (d / ("config-%d.json" % i)).write_text(json.dumps({"config": {"Labels": labels}}))
+    (d / ("signature-%d.json" % i)).write_text(json.dumps([{"critical": {
+        "image": {"docker-manifest-digest": sign_digest or digest}}}]))
+    statement = {"_type": "https://in-toto.io/Statement/v0.1",
+                 "predicateType": "https://slsa.dev/provenance/v0.2",
+                 "subject": [{"name": "quay.io/hummingbird/python",
+                              "digest": {"sha256": (prov_digest or amd).split(":")[1]}}]}
+    (d / ("provenance-%d.json" % i)).write_text(json.dumps({
+        "payloadType": "application/vnd.in-toto+json",
+        "payload": base64.b64encode(json.dumps(statement).encode()).decode()}) + "\n")
+    (d / ("sbom-%d.spdx.json" % i)).write_text(json.dumps({
+        "spdxVersion": "SPDX-2.3", "packages": [{"name": "python3.12"}, {"name": "glibc"}]}))
+    return digest
+
+
+def evidence(tmp_path, **kw):
+    d = tmp_path / "evidence"
+    d.mkdir()
+    keys = tmp_path / "keys"
+    keys.mkdir()
+    (keys / "redhat-release3.pub").write_text("rh")
+    (keys / "hummingbird-ci.pub").write_text("hb")
+    d0 = write_evidence(d, 0, B, "3.12-fips-builder")
+    d1 = write_evidence(d, 1, B, "3.12-fips", **kw)
+    froms = [{"ref": "%s:3.12-fips-builder@%s" % (B, d0), "stage": "build", "name": B,
+              "tag": "3.12-fips-builder", "digest": d0},
+             {"ref": "%s:3.12-fips@%s" % (B, d1), "stage": None, "name": B,
+              "tag": "3.12-fips", "digest": d1}]
+    return froms, d, keys
+
+
+def test_record_from_good_evidence(tmp_path):
+    froms, d, keys = evidence(tmp_path)
+    rec, probs = br.record(froms, str(d), str(keys), "2026-10-07T00:00:00Z")
+    assert probs == []
+    img = rec["images"][1]
+    assert img["index_digest"] == froms[1]["digest"] and set(img["platforms"]) == {"amd64", "arm64"}
+    assert img["source_image"] == B + ":1791414125-source"
+    assert img["mirror"] == "quay.io/hummingbird/python@" + froms[1]["digest"]
+    assert img["signature"]["verified"] and img["provenance"]["predicate_type"].endswith("v0.2")
+    assert img["sbom"]["packages"] == 2
+    assert rec["keys"]["redhat-release3.pub"] == hashlib.sha256(b"rh").hexdigest()
+
+
+def test_record_refuses_a_signature_for_another_digest(tmp_path):
+    froms, d, keys = evidence(tmp_path, sign_digest="sha256:" + "9" * 64)
+    _rec, probs = br.record(froms, str(d), str(keys), "now")
+    assert any("signature" in p and froms[1]["digest"] in p for p in probs)
+
+
+def test_record_refuses_provenance_for_another_digest(tmp_path):
+    froms, d, keys = evidence(tmp_path, prov_digest="sha256:" + "8" * 64)
+    _rec, probs = br.record(froms, str(d), str(keys), "now")
+    assert any("provenance" in p for p in probs)
+
+
+def test_record_refuses_an_index_that_is_not_the_pinned_digest(tmp_path):
+    froms, d, keys = evidence(tmp_path)
+    (d / "index-1.json").write_bytes(b'{"manifests": []}')
+    _rec, probs = br.record(froms, str(d), str(keys), "now")
+    assert any("index" in p and "pinned" in p for p in probs)
+
+
+def test_record_refuses_a_fips_tag_without_the_fips_label(tmp_path):
+    froms, d, keys = evidence(tmp_path, fips=False)
+    _rec, probs = br.record(froms, str(d), str(keys), "now")
+    assert any("FIPS" in p for p in probs)
+
+
+def test_record_refuses_missing_evidence(tmp_path):
+    froms, d, keys = evidence(tmp_path)
+    (d / "sbom-1.spdx.json").unlink()
+    _rec, probs = br.record(froms, str(d), str(keys), "now")
+    assert any("sbom-1.spdx.json" in p for p in probs)

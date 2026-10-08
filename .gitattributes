@@ -8,3 +8,5 @@ Containerfile text eol=lf
 # systemd and the NIC scripts read these in Linux.
 *.env text eol=lf
 *.container text eol=lf
+# Public keys are read by cosign; keep them byte-for-byte.
+*.pub text eol=lf

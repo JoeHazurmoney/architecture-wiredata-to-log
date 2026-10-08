@@ -30,8 +30,38 @@ jobs:
       - name: trivy config (High and Critical), on the shipped Containerfile
         run: packaging/ci/tool trivy config --quiet --exit-code 1 --severity HIGH,CRITICAL /work/packaging/container/Containerfile
 
+  base-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Collect each base image's signature, provenance, SBOM, index and config
+        run: |
+          mkdir -p evidence
+          python3 packaging/container/check_containerfile.py --json > evidence/froms.json
+          for i in $(seq 0 $(( $(jq length evidence/froms.json) - 1 ))); do
+            name=$(jq -r ".[$i].name" evidence/froms.json)
+            digest=$(jq -r ".[$i].digest" evidence/froms.json)
+            mirror="quay.io/hummingbird/${name#registry.access.redhat.com/hi/}"
+            skopeo inspect --raw "docker://$name@$digest" > "evidence/index-$i.json"
+            skopeo inspect --config --override-os linux --override-arch amd64 \
+              "docker://$name@$digest" > "evidence/config-$i.json"
+            packaging/ci/tool cosign verify --key /work/packaging/container/keys/redhat-release3.pub \
+              --insecure-ignore-tlog "$name@$digest" > "evidence/signature-$i.json"
+            packaging/ci/tool cosign verify-attestation --key /work/packaging/container/keys/hummingbird-ci.pub \
+              --insecure-ignore-tlog --type slsaprovenance "$mirror@$digest" > "evidence/provenance-$i.json"
+            amd=$(jq -r '.manifests[] | select(.platform.architecture == "amd64") | .digest' "evidence/index-$i.json")
+            layer=$(packaging/ci/tool oras manifest fetch "$mirror:sha256-${amd#sha256:}.sbom" | jq -r '.layers[0].digest')
+            packaging/ci/tool oras blob fetch --output "/work/evidence/sbom-$i.spdx.json" "$mirror@$layer"
+          done
+      - name: Cross-check and record
+        run: python3 packaging/container/base_record.py --evidence evidence --out evidence/base-image-record.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: base-evidence
+          path: evidence/
+
   build:
-    needs: [lint]
+    needs: [lint, base-verify]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
