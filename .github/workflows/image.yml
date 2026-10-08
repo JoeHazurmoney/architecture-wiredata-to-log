@@ -1,0 +1,107 @@
+name: image
+# The container image's checks (docs/decisions/0004-container-base-image.md): every push and PR
+# via tests.yml (publish: false); releases via release.yml (publish: true, signs and pushes).
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+    secrets:
+      COSIGN_PRIVATE_KEY:
+        required: false
+      COSIGN_PASSWORD:
+        required: false
+  workflow_dispatch:
+defaults:
+  run:
+    shell: bash
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Every FROM pinned, a Hardened Image, a FIPS variant
+        run: python3 packaging/container/check_containerfile.py
+      - name: hadolint
+        run: packaging/ci/tool hadolint /bin/hadolint /work/packaging/container/Containerfile
+      - name: trivy config (High and Critical), on the shipped Containerfile
+        run: packaging/ci/tool trivy config --quiet --exit-code 1 --severity HIGH,CRITICAL /work/packaging/container/Containerfile
+
+  build:
+    needs: [lint]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Wheel and sdist (BUILD = the commit; file times = the commit's)
+        run: |
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"; export SOURCE_DATE_EPOCH
+          python -m pip install -q build
+          git rev-parse HEAD > wd2l/BUILD
+          python -m build
+          python packaging/check_dist.py dist --commit "$(git rev-parse HEAD)"
+      - name: Image
+        run: |
+          started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          packaging/container/build.sh dist localhost/wd2l:ci
+          mkdir -p image build-info
+          podman save --format oci-archive -o image/image.oci.tar localhost/wd2l:ci
+          jq -n --arg commit "$(git rev-parse HEAD)" \
+                --arg version "$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' wd2l/__init__.py)" \
+                --arg image_id "$(podman image inspect --format '{{.Id}}' localhost/wd2l:ci)" \
+                --arg epoch "$(git log -1 --format=%ct)" --arg started "$started" \
+                '{commit: $commit, version: $version, image_id: $image_id, epoch: $epoch, started: $started}' \
+                > build-info/build-info.json
+          cat build-info/build-info.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image
+          path: image/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-info
+          path: build-info/
+
+  functional:
+    needs: [build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+          path: image
+      - run: sudo apt-get update -q && sudo apt-get install -y -q iproute2 nftables tcpdump
+      - name: Load
+        run: echo "IMG=$(sudo podman load -q -i image/image.oci.tar | awk '{print $NF}')" >> "$GITHUB_ENV"
+      - name: Smoke
+        run: |
+          for c in wd2l-sender wd2l-receiver wd2l-audit-report; do sudo podman run --rm "$IMG" "$c" --help > /dev/null; done
+          if sudo podman run --rm "$IMG" python3 -m wd2l.audit verify /tmp; then exit 1; fi
+          echo "an empty audit directory is refused, as expected"
+      - run: sudo lab/run-lab.sh --image "$IMG"
+      - run: sudo lab/run-lab.sh --image "$IMG" --loss 1
+      - run: sudo lab/run-lab.sh --image "$IMG" --maintenance
+      - run: sudo lab/run-lab.sh --image "$IMG" --receiver-outage
+      - run: sudo lab/run-lab.sh --image "$IMG" --files samples/logs/messages samples/logs/secure samples/logs/audit.log
+
+  fips-tests:
+    # The whole test suite under the OpenSSL FIPS provider (the builder has the same Python and
+    # crypto policy as the runtime image, plus a shell and dnf for pytest).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          B=$(python3 packaging/container/check_containerfile.py --json | jq -r '.[] | select(.tag | endswith("-builder")) | .ref')
+          podman run --rm --userns=keep-id -v "$PWD:/src" -w /src "$B" bash -c \
+            'python3 -c "import _hashlib; assert _hashlib.get_fips_mode() == 1, \"not FIPS\"" &&
+             python3 -m pip install -q --user pytest && python3 -m pytest -q -p no:cacheprovider'

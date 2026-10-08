@@ -3,6 +3,8 @@
 # script passes the labels. Both bases are pinned by digest. Dependabot proposes new ones, and
 # .github/workflows/image.yml verifies their signatures and provenance before every build.
 FROM registry.access.redhat.com/hi/python:3.12-fips-builder@sha256:99339c3b61bf7b014701b780e3e4ffa620b92eb6ba07ddb79f6420da4998b850 AS build
+# Root only in this build stage, to write /out; the runtime stage runs as 65532.
+# hadolint ignore=DL3002
 USER 0
 COPY wd2l-*-py3-none-any.whl /tmp/
 # Compiled with checked hashes so the .pyc files don't depend on file times (reproducible), and

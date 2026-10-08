@@ -2,7 +2,22 @@ name: tests
 
 on:
   push:
+    # Branches only: a version tag runs release.yml, which calls this workflow itself.
+    branches: ["**"]
   pull_request:
+  workflow_call:
+    inputs:
+      image:
+        description: also run the image pipeline and the RPMs (release.yml runs them itself)
+        type: boolean
+        default: true
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
 
 jobs:
   pytest:
@@ -12,8 +27,8 @@ jobs:
         # 3.9 is the oldest version the package supports (pyproject.toml).
         python-version: ["3.9", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install pytest
@@ -21,27 +36,11 @@ jobs:
       - name: Byte-compile everything (catches syntax the oldest Python can't read)
         run: python -m compileall -q wd2l lab tests packaging
 
-  dist:
-    # The wheel and sdist every package is made from (docs/decisions/0006-release-artifacts-and-signing.md).
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: python -m pip install build
-      - run: git rev-parse HEAD > wd2l/BUILD && python -m build
-      - run: python packaging/check_dist.py dist --commit "$(git rev-parse HEAD)"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
   lab:
     # The full one-way path in network namespaces, including loss, outage and crash runs.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update -q && sudo apt-get install -y -q iproute2 nftables tcpdump
       - run: sudo lab/run-lab.sh
       - run: sudo lab/run-lab.sh --loss 1
@@ -62,18 +61,9 @@ jobs:
       - run: sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
       - run: sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log
 
-  lab-image:
-    # The same one-way path, with wd2l-sender and wd2l-receiver running from the container image.
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-      - run: sudo apt-get update -q && sudo apt-get install -y -q iproute2 nftables tcpdump
-      - run: python -m pip install build && git rev-parse HEAD > wd2l/BUILD && python -m build
-      - run: packaging/container/build.sh dist localhost/wd2l:ci
-      - run: podman save localhost/wd2l:ci | sudo podman load
-      - run: sudo lab/run-lab.sh --image localhost/wd2l:ci
-      - run: sudo lab/run-lab.sh --image localhost/wd2l:ci --loss 1
-      - run: sudo lab/run-lab.sh --image localhost/wd2l:ci --files samples/logs/messages samples/logs/secure samples/logs/audit.log
+  image:
+    # The container image's checks (.github/workflows/image.yml); nothing is published.
+    if: ${{ inputs.image != false }}
+    uses: ./.github/workflows/image.yml
+    with:
+      publish: false
