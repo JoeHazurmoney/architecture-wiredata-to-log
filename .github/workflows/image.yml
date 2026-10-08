@@ -178,7 +178,9 @@ jobs:
           mkdir -p vuln .cache
           packaging/ci/tool grype oci-archive:/work/image/image.oci.tar -q \
             -o json=/work/vuln/grype.json -o sarif=/work/vuln/grype.sarif
-          packaging/ci/tool trivy image --quiet --cache-dir /work/.cache/trivy --input /work/image/image.oci.tar \
+          # Trivy reads an OCI directory (or a docker archive), not an OCI archive tar.
+          mkdir -p image/oci && tar -xf image/image.oci.tar -C image/oci
+          packaging/ci/tool trivy image --quiet --cache-dir /work/.cache/trivy --input /work/image/oci \
             --scanners vuln,secret --format json --output /work/vuln/trivy.json
           packaging/ci/tool trivy convert --format sarif --output /work/vuln/trivy.sarif /work/vuln/trivy.json
       - name: Gate (fixable High/Critical, or a secret)
