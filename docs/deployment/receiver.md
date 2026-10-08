@@ -33,6 +33,17 @@ ip -d link show ens256        # UP, PROMISC, NOARP, no inet address
 wire), largest RX ring, and on kernel 5.16+ an nftables rule dropping anything the host tries to
 send on that NIC.
 
+### Kernel receive buffer
+
+```bash
+sudo cp deploy/receiver/90-wd2l.conf /etc/sysctl.d/ && sudo sysctl --system
+sysctl net.core.rmem_max        # 67108864
+```
+
+The receiver asks for a 64 MiB capture buffer, but it runs without `CAP_NET_ADMIN`, so the
+kernel caps the buffer at `net.core.rmem_max` (about 208 KiB by default). Without this file,
+bursts are dropped by the kernel (`kernel_drops`), and the receiver logs a warning at start.
+
 ## 3. Capture archive
 
 ```bash
@@ -82,7 +93,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--audit-index` | `wd2l_audit` | Index that receives audit records |
 | `--pcap-dir` | none | Capture archive directory, to check that tcpdump is writing it. The unit uses `/var/lib/wd2l/pcap` |
 | `--capture-iface` | the `--live` NIC | NIC whose carrier and receive counters go into the health record |
-| `--capture-rcvbuf` | `67108864` | Receive buffer of the capture socket, in bytes |
+| `--capture-rcvbuf` | `67108864` | Receive buffer of the capture socket, in bytes. Needs `net.core.rmem_max` at least this big ([above](#kernel-receive-buffer)); the receiver warns at start when it got less |
 | `--fault-interval`, `--fault-window` | `5`, `60` s | How often the fault-location checks run, and over what window counter growth counts as new |
 | `--input-flat-after` | `300` s | No new events from the aggregator for this long is reported as flat input |
 | `--time-check-interval` | `60` s | Time between chrony reads |

@@ -78,6 +78,8 @@ log flow.
    If yes, the packets are probably in the archive. **Replay** (below).
 3. **Kernel drops?** `kernel_drops` rising means the host can't keep up. Check CPU and the NIC
    ring size. Replay may still recover them, because tcpdump has its own buffer.
+   If the receiver's log has a `capture receive buffer is … KiB` warning, apply `90-wd2l.conf`
+   ([receiver guide](deployment/receiver.md#kernel-receive-buffer)) and restart the receiver.
 4. **Heartbeat stale at the same time?** Then the link (cable, network tap, fiber) or Enclave 1
    was down. The packets never arrived and archive replay won't help. Ask the Enclave 1 team to
    replay that time window from the log retention server (below).

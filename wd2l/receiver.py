@@ -1231,6 +1231,16 @@ def build_outputs(a: argparse.Namespace) -> Tuple[Output, Output]:
     return out, (MultiOutput([file_out, audit_hec]) if file_out else audit_hec)
 
 
+def rcvbuf_warning(got: int, wanted: int) -> Optional[str]:
+    """A warning when the kernel gave the capture socket less than --capture-rcvbuf. It
+    reports double what it set, so anything under 2 x wanted is less."""
+    if got >= 2 * wanted:
+        return None
+    return ("capture receive buffer is %d KiB, not the %d KiB asked for (--capture-rcvbuf): "
+            "bursts can be dropped by the kernel. Raise net.core.rmem_max to at least %d "
+            "(deploy/receiver/90-wd2l.conf)" % (got // 2048, wanted // 1024, wanted))
+
+
 def steady_clock() -> Callable[[], float]:
     """Wall-clock time at start plus monotonic time since: it reads like wall time but a clock
     step (NTP correction, operator change) can't make timers fire early or stall."""
@@ -1322,6 +1332,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         signal.signal(signal.SIGTERM, lambda s, _f: stopped_by.append(s))
         signal.signal(signal.SIGINT, lambda s, _f: stopped_by.append(s))
         cap = packets.LiveCapture(a.live, rcvbuf=a.capture_rcvbuf)
+        warning = rcvbuf_warning(cap.rcvbuf, a.capture_rcvbuf)
+        if warning:
+            log.warning(warning)
         log.info("capturing on %s, dst %s:%d", a.live, a.dst_ip or "*", a.dst_port)
         last = 0.0
         while not stopped_by:
