@@ -29,12 +29,13 @@ Requires(post): systemd
 %{?systemd_requires}
 
 %description
-wd2l moves security logs one way across an enclave boundary. The sender frames each event as
-sequenced, self-verifying UDP datagrams toward an address that never answers; a network tap
-carries that cable to the other side; the receiver rebuilds every event from the captured
-packets and reports any that were lost. This package holds the Python code and commands, the
-wd2l user and wd2l-audit group, the directories, and the hourly audit seal timer. Install
-wd2l-sender or wd2l-receiver for the host's role. Nothing is enabled at install.
+wd2l moves security logs one way across an enclave boundary. The sender frames
+each event as sequenced, self-verifying UDP datagrams toward an address that
+never answers; a network tap carries that cable to the other side; the receiver
+rebuilds every event from the captured packets and reports any that were lost.
+This package holds the Python code and commands, the wd2l user and wd2l-audit
+group, the directories, and the hourly audit seal timer. Install wd2l-sender or
+wd2l-receiver for the host's role. Nothing is enabled at install.
 
 %package sender
 Summary:        wd2l sender for the Enclave 1 log server: units, egress NIC script, firewall
@@ -43,9 +44,9 @@ Requires:       nftables
 Requires:       iproute
 
 %description sender
-The sender's systemd units (or a Quadlet example to run it as a container), the egress NIC
-script, its settings in /etc/wd2l, the nftables template and the auditd rules for the log
-server. See docs/deployment/log-server.md.
+The sender's systemd units (or a Quadlet example to run it as a container), the
+egress NIC script, its settings in /etc/wd2l, the nftables template and the
+auditd rules for the log server. See docs/deployment/log-server.md.
 
 %package receiver
 Summary:        wd2l receiver for Enclave 2: units, capture NIC script, archive, SIEM examples
@@ -57,10 +58,10 @@ Requires:       iproute
 Requires:       findutils
 
 %description receiver
-The receiver's systemd units (or a Quadlet example to run it as a container), the capture NIC
-script, the tcpdump archive and its cleanup timer, settings in /etc/wd2l, the kernel receive
-buffer setting, the auditd rules and example SIEM configuration (Splunk). See
-docs/deployment/receiver.md.
+The receiver's systemd units (or a Quadlet example to run it as a container),
+the capture NIC script, the tcpdump archive and its cleanup timer, settings in
+/etc/wd2l, the kernel receive buffer setting, the auditd rules and example SIEM
+configuration (Splunk). See docs/deployment/receiver.md.
 
 %prep
 %autosetup -n wd2l-%{wd2l_pyversion}

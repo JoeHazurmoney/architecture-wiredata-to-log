@@ -293,3 +293,16 @@ def test_changelog_entry_is_the_built_version():
     log = spec().split("\n%changelog\n", 1)[1].splitlines()
     assert log[0] == "* %{wd2l_date} Joe Azurmoni - %{version}-%{release}"
     assert "%{!?wd2l_date:" in spec()
+
+
+def test_build_script_defines_what_the_spec_requires():
+    required = re.findall(r"^%\{!\?(\w+):%\{error:", spec(), re.M)
+    assert sorted(required) == ["wd2l_pyversion", "wd2l_rpmversion"]
+    script = read("packaging/rpm/build-rpms.sh")
+    for name in required + ["rel", "_topdir"]:
+        assert '--define "%s ' % name in script, name
+
+
+def test_descriptions_fit_rpmlint_width():
+    for block in re.findall(r"^%description.*?\n(.*?)\n\n", spec(), re.M | re.S):
+        assert all(len(line) <= 79 for line in block.splitlines()), block

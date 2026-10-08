@@ -66,3 +66,10 @@ jobs:
     # format(): on push and PR there are no inputs, and in expressions null == false.
     if: ${{ format('{0}', inputs.image) != 'false' }}
     uses: ./.github/workflows/image.yml
+
+  rpm:
+    # The RPMs, from the dist artifact the image job's build made. release.yml calls tests.yml
+    # with image: false and calls rpm.yml itself.
+    if: ${{ format('{0}', inputs.image) != 'false' }}
+    needs: [image]
+    uses: ./.github/workflows/rpm.yml
