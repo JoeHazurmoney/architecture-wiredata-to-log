@@ -19,7 +19,23 @@ jobs:
       - run: python -m pip install pytest
       - run: python -m pytest -q
       - name: Byte-compile everything (catches syntax the oldest Python can't read)
-        run: python -m compileall -q wd2l lab tests
+        run: python -m compileall -q wd2l lab tests packaging
+
+  dist:
+    # The wheel and sdist every package is made from (docs/decisions/0006-release-artifacts-and-signing.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build
+      - run: git rev-parse HEAD > wd2l/BUILD && python -m build
+      - run: python packaging/check_dist.py dist --commit "$(git rev-parse HEAD)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
 
   lab:
     # The full one-way path in network namespaces, including loss, outage and crash runs.

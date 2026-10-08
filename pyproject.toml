@@ -1,12 +1,14 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "wd2l"
-version = "0.2.0"
+dynamic = ["version"]
 description = "One-way log transfer: frame logs into UDP, rebuild them from tapped packets"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.9"
 dependencies = []
 
@@ -20,6 +22,12 @@ wd2l-audit-report = "wd2l.audit_report:main"
 
 [tool.setuptools]
 packages = ["wd2l"]
+
+[tool.setuptools.dynamic]
+version = {attr = "wd2l.__version__"}
+
+[tool.setuptools.package-data]
+wd2l = ["BUILD"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

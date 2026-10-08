@@ -132,3 +132,19 @@ def write_pcap(path, datagrams, t0=1000.0):
         w = packets.PcapWriter(f)
         for i, d in enumerate(datagrams):
             w.write(t0 + i * 0.0005, eth(d, i))
+
+
+def load_script(relpath):
+    """Load a script under packaging/ by its path. packaging/ has no __init__.py on purpose:
+    a regular package called `packaging` would shadow the library pytest and pip import."""
+    import importlib.util
+    import os
+    import sys
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    path = os.path.join(root, relpath)
+    name = "wd2l_script_" + relpath.replace("/", "_").replace(".", "_").replace("-", "_")
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
