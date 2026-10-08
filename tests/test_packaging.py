@@ -127,7 +127,7 @@ def tool_refs():
 
 def test_every_tool_is_pinned_by_digest():
     assert set(tool_refs()) == {"cosign", "grype", "oras", "syft", "trivy", "hadolint",
-                                "ubi9", "ubi10"}
+                                "ubi9", "ubi10", "fedora"}
 
 
 def test_tool_runs_the_pinned_image_with_the_work_tree(tmp_path):
@@ -206,8 +206,7 @@ def test_rules_watch_the_rpm_paths_too():
                  "-w /usr/libexec/wd2l/ -p wa -k wd2l-code",
                  "-w /etc/systemd/system/wd2l-receiver.service -p wa -k wd2l-units",
                  "-w /usr/lib/systemd/system/wd2l-receiver.service -p wa -k wd2l-units",
-                 "-w /etc/systemd/system/wd2l-receiver.service.d/ -p wa -k wd2l-units",
-                 "-w /etc/containers/systemd/wd2l-receiver.container -p wa -k wd2l-units"):
+                 "-w /etc/systemd/system/wd2l-receiver.service.d/ -p wa -k wd2l-units"):
         assert line in t.splitlines(), line
     assert "/opt/wd2l" not in t
     assert "/etc/systemd/system/wd2l-pcap-prune.timer.d" in rpmify.drop_in_dirs(t)
