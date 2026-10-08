@@ -24,6 +24,7 @@ sudo useradd --system --no-create-home --shell /sbin/nologin wd2l
 sudo mkdir -p /opt/wd2l /etc/wd2l
 sudo cp -r wd2l deploy /opt/wd2l/          # from this repo
 sudo cp deploy/log-server/egress.env.example /etc/wd2l/egress.env   # edit IFACE etc.
+sudo cp deploy/log-server/sender.env /etc/wd2l/                     # edit the options here
 uuidgen | sudo tee /etc/wd2l/aggregator.token >/dev/null
 sudo chown root:wd2l /etc/wd2l/aggregator.token && sudo chmod 640 /etc/wd2l/aggregator.token
 sudo groupadd --system wd2l-audit                                # who may read audit files
@@ -71,16 +72,18 @@ sudo nft -f /etc/nftables.d/nftables-wd2l.nft
 
 ## 4. Sender service
 
+The options are in `/etc/wd2l/sender.env`; the unit reads them from there.
+
 ```bash
 sudo cp deploy/log-server/wd2l-sender.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-sender
 journalctl -u wd2l-sender -f
 ```
 
-**Upgrading an install from before the fixed source port:** the new sender unit and the new
-nftables file go together (the firewall now only passes source port 5514). Copy both, reload
+**Upgrading an install from before the fixed source port:** the new sender options (`--bind 10.255.255.1:5514` in `sender.env`) and the new
+nftables file go together (the firewall now only passes source port 5514). Change both, reload
 nftables, then restart the sender the clean way ([planned-downtime.md](../planned-downtime.md)).
-Only after that, add `--src-port 5514` to the receiver unit in Enclave 2. In the other order the
+Only after that, add `--src-port 5514` to `/etc/wd2l/receiver.env` in Enclave 2. In the other order the
 receiver counts every packet as `other_packets` until the sender is changed.
 
 Every minute it logs its stream id, last sequence number and counters. Options
@@ -89,7 +92,7 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | Option | Default | Notes |
 |---|---|---|
 | `--listen` | `127.0.0.1:10070` | Where the log aggregator connects. Keep it on localhost |
-| `--bind` | none | Egress NIC's IP, optionally with a fixed UDP source port. The unit uses `10.255.255.1:5514`, so the flow is the same after every restart (firewall, tap filter, ICD). Without a port the kernel picks a new one at each start |
+| `--bind` | none | Egress NIC's IP, optionally with a fixed UDP source port. `sender.env` uses `10.255.255.1:5514`, so the flow is the same after every restart (firewall, tap filter, ICD). Without a port the kernel picks a new one at each start |
 | `--dst` | `10.255.255.2:5514` | Black-hole IP:port |
 | `--max-datagram` | `1472` | `8972` if MTU 9000 end to end |
 | `--max-event` | `262144` | Bigger events are truncated and flagged |
@@ -99,15 +102,15 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | `--source-seq` | off | Number events per file (`wd2l_src_seq`) so Enclave 2 can rebuild interleaved files and name lost lines. See [multiple-files.md](../multiple-files.md) |
 | `--no-tx-time` | stamping on | Stop stamping each event's send time (`wd2l_tx_time`). Leave it on: Enclave 2 uses it to split delays by segment ([operations.md](../operations.md#measuring-delays)) |
 | `--no-opaque-check` | check on | Stop flagging long encrypted, compressed or random-looking blobs (`wd2l_opaque`). Leave it on: see [ADR-0002](../decisions/0002-opaque-content.md) |
-| `--state` | none | Restart count and previous stream, so the receiver can link runs and report a missed one. The unit uses `/var/lib/wd2l/sender.json` |
+| `--state` | none | Restart count and previous stream, so the receiver can link runs and report a missed one. `sender.env` uses `/var/lib/wd2l/sender.json` |
 | `--drain-timeout` | `2` s | On shutdown, how long to keep reading input that is already arriving |
 | `--input-rcvbuf` | `262144` | TCP receive buffer for the aggregator connection. Bounds input that is acknowledged but not yet read |
-| `--audit-dir` | none | The unit uses `/var/log/wd2l`. Hash-chained audit records, see [the audit plan](../audit-and-health-plan.md) and **Audit files** below |
+| `--audit-dir` | none | `sender.env` uses `/var/log/wd2l`. Hash-chained audit records, see [the audit plan](../audit-and-health-plan.md) and **Audit files** below |
 | `--audit-min-free-mb` | `256` | Free space the audit directory must keep. Below it, nothing more goes in the audit files: records are still forwarded, counted as missed, and `audit_ok` is false until there is space again |
-| `--egress-iface` | none | The unit uses `ens224`. NIC carrier and transmit counters go into every heartbeat |
+| `--egress-iface` | none | `sender.env` uses `ens224`. NIC carrier and transmit counters go into every heartbeat |
 | `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
 | `--chrony-addr` | none | Ask chronyd over UDP (`HOST[:PORT]`, port 323) instead of running `chronyc`. The container unit uses `127.0.0.1:323`. chronyd's default configuration answers it; `cmdport 0` turns it off |
-| `--log-format` | text | The unit uses `json`: one JSON object per log line |
+| `--log-format` | text | `sender.env` uses `json`: one JSON object per log line |
 
 ### Audit files
 

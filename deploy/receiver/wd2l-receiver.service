@@ -8,21 +8,9 @@ Wants=network-online.target
 User=wd2l
 Group=wd2l
 Environment=PYTHONPATH=/opt/wd2l
-ExecStart=/usr/bin/python3 -m wd2l.receiver \
-    --live ens256 \
-    --dst-ip 10.255.255.2 --dst-port 5514 --src-ip 10.255.255.1 --src-port 5514 \
-    --state /var/lib/wd2l/state.json \
-    --spool-dir /var/lib/wd2l/spool \
-    --hec-url https://siem.enclave2.example:8088 \
-    --hec-token-file /etc/wd2l/hec.token \
-    --hec-ca /etc/wd2l/siem-ca.pem \
-    --default-index enclave1 \
-    --health-index wd2l \
-    --hec-audit-token-file /etc/wd2l/hec-audit.token \
-    --audit-index wd2l_audit \
-    --audit-dir /var/log/wd2l \
-    --pcap-dir /var/lib/wd2l/pcap \
-    --log-format json
+# Site options (capture NIC, flow, SIEM, tokens, paths): /etc/wd2l/receiver.env.
+EnvironmentFile=/etc/wd2l/receiver.env
+ExecStart=/usr/bin/python3 -m wd2l.receiver $WD2L_RECEIVER_ARGS
 Restart=always
 RestartSec=2
 # On stop: final health record, up to 15 s for queued events to reach the SIEM (the rest go

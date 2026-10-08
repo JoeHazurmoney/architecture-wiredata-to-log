@@ -23,7 +23,7 @@ sudo cp <SIEM CA bundle> /etc/wd2l/siem-ca.pem
 ## 2. Capture NIC
 
 ```bash
-echo 'IFACE=ens256' | sudo tee /etc/wd2l/capture.env
+sudo cp deploy/receiver/capture.env /etc/wd2l/        # edit IFACE if it isn't ens256
 sudo cp deploy/receiver/wd2l-capture-nic.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-capture-nic
 ip -d link show ens256        # UP, PROMISC, NOARP, no inet address
@@ -48,7 +48,6 @@ bursts are dropped by the kernel (`kernel_drops`), and the receiver logs a warni
 
 ```bash
 sudo cp deploy/receiver/wd2l-capture.service deploy/receiver/wd2l-pcap-prune.* /etc/systemd/system/
-# edit the interface name in wd2l-capture.service if it isn't ens256
 sudo systemctl daemon-reload
 sudo systemctl enable --now wd2l-capture wd2l-pcap-prune.timer
 ls -l /var/lib/wd2l/pcap/
@@ -59,7 +58,8 @@ per week. Size the disk, or shorten the retention in `wd2l-pcap-prune.service`.
 
 ## 4. Receiver
 
-Edit the SIEM URL and index names in `deploy/receiver/wd2l-receiver.service`, then:
+Copy the options file and edit the SIEM URL and index names in it
+(`sudo cp deploy/receiver/receiver.env /etc/wd2l/`), then:
 
 ```bash
 sudo cp deploy/receiver/wd2l-receiver.service /etc/systemd/system/
@@ -72,7 +72,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | Option | Default | Notes |
 |---|---|---|
 | `--live IFACE` / `--pcap FILES` | | Live capture, or read pcap files (replay) |
-| `--dst-ip`, `--dst-port`, `--src-ip`, `--src-port` | `10.255.255.2`, `5514`, any, any | Which packets are the log flow. The unit sets all four (source `10.255.255.1:5514`). Everything else is counted as `other_packets` |
+| `--dst-ip`, `--dst-port`, `--src-ip`, `--src-port` | `10.255.255.2`, `5514`, any, any | Which packets are the log flow. `receiver.env` sets all four (source `10.255.255.1:5514`). Everything else is counted as `other_packets` |
 | `--state` | none | Gap tracking that survives restarts, including which events the SIEM has not confirmed yet. Always set it in production |
 | `--hec-url`, `--hec-token-file`, `--hec-ca` | | SIEM HTTP event collector. `--hec-insecure` is for labs only |
 | `--spool-dir` | `/var/lib/wd2l/spool` | Where batches wait while the SIEM is unreachable |
@@ -87,11 +87,11 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--max-event`, `--max-buffer` | 256 KB, 64 MB | Input caps |
 | `--hec-queue` | `100000` | Events held in memory for the SIEM. Overflow is reported as `reason=output_dropped` gaps (replay recovers them) |
 | `--stream-retention` | 7 days | How long finished sender runs with nothing open stay fully tracked. Keep it at least as long as the pcap archive |
-| `--audit-dir` | none | The unit uses `/var/log/wd2l`. Hash-chained audit records, see [the audit plan](../audit-and-health-plan.md) and **Audit files** below |
+| `--audit-dir` | none | `receiver.env` uses `/var/log/wd2l`. Hash-chained audit records, see [the audit plan](../audit-and-health-plan.md) and **Audit files** below |
 | `--audit-min-free-mb` | `256` | Free space the audit directory must keep. Below it, nothing more goes in the audit files: records are still forwarded, counted as missed, and `audit_ok` is false until there is space again |
-| `--hec-audit-token-file` | none | Token for the audit index. The unit uses `/etc/wd2l/hec-audit.token`. Required when `--audit-dir` and `--hec-url` are both given; if the site uses one token for both, name the `--hec-token-file` file again |
+| `--hec-audit-token-file` | none | Token for the audit index. `receiver.env` uses `/etc/wd2l/hec-audit.token`. Required when `--audit-dir` and `--hec-url` are both given; if the site uses one token for both, name the `--hec-token-file` file again |
 | `--audit-index` | `wd2l_audit` | Index that receives audit records |
-| `--pcap-dir` | none | Capture archive directory, to check that tcpdump is writing it. The unit uses `/var/lib/wd2l/pcap` |
+| `--pcap-dir` | none | Capture archive directory, to check that tcpdump is writing it. `receiver.env` uses `/var/lib/wd2l/pcap` |
 | `--capture-iface` | the `--live` NIC | NIC whose carrier and receive counters go into the health record |
 | `--capture-rcvbuf` | `67108864` | Receive buffer of the capture socket, in bytes. Needs `net.core.rmem_max` at least this big ([above](#kernel-receive-buffer)); the receiver warns at start when it got less |
 | `--fault-interval`, `--fault-window` | `5`, `60` s | How often the fault-location checks run, and over what window counter growth counts as new |
@@ -99,7 +99,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--time-check-interval` | `60` s | Time between chrony reads |
 | `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
 | `--chrony-addr` | none | Ask chronyd over UDP (`HOST[:PORT]`, port 323) instead of running `chronyc`. The container unit uses `127.0.0.1:323`. chronyd's default configuration answers it; `cmdport 0` turns it off |
-| `--log-format` | text | The unit uses `json`: one JSON object per log line |
+| `--log-format` | text | `receiver.env` uses `json`: one JSON object per log line |
 | `--no-rx-time` | stamping on | Stop stamping each event's arrival time (`wd2l_rx_time`). Leave it on: it's how delays are measured ([operations.md](../operations.md#measuring-delays)) |
 
 ### Audit files

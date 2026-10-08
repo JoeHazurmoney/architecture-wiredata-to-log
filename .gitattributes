@@ -5,3 +5,5 @@ packaging/ci/tool text eol=lf
 # Containerfiles are parsed by scripts that run in Linux.
 Containerfile text eol=lf
 *.Containerfile text eol=lf
+# systemd and the NIC scripts read these in Linux.
+*.env text eol=lf
