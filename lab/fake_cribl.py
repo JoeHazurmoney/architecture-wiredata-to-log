@@ -8,6 +8,19 @@ import socket
 import time
 
 
+def connect(host, port, wait=10.0):
+    """Connect to the sender, retrying while it isn't listening yet (as a real aggregator
+    does), for up to `wait` seconds."""
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            return socket.create_connection((host, port))
+        except ConnectionRefusedError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("events", help="JSONL file from gen_events.py")
@@ -19,7 +32,7 @@ def main():
     p.add_argument("--pause-s", type=float, default=0, help="for this many seconds")
     a = p.parse_args()
     host, _, port = a.to.rpartition(":")
-    s = socket.create_connection((host, int(port)))
+    s = connect(host, int(port))
     s.sendall(json.dumps({"authToken": a.token, "fields": {}}).encode() + b"\n")
     start = time.monotonic()
     n = 0
