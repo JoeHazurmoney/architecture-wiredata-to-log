@@ -266,6 +266,10 @@ sudo lab/run-lab.sh --fault tap-down
 
 A fault run sends more events than the default (20,000) so that it outlasts the injection. It can't be combined with `--loss`, `--receiver-outage`, `--maintenance` or `--files`.
 
+`--chrony-udp` runs the same lab with both sides asking a chronyd stand-in over UDP, as the
+container images do (`--chrony-addr`); `--fault clock --chrony-udp` checks the clock alarm that
+way.
+
 To look at the answer, search the receiver's health file:
 
 ```bash

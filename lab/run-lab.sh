@@ -12,7 +12,7 @@
 #
 # Usage: sudo lab/run-lab.sh [--events N] [--eps N] [--loss PCT] [--receiver-outage]
 #                            [--receiver-crash] [--maintenance] [--keep] [--interleave]
-#                            [--fault NAME]
+#                            [--fault NAME] [--chrony-udp]
 #                            [--files FILE...]
 #   --loss PCT          drop PCT% of packets on the cable (before the tap): gaps must be reported
 #   --receiver-outage   stop the receiver mid-run, restart it, then replay the pcap archive:
@@ -27,6 +27,7 @@
 #                       sender-stop, sender-hang, tap-down, foreign-only, wire-loss, receiver-slow,
 #                       siem-down, clock); see docs/running-the-lab.md
 #   --keep              leave namespaces up afterwards (lab/teardown.sh removes them)
+#   --chrony-udp        both sides ask a stand-in chronyd over UDP (--chrony-addr), as the containers do
 #   --interleave        with --files: merge the files by each line's timestamp, as if they were
 #                       being written at the same time and tailed by a forwarder. The sender
 #                       numbers lines per file (--source-seq) so Enclave 2 can separate them.
@@ -50,6 +51,7 @@ FILES=()
 INTERLEAVE=0
 MAINT=0
 FAULT=""
+CHRONY_UDP=0
 CHRONYC="python3 $HERE/fake_chronyc.py"   # the clock-bad flag file is added once OUT is known
 
 while [ $# -gt 0 ]; do
@@ -61,6 +63,7 @@ while [ $# -gt 0 ]; do
     --receiver-crash) OUTAGE=1; KILLSIG=KILL; shift ;;
     --maintenance) MAINT=1; shift ;;
     --fault) FAULT="$2"; shift 2 ;;
+    --chrony-udp) CHRONY_UDP=1; shift ;;
     --keep) KEEP=1; shift ;;
     --interleave) INTERLEAVE=1; shift ;;
     --files) shift; FILES=("$@"); [ ${#FILES[@]} -gt 0 ] || { echo "--files needs files" >&2; exit 2; }; break ;;
@@ -122,6 +125,7 @@ trap cleanup EXIT
 rm -rf "$OUT"
 mkdir -p "$OUT/pcap" "$OUT/received"
 CHRONYC="$CHRONYC $OUT/clock-bad"
+TIME_ARGS=(--chronyc "$CHRONYC")
 
 echo "== building namespaces"
 for ns in wd2l-enc1 wd2l-bh wd2l-enc2; do
@@ -176,6 +180,16 @@ table netdev notx {
 }
 EOF
 
+if [ "$CHRONY_UDP" = 1 ]; then
+  # A chronyd stand-in on each side's 127.0.0.1:323, as the containers ask it (--chrony-addr).
+  for ns in wd2l-enc1 wd2l-enc2; do
+    ip netns exec "$ns" python3 "$HERE/fake_chronyd.py" --listen 127.0.0.1:323 \
+      --flag "$OUT/clock-bad" 2>>"$OUT/fake_chronyd.log" &
+    PIDS+=($!)
+  done
+  TIME_ARGS=(--chrony-addr 127.0.0.1:323)
+fi
+
 SENDER_EXTRA=()
 if [ ${#FILES[@]} -gt 0 ]; then
   echo "== turning ${#FILES[@]} file(s) into events, one per line"
@@ -200,7 +214,7 @@ start_capture() {
 RX_ARGS=(--live cap0 --dst-ip 10.255.255.2 --dst-port 5514 --src-ip 10.255.255.1 --src-port 5514
          --out-dir "$OUT/received" --state "$OUT/state.json"
          --gap-window 2 --health-interval 5 --max-event "$MAX_EVENT"
-         --audit-dir "$OUT/audit-e2" --chronyc "$CHRONYC"
+         --audit-dir "$OUT/audit-e2" "${TIME_ARGS[@]}"
          --pcap-dir "$OUT/pcap" --fault-interval 1)
 if [ -n "$FAULT" ]; then
   RX_ARGS+=(--fault-window 10 --input-flat-after 5 --time-check-interval 1)
@@ -220,7 +234,7 @@ start_receiver() {
 start_sender() {
   $ENC1 python3 -m wd2l.sender --listen 127.0.0.1:10070 --dst 10.255.255.2:5514 \
     --bind 10.255.255.1:5514 --max-event "$MAX_EVENT" --stats-interval 5 \
-    --state "$OUT/sender.json" --audit-dir "$OUT/audit-e1" --chronyc "$CHRONYC" \
+    --state "$OUT/sender.json" --audit-dir "$OUT/audit-e1" "${TIME_ARGS[@]}" \
     --egress-iface enc1nic \
     "${SENDER_EXTRA[@]}" >>"$OUT/sender.log" 2>&1 &
   TX_PID=$!
