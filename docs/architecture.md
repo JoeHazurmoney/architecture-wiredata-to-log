@@ -57,6 +57,9 @@ flowchart LR
 | Fault location | `wd2l-receiver`, and the SIEM dashboard | The receiver decides where a fault is (one of six segments, by rule) from its own counters and the sender's heartbeat. The dashboard draws what the receiver decided. See [state-of-health.md](state-of-health.md). |
 | SIEM (e.g. Splunk) | Enclave 2 | Stores events with the original host, source, source type, index and time. |
 
+The sender and receiver ship as RPMs and as a FIPS container image on Red Hat Hardened Images
+([ADR-0004](decisions/0004-container-base-image.md), [releasing.md](releasing.md)).
+
 ## Design rules, and why
 
 1. **UDP only on the tapped cable.** A port that drops everything never completes a TCP
