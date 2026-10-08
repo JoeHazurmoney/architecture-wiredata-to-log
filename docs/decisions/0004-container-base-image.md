@@ -47,6 +47,8 @@ Constraints:
   provenance and source image ([ADR-0006](0006-release-artifacts-and-signing.md)).
 * **The image adds wd2l and nothing else.** The pipeline fails if the image's RPM database
   differs from the base's by one byte.
+* **The image removes pip.** The base installs pip with `ensurepip`, outside the RPM database.
+  wd2l installs nothing at run time, so the image keeps no package installer.
 
 ```mermaid
 flowchart LR
@@ -83,7 +85,8 @@ fixes, and a full supply-chain record from Red Hat. It has FIPS cryptography wit
 module RHEL uses.
 
 **Cons:** a new product. No `chronyc` and no `tcpdump` in its repositories. No CA bundle in the
-FIPS variant. pip is present (the base installs it). Its packages aren't the RHEL builds.
+FIPS variant. pip is present, installed outside the RPM database (we remove it). Its packages
+aren't the RHEL builds.
 
 ### Option B: UBI 10 micro, with python3 added from the UBI 10 repositories
 
@@ -209,8 +212,12 @@ they change with every rebuild and every new disclosure.
     items).
   * The FIPS variant has no CA bundle, so the receiver must be given `--hec-ca`, which
     `receiver.env` already does.
-  * pip comes with the base. It can't install anything: the root filesystem is read-only and the
-    user is non-root.
+  * The base installs pip with `ensurepip`, outside the RPM database. On 2026-10-08 Trivy found
+    fixable High CVEs in libraries pip vendors (msgpack, setuptools, urllib3); Grype didn't
+    count them. The Containerfile removes pip (`/usr/local/bin/pip*` and its
+    `site-packages`), and the hardening check fails if pip is back. The RPM-owned
+    `/usr/share/python-wheels/pip-*.whl` stays; nothing loads it unless someone runs
+    `python3 -m ensurepip`.
   * Tags float, so we pin digests, take Dependabot's updates and rescan weekly. (The `3.12-fips`
     index changed between 2026-10-07 and 2026-10-08.)
   * The packages are Fedora-derived, not RHEL errata.

@@ -265,6 +265,17 @@ def test_shell_and_package_manager_are_refused(tmp_path):
     assert "shell present: /usr/bin/bash" in text and "package manager present: /usr/bin/dnf" in text
 
 
+def test_pip_is_refused(tmp_path):
+    # The base installs pip with ensurepip (not an RPM); the Containerfile removes it.
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    os.makedirs(os.path.join(root, "usr/local/bin"))
+    open(os.path.join(root, "usr/local/bin/pip3"), "w").close()
+    os.makedirs(os.path.join(root, "usr/local/lib/python3.12/site-packages/pip/_vendor"))
+    text = "\n".join(ci.check_filesystem(root, base))
+    assert "package manager present: /usr/local/bin/pip3" in text
+    assert "package manager present: /usr/local/lib/python3.12/site-packages/pip" in text
+
+
 def test_setuid_and_world_writable_are_refused(tmp_path):
     whl, root, base = wheel_and_rootfs(tmp_path)
     os.makedirs(os.path.join(root, "usr/bin"), exist_ok=True)
@@ -411,6 +422,13 @@ def test_anything_else_added_or_removed_is_named():
     assert added == ["pkg:rpm/hummingbird/bash@5.3-1?arch=x86_64"] and removed == [BASE_PKGS[1]]
 
 
+def test_removing_the_base_pip_is_allowed():
+    base = spdx(*BASE_PKGS + ("pkg:pypi/pip@26.2",))
+    image = spdx(*BASE_PKGS + ("pkg:pypi/wd2l@0.3.0",))
+    assert sd.diff(base, image, ["pkg:pypi/wd2l@"], ["pkg:pypi/pip@"]) == ([], [])
+    assert sd.diff(base, image, ["pkg:pypi/wd2l@"]) == ([], ["pkg:pypi/pip@26.2"])
+
+
 def test_cli(tmp_path):
     b, i = tmp_path / "b.json", tmp_path / "i.json"
     b.write_text(json.dumps(spdx(*BASE_PKGS)))
@@ -418,6 +436,9 @@ def test_cli(tmp_path):
     assert sd.main([str(b), str(i)]) == 1
     i.write_text(json.dumps(spdx(*BASE_PKGS + ("pkg:pypi/wd2l@0.3.0",))))
     assert sd.main([str(b), str(i)]) == 0
+    b.write_text(json.dumps(spdx(*BASE_PKGS + ("pkg:pypi/pip@26.2",))))
+    assert sd.main([str(b), str(i)]) == 0
+    assert sd.main([str(b), str(i), "--allow-removed", "pkg:pypi/nothing@"]) == 1
 
 
 def described(doc, root_purl):

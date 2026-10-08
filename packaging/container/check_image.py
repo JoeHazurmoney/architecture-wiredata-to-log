@@ -3,8 +3,8 @@
 its filesystem and its config:
 
 * it runs as 65532, and its command isn't a shell;
-* no shell and no package manager (pip comes with the base; the root filesystem is read-only
-  and the user non-root, so it can't install anything);
+* no shell and no package manager, pip included (the base installs pip with ensurepip, not as an
+  RPM; the Containerfile removes it);
 * no setuid or setgid file, and nothing world-writable except sticky /tmp-like directories;
 * the system crypto policy is FIPS;
 * the RPM database is byte-identical to the base's, so the image adds no packages;
@@ -34,6 +34,8 @@ SHELLS = ("bin/sh", "bin/bash", "usr/bin/sh", "usr/bin/bash", "bin/ash", "bin/da
 PACKAGE_MANAGERS = ("usr/bin/dnf", "usr/bin/dnf5", "usr/bin/dnf-3", "usr/bin/microdnf",
                     "usr/bin/yum", "usr/bin/rpm", "usr/bin/apt", "usr/bin/apt-get",
                     "usr/bin/dpkg", "sbin/apk", "usr/bin/apk")
+PIP = ("usr/local/bin/pip*", "usr/bin/pip*", "usr/local/lib*/python3*/site-packages/pip",
+       "usr/lib*/python3*/site-packages/pip")
 RPMDB = "usr/lib/sysimage/rpm/rpmdb.sqlite"
 STICKY_OK = ("tmp", "var/tmp", "dev/shm")
 REMOVED_LABELS = ("cpe", "com.redhat.component")
@@ -92,6 +94,9 @@ def check_filesystem(root: str, base_root: str) -> List[str]:
     for p in PACKAGE_MANAGERS:
         if os.path.lexists(os.path.join(root, p)):
             out.append("package manager present: /" + p)
+    for pattern in PIP:
+        for path in sorted(glob.glob(os.path.join(root, pattern))):
+            out.append("package manager present: /" + os.path.relpath(path, root).replace(os.sep, "/"))
     for dirpath, dirnames, filenames in os.walk(root):
         rel = os.path.relpath(dirpath, root)
         if rel.split(os.sep)[0] in ("proc", "sys"):

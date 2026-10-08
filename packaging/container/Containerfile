@@ -37,6 +37,11 @@ LABEL name="wd2l" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.base.name="${BASE_NAME}" \
       org.opencontainers.image.base.digest="${BASE_DIGEST}"
+# The base installs pip with ensurepip (not as an RPM, so the RPM set doesn't change). wd2l
+# installs nothing at run time, so the image keeps no package installer and none of the
+# libraries pip vendors. There's no shell: python3 removes it.
+USER 0
+RUN ["python3", "-I", "-B", "-c", "import glob, os, shutil; found = sorted(glob.glob('/usr/local/bin/pip*') + glob.glob('/usr/local/lib/python3.*/site-packages/pip*')); print('removing', *found); [shutil.rmtree(p) if os.path.isdir(p) and not os.path.islink(p) else os.remove(p) for p in found]"]
 COPY --from=build /out/ /
 USER 65532
 CMD ["wd2l-receiver", "--help"]
