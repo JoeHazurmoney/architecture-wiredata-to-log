@@ -2,3 +2,6 @@
 *.sh text eol=lf
 # Shell scripts without an extension, run in Linux.
 packaging/ci/tool text eol=lf
+# Containerfiles are parsed by scripts that run in Linux.
+Containerfile text eol=lf
+*.Containerfile text eol=lf
