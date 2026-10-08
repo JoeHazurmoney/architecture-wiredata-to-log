@@ -7,3 +7,4 @@ Containerfile text eol=lf
 *.Containerfile text eol=lf
 # systemd and the NIC scripts read these in Linux.
 *.env text eol=lf
+*.container text eol=lf

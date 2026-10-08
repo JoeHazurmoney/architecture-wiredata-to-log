@@ -134,10 +134,12 @@ The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `pyt
 3. [Log retention server](docs/deployment/retention-server.md): 1-year copy in Enclave 1, replay
    source, wd2l audit files
 4. [Receiver](docs/deployment/receiver.md): capture NIC, archive, `wd2l-receiver`, SIEM
-5. [Operations](docs/operations.md): health records, alerts, replay, re-send
-6. [Planned downtime](docs/planned-downtime.md): stopping and starting the sender and receiver
+5. [Containers](docs/deployment/containers.md): the sender and receiver as containers under
+   systemd (Quadlet), on the FIPS Red Hat Hardened Images base
+6. [Operations](docs/operations.md): health records, alerts, replay, re-send
+7. [Planned downtime](docs/planned-downtime.md): stopping and starting the sender and receiver
    cleanly for patching, reboots and link work
-7. [State of health](docs/state-of-health.md): what the dashboard shows and how to read it
+8. [State of health](docs/state-of-health.md): what the dashboard shows and how to read it
 
 What crosses between the enclaves, packet by packet, for the interface control document (ICD):
 [docs/interface-description.md](docs/interface-description.md).

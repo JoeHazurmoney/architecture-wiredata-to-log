@@ -64,7 +64,9 @@ and every event byte for byte.
 ## Full procedure (both sides, or link work)
 
 Commands are for RHEL; they're the same on Ubuntu. Interface names are the defaults (`ens224`
-on the log server, `ens256` on the receiver).
+on the log server, `ens256` on the receiver). With the container units
+([containers.md](deployment/containers.md)) the commands are the same: `systemctl stop wd2l-sender`
+stops the container cleanly (it waits `StopTimeout`).
 
 ### Stop
 

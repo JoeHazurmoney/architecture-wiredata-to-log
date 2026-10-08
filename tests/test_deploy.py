@@ -3,6 +3,8 @@ import shlex
 import subprocess
 import time
 
+import pytest
+
 from wd2l import receiver, sender
 
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -127,3 +129,46 @@ def test_auditd_rules_are_well_formed():
         for r in rules:
             assert r.startswith(("-w ", "-a always,exit ")) and " -k wd2l-" in r, r
         assert any("dir=/var/log/wd2l" in r and "auid!=unset" in r for r in rules)
+
+
+import wd2l
+
+
+def quadlet(path):
+    """A Quadlet/systemd unit as {section: {key: [values]}}; continuation lines joined."""
+    with open(path) as f:
+        text = f.read().replace("\r\n", "\n").replace("\\n", " ")
+    out, sec = {}, None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            sec = out.setdefault(line[1:-1], {})
+            continue
+        k, v = line.split("=", 1)
+        sec.setdefault(k.strip(), []).append(v.strip())
+    return out
+
+
+QUADLETS = [
+    ("log-server", "wd2l-sender", "WD2L_SENDER_ARGS", SENDER_UNIT, 30, []),
+    ("receiver", "wd2l-receiver", "WD2L_RECEIVER_ARGS", RECEIVER_UNIT, 60, ["NET_RAW"]),
+]
+
+
+@pytest.mark.parametrize("side, name, var, native_path, stop, caps", QUADLETS)
+def test_quadlet_unit_matches_the_native_one(side, name, var, native_path, stop, caps):
+    q = quadlet(os.path.join(REPO, "deploy", side, name + ".container"))
+    native, c = unit(native_path), q["Container"]
+    assert c["Image"] == ["ghcr.io/joehazurmoney/wd2l:" + wd2l.__version__]
+    assert c["Pull"] == ["never"] and c["Network"] == ["host"]
+    assert c["DropCapability"] == ["all"] and c.get("AddCapability", []) == caps
+    assert c["NoNewPrivileges"] == ["true"] and c["ReadOnly"] == ["true"]
+    assert c["StopTimeout"] == [str(stop)] and native["TimeoutStopSec"] == [str(stop)]
+    assert int(q["Service"]["TimeoutStopSec"][0]) > stop
+    assert q["Service"]["EnvironmentFile"] == native["EnvironmentFile"]
+    assert shlex.split(c["Exec"][0]) == [name, "$" + var, "--chrony-addr", "127.0.0.1:323"]
+    for k in ("After", "Requires", "Wants"):
+        assert q["Unit"].get(k) == native.get(k), k
+    assert "--umask=0027" in " ".join(c.get("PodmanArgs", []))
