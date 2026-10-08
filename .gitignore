@@ -8,3 +8,4 @@ wd2l/BUILD
 dist/
 .cache/
 rpms/
+cosign.key

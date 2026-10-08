@@ -40,8 +40,13 @@ templates (nftables, auditd rules, the Quadlet unit) in `/usr/share/wd2l`. They 
 `dnf upgrade` doesn't restart wd2l: restart it as [planned-downtime.md](../planned-downtime.md)
 says.
 
+On a host with `localpkg_gpgcheck=1` (the RHEL STIG sets it), `dnf install` needs
+`--nogpgcheck`, after the release is verified: see
+[releasing.md](../releasing.md#bringing-a-release-into-an-enclave).
+
 To run the sender as a container instead, see [containers.md](containers.md). Without the RPMs,
-see [Appendix: manual install](#appendix-manual-install).
+see [Appendix: manual install](#appendix-manual-install). On a host installed by hand before,
+see [Moving a manual install to the RPMs](#moving-a-manual-install-to-the-rpms).
 
 The log aggregator copies the audit files to the log retention server, so its service account
 needs to be in `wd2l-audit`. Restart the aggregator afterwards so it picks up the new group.
@@ -250,6 +255,33 @@ sudo nft list table inet wd2l
 
 On the log retention server, new data should keep arriving. See the checks in
 [retention-server.md](retention-server.md#7-checks).
+
+## Moving a manual install to the RPMs
+
+After `dnf install`, a host installed by hand keeps running its old copies: units in
+`/etc/systemd/system` win over the packaged ones in `/usr/lib/systemd/system`, and `rpm -V`
+doesn't see them. So, in a planned window:
+
+1. Stop the sender as [planned-downtime.md](../planned-downtime.md) says.
+2. Install the packages as in section 1. Edited files in `/etc/wd2l` stay; the packaged ones
+   are put beside them as `.rpmnew`.
+3. Units from before 0.3 carry the sender's options in `ExecStart=`. Put them in
+   `WD2L_SENDER_ARGS` in `/etc/wd2l/sender.env`, and compare with `sender.env.rpmnew`.
+4. Swap the old copies for the packaged units and rules:
+
+   ```bash
+   sudo systemctl disable wd2l-sender wd2l-egress-nic wd2l-audit-seal.timer
+   sudo rm /etc/systemd/system/wd2l-sender.service /etc/systemd/system/wd2l-egress-nic.service \
+     /etc/systemd/system/wd2l-audit-seal.service /etc/systemd/system/wd2l-audit-seal.timer
+   sudo rm -rf /opt/wd2l
+   sudo cp /usr/share/wd2l/audit/log-server.rules /etc/audit/rules.d/wd2l.rules && sudo augenrules --load
+   sudo systemctl daemon-reload
+   sudo systemctl enable wd2l-sender wd2l-egress-nic wd2l-audit-seal.timer
+   systemctl cat wd2l-sender | head -1      # /usr/lib/systemd/system/wd2l-sender.service
+   ```
+
+5. Start it as planned-downtime.md says. `rpm -V wd2l wd2l-sender` prints only the `/etc/wd2l`
+   files you edited.
 
 ## Appendix: manual install
 

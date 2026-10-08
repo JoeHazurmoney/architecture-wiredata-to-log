@@ -182,10 +182,14 @@ git commit -m "Release notes: install, offline verification, the image and its b
   through this session. Give them this, from ADR-0006's key management:
 
 ```bash
-# On a trusted machine, as the security owner. Choose a strong password when asked.
-podman run --rm -it --userns=keep-id -v "$PWD:/work" -w /work registry.access.redhat.com/hi/cosign:latest generate-key-pair
+# On a trusted machine with Podman, as the security owner, in a checkout of this repo.
+# (Final review: the tool must run as your user, or it can't write the key files; the
+# wrapper does that and uses the pinned image. docs/releasing.md has the same.)
+read -rsp "Password for the new key: " COSIGN_PASSWORD; echo; export COSIGN_PASSWORD
+TOOL_ENV=COSIGN_PASSWORD packaging/ci/tool cosign generate-key-pair
 gh secret set COSIGN_PRIVATE_KEY < cosign.key
-gh secret set COSIGN_PASSWORD           # paste the password
+printf '%s' "$COSIGN_PASSWORD" | gh secret set COSIGN_PASSWORD
+unset COSIGN_PASSWORD
 # Keep cosign.key offline (or destroy it: the secret is now the only copy). Give back cosign.pub.
 ```
 
@@ -521,6 +525,15 @@ EOF
   4. HEC TLS to a FIPS-mode endpoint works with `--hec-ca`.
   5. `rpm -V` is still clean after the services ran (`StateDirectoryMode=0750` kept
      `/var/lib/wd2l`'s mode).
+  6. Added by the final review:
+     * on a host **without Podman**, `augenrules --load` loads `wd2l.rules` and the rule files
+       after it (`auditctl -l` lists them all);
+     * the first Quadlet start over audit files the seal timer already made append-only, with
+       the steps in containers.md;
+     * whether Podman's `sigstoreSigned` policy accepts our cosign 3 signatures (if it does,
+       containers.md can offer it again);
+     * moving a manual install to the RPMs, as the deployment guides say: afterwards
+       `systemctl cat` shows the packaged units.
 
   Each failure is a finding: fix it in a PR, then cut `0.3.0rc2` (steps 2–4 again).
 

@@ -31,8 +31,13 @@ kernel receive buffer setting, and templates (auditd rules, the Quadlet unit, th
 in `/usr/share/wd2l`. They enable nothing. `dnf upgrade` doesn't restart wd2l: restart it as
 [planned-downtime.md](../planned-downtime.md) says.
 
+On a host with `localpkg_gpgcheck=1` (the RHEL STIG sets it), `dnf install` needs
+`--nogpgcheck`, after the release is verified: see
+[releasing.md](../releasing.md#bringing-a-release-into-an-enclave).
+
 To run the receiver as a container instead, see [containers.md](containers.md). Without the
-RPMs, see [Appendix: manual install](#appendix-manual-install).
+RPMs, see [Appendix: manual install](#appendix-manual-install). On a host installed by hand
+before, see [Moving a manual install to the RPMs](#moving-a-manual-install-to-the-rpms).
 
 ## 2. Capture NIC
 
@@ -233,6 +238,39 @@ Healthy: events for every expected host, `heartbeat_age_s` ≤ ~1, and `gap_even
 `ok`, `audit_ok` is `true`, `audit_verify` is `ok` (empty until the first daily check) and
 `reconcile_unbalanced` is 0. The sender's health record shows that Enclave 1's records arrive too. Link delay of a few milliseconds, and
 `clock_offset_s` in the health record within a few milliseconds of 0.
+
+## Moving a manual install to the RPMs
+
+After `dnf install`, a host installed by hand keeps running its old copies: units in
+`/etc/systemd/system` win over the packaged ones in `/usr/lib/systemd/system`, and `rpm -V`
+doesn't see them. So, in a planned window:
+
+1. Stop the receiver as [planned-downtime.md](../planned-downtime.md) says. Leave the capture
+   archive running until step 4, so nothing is missed.
+2. Install the packages as in section 1. Edited files in `/etc/wd2l` stay; the packaged ones
+   are put beside them as `.rpmnew`.
+3. Units from before 0.3 carry the receiver's options in `ExecStart=`. Put them in
+   `WD2L_RECEIVER_ARGS` in `/etc/wd2l/receiver.env`, and compare with `receiver.env.rpmnew`
+   and `capture.env.rpmnew`.
+4. Swap the old copies for the packaged units, rules and sysctl file:
+
+   ```bash
+   U="wd2l-receiver wd2l-capture wd2l-capture-nic wd2l-pcap-prune.timer wd2l-audit-seal.timer"
+   sudo systemctl disable $U
+   sudo rm /etc/systemd/system/wd2l-receiver.service /etc/systemd/system/wd2l-capture.service \
+     /etc/systemd/system/wd2l-capture-nic.service /etc/systemd/system/wd2l-pcap-prune.service \
+     /etc/systemd/system/wd2l-pcap-prune.timer /etc/systemd/system/wd2l-audit-seal.service \
+     /etc/systemd/system/wd2l-audit-seal.timer /etc/sysctl.d/90-wd2l.conf
+   sudo rm -rf /opt/wd2l
+   sudo cp /usr/share/wd2l/audit/receiver.rules /etc/audit/rules.d/wd2l.rules && sudo augenrules --load
+   sudo systemctl daemon-reload
+   sudo systemctl enable $U
+   sudo systemctl restart wd2l-capture-nic wd2l-capture    # now from the packaged units
+   systemctl cat wd2l-receiver | head -1    # /usr/lib/systemd/system/wd2l-receiver.service
+   ```
+
+5. Start the receiver as planned-downtime.md says. `rpm -V wd2l wd2l-receiver` prints only the
+   `/etc/wd2l` files you edited.
 
 ## Appendix: manual install
 

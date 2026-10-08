@@ -91,18 +91,31 @@ Pre-releases are `X.Y.ZrcN` (tag `vX.Y.ZrcN`). Their RPMs sort before the releas
 
 ## One-time setup
 
-* **The signing key.** The security owner makes it on a trusted machine. The private key never
-  leaves that machine except into the repository's secrets
-  ([ADR-0006, key management](decisions/0006-release-artifacts-and-signing.md#key-management)):
+* **The signing key.** The security owner makes it on a trusted machine with Podman, in a
+  checkout of this repository. The private key never leaves that machine except into the
+  repository's secrets
+  ([ADR-0006, key management](decisions/0006-release-artifacts-and-signing.md#key-management)).
+  `packaging/ci/tool` runs the pinned `hi/cosign` image as your own user, so it can write the
+  key files here:
 
   ```bash
-  podman run --rm -it --userns=keep-id -v "$PWD:/work" -w /work registry.access.redhat.com/hi/cosign:latest generate-key-pair
+  read -rsp "Password for the new key: " COSIGN_PASSWORD; echo; export COSIGN_PASSWORD
+  TOOL_ENV=COSIGN_PASSWORD packaging/ci/tool cosign generate-key-pair
   gh secret set COSIGN_PRIVATE_KEY < cosign.key
-  gh secret set COSIGN_PASSWORD           # paste the password
+  printf '%s' "$COSIGN_PASSWORD" | gh secret set COSIGN_PASSWORD
+  unset COSIGN_PASSWORD
   ```
 
   Keep `cosign.key` offline, or destroy it: the secret is then the only copy. Commit
-  `cosign.pub`.
+  `cosign.pub` (`.gitignore` keeps `cosign.key` out).
+* **Who can cause a signature.** `release.yml` signs only for a `v*` tag on a commit already on
+  `main`. Anyone who can push a tag, or push a workflow, can still reach the signing secrets.
+  Before the repository has more than one person with write access:
+  * add a tag ruleset so only maintainers can create or move `v*` tags;
+  * move `COSIGN_PRIVATE_KEY` and `COSIGN_PASSWORD` to a GitHub Environment named `release`,
+    with required reviewers and a `v*` tag policy, and add `environment: release` to the
+    `publish` job in `publish.yml` and the `release` job in `release.yml`. (Environments need a
+    paid plan for a private repository, and work on every plan once it is public.)
 * **Immutable releases.** Turn them on if the repository's settings offer it.
 * **Packages.** `wd2l` and `wd2l-base` live in the repository's packages, and are private while
   the repository is. Enclaves use the release assets, not the registry.
@@ -139,7 +152,9 @@ sudo dnf install ./wd2l-<version>-1.el10.noarch.rpm ./wd2l-receiver-<version>-1.
 transparency log, so there is no log entry to check.
 
 The RPMs aren't GPG-signed. `SHA256SUMS`, signed, covers them
-([ADR-0006](decisions/0006-release-artifacts-and-signing.md)).
+([ADR-0006](decisions/0006-release-artifacts-and-signing.md)). On a host that sets
+`localpkg_gpgcheck=1` in `/etc/dnf/dnf.conf` (the RHEL STIG does), `dnf install` refuses them:
+after the checks above pass, install with `--nogpgcheck`, with the security owner's approval.
 
 Then install as the deployment guides say: [log server](deployment/log-server.md),
 [receiver](deployment/receiver.md), or [containers](deployment/containers.md).
