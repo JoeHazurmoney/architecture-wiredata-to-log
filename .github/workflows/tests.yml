@@ -63,7 +63,8 @@ jobs:
 
   image:
     # The container image's checks (.github/workflows/image.yml); nothing is published.
-    if: ${{ inputs.image != false }}
+    # format(): on push and PR there are no inputs, and in expressions null == false.
+    if: ${{ format('{0}', inputs.image) != 'false' }}
     uses: ./.github/workflows/image.yml
     with:
       publish: false
