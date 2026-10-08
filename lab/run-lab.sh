@@ -12,7 +12,7 @@
 #
 # Usage: sudo lab/run-lab.sh [--events N] [--eps N] [--loss PCT] [--receiver-outage]
 #                            [--receiver-crash] [--maintenance] [--keep] [--interleave]
-#                            [--fault NAME] [--chrony-udp]
+#                            [--fault NAME] [--chrony-udp] [--image IMAGE]
 #                            [--files FILE...]
 #   --loss PCT          drop PCT% of packets on the cable (before the tap): gaps must be reported
 #   --receiver-outage   stop the receiver mid-run, restart it, then replay the pcap archive:
@@ -28,6 +28,11 @@
 #                       siem-down, clock); see docs/running-the-lab.md
 #   --keep              leave namespaces up afterwards (lab/teardown.sh removes them)
 #   --chrony-udp        both sides ask a stand-in chronyd over UDP (--chrony-addr), as the containers do
+#   --image IMAGE       run wd2l-sender and wd2l-receiver from this container image (podman, as
+#                       root): UID 65532, no capabilities but NET_RAW for the receiver, read-only,
+#                       like the Quadlet units. Implies --chrony-udp. Not with --fault or
+#                       --receiver-crash (SIGSTOP and SIGKILL would reach the podman client,
+#                       not wd2l); --receiver-outage works (SIGTERM is passed on)
 #   --interleave        with --files: merge the files by each line's timestamp, as if they were
 #                       being written at the same time and tailed by a forwarder. The sender
 #                       numbers lines per file (--source-seq) so Enclave 2 can separate them.
@@ -52,6 +57,7 @@ INTERLEAVE=0
 MAINT=0
 FAULT=""
 CHRONY_UDP=0
+IMAGE=""
 CHRONYC="python3 $HERE/fake_chronyc.py"   # the clock-bad flag file is added once OUT is known
 
 while [ $# -gt 0 ]; do
@@ -64,6 +70,7 @@ while [ $# -gt 0 ]; do
     --maintenance) MAINT=1; shift ;;
     --fault) FAULT="$2"; shift 2 ;;
     --chrony-udp) CHRONY_UDP=1; shift ;;
+    --image) IMAGE="$2"; CHRONY_UDP=1; shift 2 ;;
     --keep) KEEP=1; shift ;;
     --interleave) INTERLEAVE=1; shift ;;
     --files) shift; FILES=("$@"); [ ${#FILES[@]} -gt 0 ] || { echo "--files needs files" >&2; exit 2; }; break ;;
@@ -77,6 +84,9 @@ fi
 if [ -n "$FAULT" ] && { [ "$OUTAGE" = 1 ] || [ "$MAINT" = 1 ] || [ -n "$LOSS" ] || [ ${#FILES[@]} -gt 0 ]; }; then
   echo "--fault runs on its own (with --events / --eps)" >&2; exit 2
 fi
+if [ -n "$IMAGE" ] && { [ -n "$FAULT" ] || [ "$KILLSIG" = KILL ]; }; then
+  echo "--image doesn't run with --fault or --receiver-crash (their signals would reach podman, not wd2l)" >&2; exit 2
+fi
 if [ -n "$FAULT" ]; then
   [ "$EVENTS_SET" = 1 ] || EVENTS=20000
   [ "$FAULT" != receiver-slow ] || EPS=5000
@@ -85,6 +95,7 @@ fi
 for c in ip tc nft tcpdump python3; do
   command -v "$c" >/dev/null || { echo "missing $c (apt install iproute2 nftables tcpdump)" >&2; exit 1; }
 done
+[ -z "$IMAGE" ] || command -v podman >/dev/null || { echo "missing podman" >&2; exit 1; }
 
 export PYTHONPATH="$REPO"
 ENC1="ip netns exec wd2l-enc1"
@@ -116,6 +127,8 @@ cleanup() {
   done
   for p in "${all[@]}"; do [ -n "$p" ] && kill -KILL "$p" 2>/dev/null; done
   wait 2>/dev/null
+  [ -z "$IMAGE" ] || podman rm -f wd2l-lab-tx wd2l-lab-rx >/dev/null 2>&1
+  [ -z "${RMEM_OLD:-}" ] || sysctl -qw net.core.rmem_max="$RMEM_OLD"
   [ "$KEEP" = 1 ] || "$HERE/teardown.sh" >/dev/null 2>&1
   return 0
 }
@@ -124,6 +137,13 @@ trap cleanup EXIT
 "$HERE/teardown.sh" >/dev/null 2>&1 || true
 rm -rf "$OUT"
 mkdir -p "$OUT/pcap" "$OUT/received"
+if [ -n "$IMAGE" ]; then
+  chown -R 65532:65532 "$OUT"        # the image's user writes the state, audit and output files
+  # Like a production receiver, the container has no CAP_NET_ADMIN, so its capture buffer is
+  # capped at rmem_max: raise it as deploy/receiver/90-wd2l.conf does; put it back at the end.
+  RMEM_OLD=$(cat /proc/sys/net/core/rmem_max)
+  sysctl -qw net.core.rmem_max=67108864
+fi
 CHRONYC="$CHRONYC $OUT/clock-bad"
 TIME_ARGS=(--chronyc "$CHRONYC")
 
@@ -205,6 +225,21 @@ else
   python3 "$HERE/gen_events.py" -n "$EVENTS" "$OUT/sent.jsonl"
 fi
 
+# Runs a wd2l module in a namespace: from this checkout, or (--image) from the image as its
+# unprivileged user, read-only, with only the receiver's one capability, as the Quadlet units do.
+wd2l_run() {   # wd2l_run NAMESPACE CONTAINER-NAME MODULE [ARGS...]
+  local ns="$1" name="$2" module="$3"; shift 3
+  if [ -z "$IMAGE" ]; then
+    ip netns exec "$ns" python3 -m "$module" "$@"
+    return
+  fi
+  local caps=(--cap-drop all)
+  [ "$module" != wd2l.receiver ] || caps+=(--cap-add NET_RAW)
+  podman run --rm --name "$name" --network "ns:/run/netns/$ns" --user 65532:65532 \
+    "${caps[@]}" --security-opt no-new-privileges --read-only -v "$OUT:$OUT" \
+    "$IMAGE" python3 -m "$module" "$@"
+}
+
 start_capture() {
   $ENC2 tcpdump -i cap0 -U -Z root -G 3600 -w "$OUT/pcap/cap-%Y%m%d%H%M%S.pcap" \
     2>>"$OUT/tcpdump.log" &
@@ -227,12 +262,12 @@ if [ -n "$FAULT" ]; then
   fi
 fi
 start_receiver() {
-  $ENC2 python3 -m wd2l.receiver "${RX_ARGS[@]}" >>"$OUT/receiver.log" 2>&1 &
+  wd2l_run wd2l-enc2 wd2l-lab-rx wd2l.receiver "${RX_ARGS[@]}" >>"$OUT/receiver.log" 2>&1 &
   RX_PID=$!
   PIDS+=($RX_PID)
 }
 start_sender() {
-  $ENC1 python3 -m wd2l.sender --listen 127.0.0.1:10070 --dst 10.255.255.2:5514 \
+  wd2l_run wd2l-enc1 wd2l-lab-tx wd2l.sender --listen 127.0.0.1:10070 --dst 10.255.255.2:5514 \
     --bind 10.255.255.1:5514 --max-event "$MAX_EVENT" --stats-interval 5 \
     --state "$OUT/sender.json" --audit-dir "$OUT/audit-e1" "${TIME_ARGS[@]}" \
     --egress-iface enc1nic \
