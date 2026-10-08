@@ -26,11 +26,18 @@ jobs:
       prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # origin/main, for the check below
       - id: v
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
           python3 packaging/release/versions.py --github-output "$GITHUB_OUTPUT"
           if [ "$REAL" = true ]; then
-            python3 packaging/release/versions.py --check-tag "${{ github.ref_name }}"
+            python3 packaging/release/versions.py --check-tag "$TAG"
+            # Only a commit already merged to main is released (docs/releasing.md).
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+              || { echo "tag $TAG is not on main: release from main only" >&2; exit 1; }
           fi
 
   tests:

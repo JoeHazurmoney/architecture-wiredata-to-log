@@ -102,6 +102,11 @@ Rejected.
   * The password goes in the secret `COSIGN_PASSWORD`, the private key in `COSIGN_PRIVATE_KEY`.
   * `cosign.pub` is committed.
   * The local private key is then stored offline, or destroyed.
+* **Who can cause a signature:** the signing secrets are repository secrets, so anyone with
+  write access can reach them, by pushing a `v*` tag or a workflow. `release.yml` signs only for
+  a `v*` tag on a commit already on `main`. While one maintainer has write access, that is the
+  maintainer. Before anyone else gets it: a tag ruleset for `v*`, and the secrets moved to a
+  `release` environment with required reviewers ([releasing.md](../releasing.md#one-time-setup)).
 * **Rotation:** a new pair, a new `cosign.pub` committed, and the old one moved to
   `keys/retired/cosign-<from>-<to>.pub`. Releases signed with the old key stay verifiable with
   it.

@@ -111,3 +111,14 @@ def test_notes_name_every_asset_the_image_and_its_bases():
 def test_prerelease_notes_say_so_and_dry_runs_have_no_digest():
     text = notes.notes(versions.names("0.3.0rc1"), **dict(ARGS, digest=""))
     assert text.startswith("> **Pre-release**") and "not published (dry run)" in text
+
+
+def test_only_a_tag_on_main_is_released_and_its_name_never_runs_as_shell():
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".github",
+                           "workflows", "release.yml")) as f:
+        wf = f.read()
+    version = wf.split("\n  version:\n", 1)[1].split("\n  tests:\n", 1)[0]
+    assert "fetch-depth: 0" in version
+    assert 'git merge-base --is-ancestor "$GITHUB_SHA" origin/main' in version
+    assert "TAG: ${{ github.ref_name }}" in version
+    assert "${{ github.ref_name }}\"" not in wf      # never inside a run: script
