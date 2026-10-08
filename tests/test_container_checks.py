@@ -384,3 +384,52 @@ def test_the_committed_exceptions_file_is_valid():
     with open(os.path.join(REPO, "packaging", "container", "vuln-exceptions.json")) as f:
         _valid, probs = vg.load_exceptions(json.load(f), TODAY)
     assert probs == []
+
+
+sd = load_script("packaging/container/sbom_diff.py")
+
+
+def spdx(*purls):
+    return {"spdxVersion": "SPDX-2.3", "packages": [
+        {"name": p.split("/")[-1], "externalRefs": [{"referenceType": "purl", "referenceLocator": p}]}
+        for p in purls] + [{"name": "the image itself"}]}
+
+
+BASE_PKGS = ("pkg:rpm/hummingbird/glibc@2.42-1?arch=x86_64", "pkg:rpm/hummingbird/python3.12@3.12.15-1?arch=x86_64")
+
+
+def test_adding_only_wd2l_passes():
+    added, removed = sd.diff(spdx(*BASE_PKGS), spdx(*BASE_PKGS + ("pkg:pypi/wd2l@0.3.0",)),
+                             ["pkg:pypi/wd2l@"])
+    assert added == [] and removed == []
+
+
+def test_anything_else_added_or_removed_is_named():
+    added, removed = sd.diff(spdx(*BASE_PKGS),
+                             spdx(BASE_PKGS[0], "pkg:pypi/wd2l@0.3.0", "pkg:rpm/hummingbird/bash@5.3-1?arch=x86_64"),
+                             ["pkg:pypi/wd2l@"])
+    assert added == ["pkg:rpm/hummingbird/bash@5.3-1?arch=x86_64"] and removed == [BASE_PKGS[1]]
+
+
+def test_cli(tmp_path):
+    b, i = tmp_path / "b.json", tmp_path / "i.json"
+    b.write_text(json.dumps(spdx(*BASE_PKGS)))
+    i.write_text(json.dumps(spdx(*BASE_PKGS + ("pkg:pypi/requests@2.0",))))
+    assert sd.main([str(b), str(i)]) == 1
+    i.write_text(json.dumps(spdx(*BASE_PKGS + ("pkg:pypi/wd2l@0.3.0",))))
+    assert sd.main([str(b), str(i)]) == 0
+
+
+def described(doc, root_purl):
+    """Syft's SPDX: the image itself is a package (pkg:oci/...) the document DESCRIBES."""
+    doc["packages"].append({"SPDXID": "SPDXRef-DocumentRoot-Image", "name": "img",
+                            "externalRefs": [{"referenceType": "purl", "referenceLocator": root_purl}]})
+    doc["relationships"] = [{"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES",
+                             "relatedSpdxElement": "SPDXRef-DocumentRoot-Image"}]
+    return doc
+
+
+def test_the_described_image_itself_is_not_a_package_difference():
+    base = described(spdx(*BASE_PKGS), "pkg:oci/base.tar@sha256%3Aaaa?arch=amd64")
+    image = described(spdx(*BASE_PKGS + ("pkg:pypi/wd2l@0.3.0",)), "pkg:oci/img.tar@sha256%3Abbb?arch=amd64")
+    assert sd.diff(base, image, ["pkg:pypi/wd2l@"]) == ([], [])
