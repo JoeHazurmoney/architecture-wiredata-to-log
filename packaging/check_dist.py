@@ -19,10 +19,12 @@ import zipfile
 from typing import List, Optional, Sequence
 
 SCRIPTS = ("wd2l-sender", "wd2l-receiver", "wd2l-audit-report")
-# Files the sdist must hold. Task 5.2 adds the RPM spec and rpmify.py.
+# Files the sdist must hold: what the RPM spec builds from.
 SDIST_NEEDS = ("LICENSE", "README.md", "wd2l/__init__.py", "wd2l/BUILD",
                "deploy/common/wd2l-audit-seal.sh", "deploy/log-server/wd2l-sender.service",
-               "deploy/receiver/wd2l-receiver.service", "packaging/check_dist.py")
+               "deploy/receiver/wd2l-receiver.service", "packaging/check_dist.py",
+               "packaging/rpm/wd2l.spec", "packaging/rpm/rpmify.py", "packaging/rpm/wd2l.sysusers",
+               "packaging/rpm/wd2l.tmpfiles", "packaging/rpm/wd2l-receiver.tmpfiles")
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
 

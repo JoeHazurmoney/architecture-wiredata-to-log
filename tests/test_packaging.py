@@ -227,3 +227,69 @@ def test_rpmify_refuses_anything_still_naming_opt_wd2l(tmp_path):
     with pytest.raises(SystemExit) as e:
         rpmify.rpmify(str(tmp_path / "src"), str(tmp_path / "out"), SITE, LIBEXEC, UNITDIR)
     assert "x/notes.txt" in str(e.value)
+
+
+LEFT_OUT = {"switch/blackhole-port.ios.txt"}      # switch configuration: documentation, not a host file
+
+
+def spec():
+    return read("packaging/rpm/wd2l.spec")
+
+
+def test_every_deploy_file_is_packaged():
+    s = spec()
+    for dirpath, _dirs, files in os.walk(os.path.join(REPO, "deploy")):
+        for name in files:
+            rel = os.path.relpath(os.path.join(dirpath, name), os.path.join(REPO, "deploy")).replace(os.sep, "/")
+            if rel in LEFT_OUT or rel.startswith("receiver/splunk/"):
+                continue
+            assert rel in s, "deploy/%s isn't installed by the spec" % rel
+    assert "install -Dm0644 -t %{buildroot}%{_datadir}/wd2l/splunk receiver/splunk/*" in s
+
+
+def test_drop_in_dirs_the_rules_watch_are_owned():
+    s = spec()
+    for side in ("log-server", "receiver"):
+        rules = rpmify.rewrite_rules(read("deploy/%s/wd2l.rules" % side), SITE, LIBEXEC, UNITDIR)
+        for d in rpmify.drop_in_dirs(rules):
+            assert "%%dir %%{_sysconfdir}/systemd/system/%s" % os.path.basename(d) in s, d
+
+
+def test_nothing_restarts_on_upgrade_and_nothing_is_enabled():
+    s = spec()
+    assert "_with_restart" not in s and s.count("%systemd_postun ") == 3
+    assert "systemctl enable" not in s
+
+
+def test_config_files_keep_local_edits():
+    s = spec()
+    for f in ("sender.env", "egress.env", "receiver.env", "capture.env"):
+        assert re.search(r"^%%config\(noreplace\) %%attr\(0640,root,wd2l\) %%\{_sysconfdir\}/wd2l/%s$"
+                         % re.escape(f), s, re.M), f
+
+
+def test_spec_versions_come_from_versions_py():
+    s = spec()
+    assert "Version:        %{wd2l_rpmversion}" in s and "License:        MIT" in s
+    assert "%{!?wd2l_rpmversion:%{error:" in s and "%{!?wd2l_pyversion:%{error:" in s
+
+
+def test_sdist_carries_the_rpm_sources():
+    assert {"packaging/rpm/wd2l.spec", "packaging/rpm/rpmify.py", "packaging/rpm/wd2l.sysusers",
+            "packaging/rpm/wd2l.tmpfiles", "packaging/rpm/wd2l-receiver.tmpfiles"} <= set(check_dist.SDIST_NEEDS)
+
+
+def test_tmpfiles_match_the_spec_modes():
+    assert read("packaging/rpm/wd2l.tmpfiles").split("\n", 2)[2].split() == [
+        "d", "/var/lib/wd2l", "0750", "wd2l", "wd2l", "-",
+        "d", "/var/log/wd2l", "2750", "wd2l", "wd2l-audit", "-"]
+    s = spec()
+    assert "%dir %attr(2750,wd2l,wd2l-audit) %{_localstatedir}/log/wd2l" in s
+    assert "%dir %attr(0750,root,wd2l) %{_sysconfdir}/wd2l" in s
+
+
+def test_changelog_entry_is_the_built_version():
+    # rpmbuild takes the build timestamps from the top entry (source_date_epoch_from_changelog).
+    log = spec().split("\n%changelog\n", 1)[1].splitlines()
+    assert log[0] == "* %{wd2l_date} Joe Azurmoni - %{version}-%{release}"
+    assert "%{!?wd2l_date:" in spec()
