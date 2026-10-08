@@ -295,3 +295,92 @@ def test_changed_wd2l_file_and_wrong_build_are_refused(tmp_path):
         f.write("# changed\n")
     text = "\n".join(ci.check_wheel_files(root, whl, "b" * 40))
     assert "changed: " in text and "wd2l/__init__.py" in text and "BUILD" in text
+
+
+vg = load_script("packaging/container/vuln_gate.py")
+TODAY = "2026-10-07"
+
+
+def grype_doc(*matches):
+    return {"matches": [{"vulnerability": {"id": i, "severity": s, "fix": {"state": st, "versions": ["9"]}},
+                         "artifact": {"name": p, "version": "1"}} for i, s, st, p in matches]}
+
+
+def trivy_doc(vulns=(), secrets=()):
+    return {"Results": [{"Target": "img", "Vulnerabilities": [
+        {"VulnerabilityID": i, "PkgName": p, "InstalledVersion": "1", "Severity": s, "FixedVersion": f}
+        for i, s, f, p in vulns], "Secrets": [{"RuleID": r} for r in secrets]}]}
+
+
+def exc(id_, package, expires="2026-12-31", **kw):
+    e = {"id": id_, "package": package, "reason": "r", "expires": expires, "approved_by": "security owner"}
+    e.update(kw)
+    return e
+
+
+def run_gate(grype, trivy, exceptions):
+    found = vg.grype_findings(grype) + vg.trivy_findings(trivy)
+    valid, probs = vg.load_exceptions({"exceptions": exceptions}, TODAY)
+    gated, excepted = vg.gate(found, valid)
+    return gated, excepted, probs
+
+
+def test_only_fixable_high_and_critical_are_gated():
+    gated, _e, probs = run_gate(
+        grype_doc(("CVE-1", "High", "fixed", "openssl-libs"), ("CVE-2", "High", "not-fixed", "glibc"),
+                  ("CVE-3", "Medium", "fixed", "zlib")),
+        trivy_doc([("CVE-4", "CRITICAL", "2.0", "python3.12"), ("CVE-5", "LOW", "1.1", "x")]), [])
+    assert sorted(f["id"] for f in gated) == ["CVE-1", "CVE-4"] and probs == []
+
+
+def test_secrets_are_always_gated():
+    gated, _e, _p = run_gate(grype_doc(), trivy_doc(secrets=["aws-access-key-id"]), [])
+    assert [f["id"] for f in gated] == ["aws-access-key-id"]
+
+
+def test_an_exception_covers_its_cve_in_its_package():
+    gated, excepted, probs = run_gate(grype_doc(("CVE-1", "High", "fixed", "openssl-libs")),
+                                      trivy_doc(), [exc("CVE-1", "openssl-libs")])
+    assert gated == [] and [f["id"] for f in excepted] == ["CVE-1"] and probs == []
+
+
+def test_exception_only_covers_its_package():
+    gated, _e, _p = run_gate(grype_doc(("CVE-1", "High", "fixed", "glibc")), trivy_doc(),
+                             [exc("CVE-1", "openssl-libs")])
+    assert [f["package"] for f in gated] == ["glibc"]
+
+
+def test_expired_exception_fails_even_unused():
+    gated, _e, probs = run_gate(grype_doc(), trivy_doc(), [exc("CVE-9", "x", expires="2026-10-01")])
+    assert gated == [] and any("expired" in p and "CVE-9" in p for p in probs)
+
+
+def test_an_expired_exception_no_longer_covers():
+    gated, _e, _p = run_gate(grype_doc(("CVE-1", "High", "fixed", "openssl-libs")), trivy_doc(),
+                             [exc("CVE-1", "openssl-libs", expires="2026-10-06")])
+    assert [f["id"] for f in gated] == ["CVE-1"]
+
+
+def test_incomplete_exception_is_a_problem():
+    _g, _e, probs = run_gate(grype_doc(), trivy_doc(), [{"id": "CVE-1", "package": "x"}])
+    assert any("reason" in p for p in probs)
+
+
+def test_cli_exit_codes_summary_and_predicate(tmp_path):
+    g, t, e = tmp_path / "g.json", tmp_path / "t.json", tmp_path / "e.json"
+    g.write_text(json.dumps(grype_doc(("CVE-1", "Critical", "fixed", "openssl-libs"))))
+    t.write_text(json.dumps(trivy_doc()))
+    e.write_text(json.dumps({"exceptions": []}))
+    s, p = tmp_path / "s.md", tmp_path / "p.json"
+    args = ["--grype", str(g), "--trivy", str(t), "--exceptions", str(e), "--today", TODAY,
+            "--summary", str(s), "--predicate", str(p)]
+    assert vg.main(args) == 1
+    assert "CVE-1" in s.read_text() and json.loads(p.read_text())["gate"]["passed"] is False
+    e.write_text(json.dumps({"exceptions": [exc("CVE-1", "openssl-libs")]}))
+    assert vg.main(args) == 0
+
+
+def test_the_committed_exceptions_file_is_valid():
+    with open(os.path.join(REPO, "packaging", "container", "vuln-exceptions.json")) as f:
+        _valid, probs = vg.load_exceptions(json.load(f), TODAY)
+    assert probs == []
