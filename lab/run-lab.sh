@@ -227,15 +227,16 @@ fi
 
 # Runs a wd2l module in a namespace: from this checkout, or (--image) from the image as its
 # unprivileged user, read-only, with only the receiver's one capability, as the Quadlet units do.
-wd2l_run() {   # wd2l_run NAMESPACE CONTAINER-NAME MODULE [ARGS...]
+# Always call it in the background (&): it execs, so $! is wd2l itself (or the podman client,
+# which passes signals on), and the lab's kill -TERM reaches it.
+wd2l_run() {   # wd2l_run NAMESPACE CONTAINER-NAME MODULE [ARGS...] &
   local ns="$1" name="$2" module="$3"; shift 3
   if [ -z "$IMAGE" ]; then
-    ip netns exec "$ns" python3 -m "$module" "$@"
-    return
+    exec ip netns exec "$ns" python3 -m "$module" "$@"
   fi
   local caps=(--cap-drop all)
   [ "$module" != wd2l.receiver ] || caps+=(--cap-add NET_RAW)
-  podman run --rm --name "$name" --network "ns:/run/netns/$ns" --user 65532:65532 \
+  exec podman run --rm --name "$name" --network "ns:/run/netns/$ns" --user 65532:65532 \
     "${caps[@]}" --security-opt no-new-privileges --read-only -v "$OUT:$OUT" \
     "$IMAGE" python3 -m "$module" "$@"
 }
