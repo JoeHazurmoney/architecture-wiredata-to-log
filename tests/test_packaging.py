@@ -146,7 +146,7 @@ def test_tool_runs_the_pinned_image_with_the_work_tree(tmp_path):
     assert args[0] == "run" and args[args.index(ref) + 1:] == ["verify", "--key", "k.pub", "img"]
     assert args[args.index("--network") + 1] == "none"
     assert "COSIGN_PASSWORD" in args and "%s:/work" % tmp_path in args
-    assert "--userns=keep-id" in args
+    assert "--userns=keep-id" in args and "/tmp:rw,mode=1777" in args
     assert args[args.index("--user") + 1] == "%d:%d" % (os.getuid(), os.getgid())
 
 

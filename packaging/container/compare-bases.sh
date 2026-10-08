@@ -40,9 +40,9 @@ for c in "${CANDIDATES[@]}"; do
   podman save -q --format oci-archive -o "$WORK/$i.tar" "$img"
   size=$(podman image inspect --format '{{.Size}}' "$img" | awk '{printf "%.0f MB", $1 / 1000000}')
   user=$(podman image inspect --format '{{.Config.User}}' "$img"); user="${user:-root}"
-  "$TOOL" syft "oci-archive:/work/$REL/$i.tar" -q -o json > "$WORK/$i.syft.json"
+  "$TOOL" syft "oci-archive:/work/$REL/$i.tar" -o json > "$WORK/$i.syft.json"
   pkgs=$(jq '[.artifacts[] | select(.type == "rpm" or .type == "deb" or .type == "apk")] | length' "$WORK/$i.syft.json")
-  "$TOOL" grype "oci-archive:/work/$REL/$i.tar" -q -o json > "$WORK/$i.grype.json"
+  "$TOOL" grype "oci-archive:/work/$REL/$i.tar" -o json > "$WORK/$i.grype.json"
   cves=$(jq '[.matches[].vulnerability.id] | unique | length' "$WORK/$i.grype.json")
   fixable=$(jq '[.matches[] | select((.vulnerability.severity == "High" or .vulnerability.severity == "Critical")
                  and .vulnerability.fix.state == "fixed") | .vulnerability.id] | unique | length' "$WORK/$i.grype.json")

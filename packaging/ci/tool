@@ -27,7 +27,7 @@ name="$1"; shift
 ref="$(ref_of "$name")" || { echo "tool: no stage named $name in $FILE" >&2; exit 2; }
 
 args=(run --rm --userns=keep-id --user "$(id -u):$(id -g)" --security-opt label=disable
-      -v "$PWD:/work" -w /work -e HOME=/tmp)
+      --tmpfs /tmp:rw,mode=1777 -v "$PWD:/work" -w /work -e HOME=/tmp)
 auth="${REGISTRY_AUTH_FILE:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/containers/auth.json}"
 if [ -f "$auth" ]; then
   args+=(-v "$auth:/auth/config.json:ro" -e DOCKER_CONFIG=/auth -e REGISTRY_AUTH_FILE=/auth/config.json)

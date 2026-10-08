@@ -8,6 +8,9 @@ on:
       - packaging/container/candidates/**
       - .github/workflows/compare-bases.yml
   workflow_dispatch:
+defaults:
+  run:
+    shell: bash
 permissions:
   contents: read
 jobs:
