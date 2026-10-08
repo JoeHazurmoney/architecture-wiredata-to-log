@@ -13,9 +13,17 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 FILE="$HERE/tools.Containerfile"
 
+# Pure bash (no awk): it also runs inside the minimal images, e.g. the FIPS test job.
 ref_of() {
-  awk -v want="$1" 'toupper($1) == "FROM" && toupper($3) == "AS" && $4 == want {print $2; found = 1}
-                    END {exit !found}' "$FILE"
+  local line re='^[Ff][Rr][Oo][Mm][[:space:]]+([^[:space:]]+)[[:space:]]+[Aa][Ss][[:space:]]+([^[:space:]]+)[[:space:]]*$'
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    if [[ "$line" =~ $re ]] && [ "${BASH_REMATCH[2]}" = "$1" ]; then
+      echo "${BASH_REMATCH[1]}"
+      return 0
+    fi
+  done < "$FILE"
+  return 1
 }
 
 if [ "${1:-}" = --ref ]; then
