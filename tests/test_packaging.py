@@ -182,3 +182,48 @@ def test_pin_images_refuses_a_bad_digest(tmp_path):
                        stderr=subprocess.PIPE)
     assert r.returncode == 1 and b"no digest for a.io/x:1" in r.stderr
     assert f.read_text() == "FROM a.io/x:1\n"
+
+
+import pytest
+
+rpmify = load_script("packaging/rpm/rpmify.py")
+SITE, LIBEXEC, UNITDIR = "/usr/lib/python3.9/site-packages", "/usr/libexec/wd2l", "/usr/lib/systemd/system"
+
+
+def test_units_lose_pythonpath_and_point_at_libexec():
+    t = rpmify.rewrite_unit(read("deploy/common/wd2l-audit-seal.service"), LIBEXEC)
+    assert "ExecStart=/bin/sh /usr/libexec/wd2l/wd2l-audit-seal.sh" in t
+    t = rpmify.rewrite_unit(read("deploy/log-server/wd2l-sender.service"), LIBEXEC)
+    assert "PYTHONPATH" not in t and "/opt/wd2l" not in t
+    assert "EnvironmentFile=/etc/wd2l/sender.env" in t
+    t = rpmify.rewrite_unit(read("deploy/receiver/wd2l-capture-nic.service"), LIBEXEC)
+    assert "ExecStart=/usr/libexec/wd2l/capture-nic.sh" in t
+
+
+def test_rules_watch_the_rpm_paths_too():
+    t = rpmify.rewrite_rules(read("deploy/receiver/wd2l.rules"), SITE, LIBEXEC, UNITDIR)
+    for line in ("-w /usr/lib/python3.9/site-packages/wd2l/ -p wa -k wd2l-code",
+                 "-w /usr/libexec/wd2l/ -p wa -k wd2l-code",
+                 "-w /etc/systemd/system/wd2l-receiver.service -p wa -k wd2l-units",
+                 "-w /usr/lib/systemd/system/wd2l-receiver.service -p wa -k wd2l-units",
+                 "-w /etc/systemd/system/wd2l-receiver.service.d/ -p wa -k wd2l-units",
+                 "-w /etc/containers/systemd/wd2l-receiver.container -p wa -k wd2l-units"):
+        assert line in t.splitlines(), line
+    assert "/opt/wd2l" not in t
+    assert "/etc/systemd/system/wd2l-pcap-prune.timer.d" in rpmify.drop_in_dirs(t)
+
+
+def test_rpmify_copies_the_whole_tree(tmp_path):
+    written = rpmify.rpmify(os.path.join(REPO, "deploy"), str(tmp_path / "out"), SITE, LIBEXEC, UNITDIR)
+    for rel in ("receiver/splunk/props.conf", "common/wd2l-audit-seal.sh",
+                "log-server/sender.env", "receiver/wd2l-receiver.container"):
+        assert rel in written, rel
+
+
+def test_rpmify_refuses_anything_still_naming_opt_wd2l(tmp_path):
+    src = tmp_path / "src" / "x"
+    src.mkdir(parents=True)
+    (src / "notes.txt").write_text("see /opt/wd2l/README\n")
+    with pytest.raises(SystemExit) as e:
+        rpmify.rpmify(str(tmp_path / "src"), str(tmp_path / "out"), SITE, LIBEXEC, UNITDIR)
+    assert "x/notes.txt" in str(e.value)

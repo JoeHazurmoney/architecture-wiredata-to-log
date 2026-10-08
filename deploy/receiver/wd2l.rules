@@ -10,6 +10,7 @@
 -w /etc/systemd/system/wd2l-pcap-prune.timer -p wa -k wd2l-units
 -w /etc/systemd/system/wd2l-audit-seal.service -p wa -k wd2l-units
 -w /etc/systemd/system/wd2l-audit-seal.timer -p wa -k wd2l-units
+-w /etc/containers/systemd/wd2l-receiver.container -p wa -k wd2l-units
 ## State and audit files: only changes made from a login session (auid set). The daemons write
 ## there all the time.
 -a always,exit -F dir=/var/lib/wd2l -F perm=wa -F auid!=unset -k wd2l-state
