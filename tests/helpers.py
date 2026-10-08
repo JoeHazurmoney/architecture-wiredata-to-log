@@ -148,3 +148,36 @@ def load_script(relpath):
     sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+import contextlib
+
+
+@contextlib.contextmanager
+def chronyd_server(replies):
+    """A chronyd stand-in on a free UDP port of 127.0.0.1. replies(request) returns the
+    datagrams to send back, in order (none, one, or a stale one first)."""
+    import socket
+    import threading
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(("127.0.0.1", 0))
+    s.settimeout(0.05)
+    stop = threading.Event()
+
+    def run():
+        while not stop.is_set():
+            try:
+                data, peer = s.recvfrom(4096)
+            except socket.timeout:
+                continue
+            for out in replies(data):
+                s.sendto(out, peer)
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    try:
+        yield s.getsockname()
+    finally:
+        stop.set()
+        t.join()
+        s.close()

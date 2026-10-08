@@ -1,7 +1,7 @@
 """Facts about this host and process for audit and health records: who runs us or signals us,
-which build, chrony's view of the clock, and CPU and memory. Anything that can't be read comes
-back as None or "unavailable"; nothing here raises, except parse_chronyc_tracking, which raises
-ValueError for TimeQuality to catch."""
+which build, chrony's view of the clock (chronyc, or chronyd over UDP), and CPU and memory.
+Anything that can't be read comes back as None or "unavailable"; nothing here raises, except
+the chrony parsers and chrony_tracking, which raise for TimeQuality to catch."""
 
 from __future__ import annotations
 
@@ -10,10 +10,12 @@ import hashlib
 import os
 import pwd
 import resource
+import shlex
 import socket
+import struct
 import subprocess
 import time
-from typing import Any, Callable, Dict, Optional, Sequence
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 UNSET_AUID = 4294967295
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -136,29 +138,157 @@ def time_alarm(q: Dict[str, Any], max_stratum: int = 3,
     return None
 
 
+# ---------------------------------------------------------------- chrony over UDP (cmdmon)
+#
+# The container images have no chronyc (docs/decisions/0004-container-base-image.md), so they
+# ask chronyd the same question on its command port: UDP 323, which chronyd always answers from
+# 127.0.0.1 and ::1 for monitoring requests. Protocol version 6, from chrony's candm.h.
+
+CHRONY_PORT = 323
+CHRONY_PROTO = 6
+CHRONY_REQ_TRACKING = 33
+CHRONY_RPY_TRACKING = 5
+CHRONY_LEAP_UNSYNCED = 3
+# version, type, res1, res2, command, attempt, sequence, pad, pad
+_CHRONY_REQ = struct.Struct("!BBBBHHIII")
+# version, type, res1, res2, command, reply, status, pad, pad, pad, sequence, pad, pad
+_CHRONY_RPY = struct.Struct("!BBBBHHHHHHIII")
+# ref_id, address, family, pad, stratum, leap, ref_time (3), nine Floats, EOR
+_CHRONY_TRACKING = struct.Struct("!I16sHHHHIII9Ii")
+CHRONY_REPLY_SIZE = _CHRONY_RPY.size + _CHRONY_TRACKING.size    # 108
+
+
+def chrony_float(x: int) -> float:
+    """chrony's 32-bit network float: a 7-bit signed exponent and a 25-bit signed coefficient
+    (UTI_FloatNetworkToHost)."""
+    exp = x >> 25
+    if exp >= 64:
+        exp -= 128
+    coef = x % (1 << 25)
+    if coef >= 1 << 24:
+        coef -= 1 << 25
+    return coef * 2.0 ** (exp - 25)
+
+
+def chrony_request(sequence: int) -> bytes:
+    """A tracking request, zero-padded to the reply's size: chronyd ignores shorter requests,
+    so it never sends more than it was sent."""
+    head = _CHRONY_REQ.pack(CHRONY_PROTO, 1, 0, 0, CHRONY_REQ_TRACKING, 0, sequence, 0, 0)
+    return head + bytes(CHRONY_REPLY_SIZE - len(head))
+
+
+def chrony_reply_sequence(data: bytes) -> Optional[int]:
+    """The sequence number of a chrony reply, or None if `data` isn't one."""
+    if len(data) < _CHRONY_RPY.size:
+        return None
+    f = _CHRONY_RPY.unpack_from(data)
+    return f[10] if (f[0], f[1]) == (CHRONY_PROTO, 2) else None
+
+
+def _chrony_source(ref_id: int, addr: bytes, family: int) -> str:
+    if family == 1:
+        return socket.inet_ntop(socket.AF_INET, addr[:4])
+    if family == 2:
+        return socket.inet_ntop(socket.AF_INET6, addr)
+    # A reference clock (GPS, PPS ...) has no address: chronyc shows its ref ID as text.
+    name = "".join(chr(b) for b in ref_id.to_bytes(4, "big") if 32 < b < 127)
+    return name or "%08X" % ref_id
+
+
+def parse_chrony_tracking(data: bytes, sequence: int) -> Dict[str, Any]:
+    """A tracking reply -> the keys parse_chronyc_tracking gives. ValueError for anything else."""
+    if chrony_reply_sequence(data) != sequence:
+        raise ValueError("not a chrony reply to this request (%d bytes)" % len(data))
+    command, reply, status = _CHRONY_RPY.unpack_from(data)[4:7]
+    if status != 0:
+        raise ValueError("chronyd refused the tracking request (status %d)" % status)
+    if command != CHRONY_REQ_TRACKING or reply != CHRONY_RPY_TRACKING:
+        raise ValueError("unexpected chrony reply (command %d, reply %d)" % (command, reply))
+    if len(data) < CHRONY_REPLY_SIZE:
+        raise ValueError("short chrony tracking reply (%d bytes)" % len(data))
+    f = _CHRONY_TRACKING.unpack_from(data, _CHRONY_RPY.size)
+    ref_id, addr, family, _pad, stratum, leap = f[:6]
+    correction = chrony_float(f[9])        # chronyc's "System time": the offset from NTP time
+    synced = leap != CHRONY_LEAP_UNSYNCED and 0 < stratum < 16 and ref_id != 0
+    return {"stratum": stratum, "offset_ms": round(correction * 1000.0, 3), "synced": synced,
+            "source": _chrony_source(ref_id, addr, family)}
+
+
+def chrony_tracking(addr: Tuple[str, int], timeout: float = 2.0) -> Dict[str, Any]:
+    """Ask chronyd for `tracking` over UDP, as `chronyc -c tracking` does. Late replies to
+    earlier requests are skipped. Raises OSError (refused, no answer in time) or ValueError
+    (an error status, a malformed reply); TimeQuality reports either as "unavailable"."""
+    seq = int.from_bytes(os.urandom(4), "big")
+    family, kind, proto, _name, sockaddr = socket.getaddrinfo(addr[0], addr[1], 0,
+                                                              socket.SOCK_DGRAM)[0]
+    deadline = time.monotonic() + timeout
+    with socket.socket(family, kind, proto) as s:
+        s.connect(sockaddr)
+        s.send(chrony_request(seq))
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise socket.timeout("no reply from chronyd at %s:%d" % (addr[0], addr[1]))
+            s.settimeout(left)
+            data = s.recv(4096)
+            if chrony_reply_sequence(data) not in (None, seq):
+                continue                     # a late reply to an earlier request
+            return parse_chrony_tracking(data, seq)
+
+
+def chrony_hostport(s: str) -> Tuple[str, int]:
+    """"HOST", "HOST:PORT", "[IPV6]:PORT" or a bare IPv6 address; the port defaults to 323."""
+    s = s.strip()
+    if s.startswith("["):
+        host, sep, rest = s[1:].partition("]")
+        if not sep or (rest and not rest.startswith(":")):
+            raise ValueError("bad chrony address %r" % s)
+        port = rest[1:] or str(CHRONY_PORT)
+    elif s.count(":") == 1:
+        host, port = s.split(":")
+    else:
+        host, port = s, str(CHRONY_PORT)
+    if not host or not port.isdigit() or not 0 < int(port) < 65536:
+        raise ValueError("bad chrony address %r" % s)
+    return host, int(port)
+
+
+def chrony_address(s: str) -> str:
+    """argparse type for --chrony-addr: checks the value and keeps the text, which goes into
+    the config audit record as given."""
+    chrony_hostport(s)
+    return s
+
+
 class TimeQuality:
-    """chrony's view of this host's clock, read at most every `every` seconds."""
+    """chrony's view of this host's clock, read at most every `every` seconds: by running
+    chronyc (`cmd`), or by `query` (chrony_tracking, for --chrony-addr)."""
 
     def __init__(self, cmd: Sequence[str] = ("chronyc", "-c", "tracking"), every: float = 60.0,
                  timeout: float = 2.0, max_stratum: int = 3, max_offset_ms: float = 100.0,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic,
+                 query: Optional[Callable[[], Dict[str, Any]]] = None):
         self.cmd = list(cmd)
         self.every = every
         self.timeout = timeout
         self.max_stratum = max_stratum
         self.max_offset_ms = max_offset_ms
         self.clock = clock
+        self.query = query or self._chronyc
         self._at: Optional[float] = None
         self._last: Dict[str, Any] = {}
+
+    def _chronyc(self) -> Dict[str, Any]:
+        out = subprocess.run(self.cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             timeout=self.timeout, check=True).stdout
+        return parse_chronyc_tracking(out.decode("utf-8", "replace"))
 
     def read(self) -> Dict[str, Any]:
         now = self.clock()
         if self._at is None or now - self._at >= self.every:
             self._at = now
             try:
-                out = subprocess.run(self.cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                     timeout=self.timeout, check=True).stdout
-                self._last = parse_chronyc_tracking(out.decode("utf-8", "replace"))
+                self._last = self.query()
             except (OSError, subprocess.SubprocessError, ValueError) as e:
                 self._last = {"synced": None, "source": "unavailable", "error": str(e)[:200]}
         return dict(self._last)
