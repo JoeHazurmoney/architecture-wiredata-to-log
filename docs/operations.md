@@ -292,7 +292,7 @@ more files than you need.
 
 ```bash
 sudo systemctl stop wd2l-receiver            # the replay and live receiver share the state file
-sudo -u wd2l env PYTHONPATH=/opt/wd2l python3 -m wd2l.receiver \
+sudo -u wd2l python3 -m wd2l.receiver \
     --pcap /var/lib/wd2l/pcap/cap-20260925*.pcap \
     --state /var/lib/wd2l/state.json \
     --hec-url https://siem.enclave2.example:8088 --hec-token-file /etc/wd2l/hec.token \
@@ -301,6 +301,9 @@ sudo -u wd2l env PYTHONPATH=/opt/wd2l python3 -m wd2l.receiver \
     --audit-dir /var/log/wd2l --hec-audit-token-file /etc/wd2l/hec-audit.token
 sudo systemctl start wd2l-receiver
 ```
+
+On a manual install (code in `/opt/wd2l`), put `env PYTHONPATH=/opt/wd2l` after `sudo -u wd2l`.
+In a container, see [containers.md](deployment/containers.md#replay-from-the-archive).
 
 `--audit-dir` makes the replay write its `replay_run` records, naming you, to the receiver's
 audit trail. Audit records need their own token: with `--audit-dir` and `--hec-url`, the receiver

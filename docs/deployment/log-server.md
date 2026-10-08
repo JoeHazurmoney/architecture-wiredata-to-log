@@ -17,21 +17,31 @@ Addresses used throughout (any unused /30 works; keep them consistent everywhere
 
 ## 1. Install wd2l
 
-Python 3.9 or newer, standard library only.
+From a release ([how to bring one into the enclave and verify it](../releasing.md#bringing-a-release-into-an-enclave)),
+on RHEL 9 or RHEL 10 (use the `el9` or `el10` files):
 
 ```bash
-sudo useradd --system --no-create-home --shell /sbin/nologin wd2l
-sudo mkdir -p /opt/wd2l /etc/wd2l
-sudo cp -r wd2l deploy /opt/wd2l/          # from this repo
-sudo cp deploy/log-server/egress.env.example /etc/wd2l/egress.env   # edit IFACE etc.
-sudo cp deploy/log-server/sender.env /etc/wd2l/                     # edit the options here
+sudo dnf install ./wd2l-<version>-1.el10.noarch.rpm ./wd2l-sender-<version>-1.el10.noarch.rpm
+sudo vi /etc/wd2l/sender.env /etc/wd2l/egress.env      # the sender's options; the egress NIC
 uuidgen | sudo tee /etc/wd2l/aggregator.token >/dev/null
 sudo chown root:wd2l /etc/wd2l/aggregator.token && sudo chmod 640 /etc/wd2l/aggregator.token
-sudo groupadd --system wd2l-audit                                # who may read audit files
-sudo install -d -o wd2l -g wd2l-audit -m 2750 /var/log/wd2l      # setgid: files get the group
-sudo usermod -aG wd2l-audit <aggregator service account>         # it copies them (section 5)
-git rev-parse HEAD | sudo tee /opt/wd2l/wd2l/BUILD >/dev/null    # the build audit records name
+sudo usermod -aG wd2l-audit <aggregator service account>         # it copies the audit files (section 5)
+rpm -V wd2l wd2l-sender         # prints nothing while every file is as packaged
 ```
+
+The packages create:
+
+* the `wd2l` user, and the `wd2l-audit` group (who may read the audit files);
+* `/etc/wd2l` (0750 root:wd2l), `/var/lib/wd2l`, and `/var/log/wd2l` (2750 wd2l:wd2l-audit,
+  setgid so the files get the group).
+
+They install the units in `/usr/lib/systemd/system`, the scripts in `/usr/libexec/wd2l`, and
+templates (nftables, auditd rules, the Quadlet unit) in `/usr/share/wd2l`. They enable nothing.
+`dnf upgrade` doesn't restart wd2l: restart it as [planned-downtime.md](../planned-downtime.md)
+says.
+
+To run the sender as a container instead, see [containers.md](containers.md). Without the RPMs,
+see [Appendix: manual install](#appendix-manual-install).
 
 The log aggregator copies the audit files to the log retention server, so its service account
 needs to be in `wd2l-audit`. Restart the aggregator afterwards so it picks up the new group.
@@ -39,8 +49,7 @@ needs to be in `wd2l-audit`. Restart the aggregator afterwards so it picks up th
 ## 2. Egress NIC
 
 ```bash
-sudo cp deploy/log-server/wd2l-egress-nic.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-egress-nic
+sudo systemctl enable --now wd2l-egress-nic
 ```
 
 `egress-nic.sh` sets the /30 address, pins the black-hole IP to the made-up MAC (**static ARP**),
@@ -56,7 +65,7 @@ ip neigh show dev ens224         # 10.255.255.2 lladdr 02:00:00:00:00:02 PERMANE
 
 ## 3. Firewall
 
-Load `deploy/log-server/nftables-wd2l.nft` (edit the interface name at the top). It:
+Load `/usr/share/wd2l/nftables-wd2l.nft` (copy it, then edit the interface name at the top). It:
 
 * drops everything arriving on the egress NIC,
 * lets only processes running as `wd2l` send UDP from `10.255.255.1:5514` to `10.255.255.2:5514`,
@@ -65,8 +74,8 @@ Load `deploy/log-server/nftables-wd2l.nft` (edit the interface name at the top).
   if your kernel rejects it.
 
 ```bash
-sudo cp deploy/log-server/nftables-wd2l.nft /etc/nftables.d/ 2>/dev/null || sudo cp deploy/log-server/nftables-wd2l.nft /etc/
-# include it from /etc/sysconfig/nftables.conf (RHEL) or /etc/nftables.conf (Debian/Ubuntu)
+sudo install -d /etc/nftables.d && sudo cp /usr/share/wd2l/nftables-wd2l.nft /etc/nftables.d/
+# include it from /etc/sysconfig/nftables.conf
 sudo nft -f /etc/nftables.d/nftables-wd2l.nft
 ```
 
@@ -75,8 +84,7 @@ sudo nft -f /etc/nftables.d/nftables-wd2l.nft
 The options are in `/etc/wd2l/sender.env`; the unit reads them from there.
 
 ```bash
-sudo cp deploy/log-server/wd2l-sender.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-sender
+sudo systemctl enable --now wd2l-sender
 journalctl -u wd2l-sender -f
 ```
 
@@ -128,22 +136,20 @@ in-band.
 A timer makes the files append-only and deletes them after a year:
 
 ```bash
-sudo cp deploy/common/wd2l-audit-seal.service deploy/common/wd2l-audit-seal.timer /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-audit-seal.timer
+sudo systemctl enable --now wd2l-audit-seal.timer
 ```
 
 auditd rules record who changes wd2l's programs, settings, units and files:
 
 ```bash
-sudo cp deploy/log-server/wd2l.rules /etc/audit/rules.d/
-sudo augenrules --load
+sudo cp /usr/share/wd2l/audit/log-server.rules /etc/audit/rules.d/wd2l.rules && sudo augenrules --load
 ```
 
 Check the chain:
 
 ```bash
 sudo -u wd2l python3 -m wd2l.audit verify /var/log/wd2l
-wd2l-audit-report verify --dir /var/log/wd2l      # once installed with pip
+wd2l-audit-report verify --dir /var/log/wd2l
 ```
 
 The aggregator copies these files to the log retention server
@@ -244,3 +250,38 @@ sudo nft list table inet wd2l
 
 On the log retention server, new data should keep arriving. See the checks in
 [retention-server.md](retention-server.md#7-checks).
+
+## Appendix: manual install
+
+Without the RPMs (any Linux with Python 3.9 or newer; standard library only), from a checkout
+of this repo. It puts the code in `/opt/wd2l`, and the units and their scripts run from there.
+
+```bash
+sudo useradd --system --no-create-home --shell /sbin/nologin wd2l
+sudo mkdir -p /opt/wd2l /etc/wd2l
+sudo cp -r wd2l deploy /opt/wd2l/          # from this repo
+sudo cp deploy/log-server/egress.env.example /etc/wd2l/egress.env   # edit IFACE etc.
+sudo cp deploy/log-server/sender.env /etc/wd2l/                     # edit the options here
+uuidgen | sudo tee /etc/wd2l/aggregator.token >/dev/null
+sudo chown root:wd2l /etc/wd2l/aggregator.token && sudo chmod 640 /etc/wd2l/aggregator.token
+sudo groupadd --system wd2l-audit                                # who may read audit files
+sudo install -d -o wd2l -g wd2l-audit -m 2750 /var/log/wd2l      # setgid: files get the group
+sudo usermod -aG wd2l-audit <aggregator service account>         # it copies them (section 5)
+git rev-parse HEAD | sudo tee /opt/wd2l/wd2l/BUILD >/dev/null    # the build audit records name
+```
+
+The units, the firewall template and the auditd rules, in place of sections 2 to 4:
+
+```bash
+sudo cp deploy/log-server/wd2l-egress-nic.service deploy/log-server/wd2l-sender.service \
+  deploy/common/wd2l-audit-seal.service deploy/common/wd2l-audit-seal.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now wd2l-egress-nic wd2l-sender wd2l-audit-seal.timer
+sudo cp deploy/log-server/nftables-wd2l.nft /etc/nftables.d/ 2>/dev/null || sudo cp deploy/log-server/nftables-wd2l.nft /etc/
+# include it from /etc/sysconfig/nftables.conf (RHEL) or /etc/nftables.conf (Debian/Ubuntu)
+sudo cp deploy/log-server/wd2l.rules /etc/audit/rules.d/ && sudo augenrules --load
+```
+
+`wd2l-audit-report` isn't on the path in a manual install: run
+`sudo -u wd2l env PYTHONPATH=/opt/wd2l python3 -m wd2l.audit_report`, or `pip install` the
+wheel from a release. Likewise `python3 -m wd2l.audit` needs `env PYTHONPATH=/opt/wd2l`.

@@ -5,27 +5,39 @@ Linux host with Python 3.9+, `tcpdump`, `nftables`, `ethtool`, and a NIC for the
 
 ## 1. Install
 
+From a release ([how to bring one into the enclave and verify it](../releasing.md#bringing-a-release-into-an-enclave)),
+on RHEL 9 or RHEL 10 (use the `el9` or `el10` files). The receiver package brings in
+`tcpdump`, `nftables`, `ethtool` and `iproute`.
+
 ```bash
-sudo useradd --system --no-create-home --shell /sbin/nologin wd2l
-sudo mkdir -p /opt/wd2l /etc/wd2l /var/lib/wd2l/pcap /var/lib/wd2l/spool
-sudo chown -R wd2l:wd2l /var/lib/wd2l
-sudo cp -r wd2l deploy /opt/wd2l/                      # from this repo
+sudo dnf install ./wd2l-<version>-1.el10.noarch.rpm ./wd2l-receiver-<version>-1.el10.noarch.rpm
+sudo vi /etc/wd2l/receiver.env /etc/wd2l/capture.env   # SIEM URL and indexes; IFACE if it isn't ens256
 echo '<HEC token>' | sudo tee /etc/wd2l/hec.token >/dev/null
 sudo chown root:wd2l /etc/wd2l/hec.token && sudo chmod 640 /etc/wd2l/hec.token
 echo '<HEC audit token>' | sudo tee /etc/wd2l/hec-audit.token >/dev/null
 sudo chown root:wd2l /etc/wd2l/hec-audit.token && sudo chmod 640 /etc/wd2l/hec-audit.token
-sudo groupadd --system wd2l-audit                                # who may read audit files
-sudo install -d -o wd2l -g wd2l-audit -m 2750 /var/log/wd2l      # setgid: files get the group
-git rev-parse HEAD | sudo tee /opt/wd2l/wd2l/BUILD >/dev/null    # the build audit records name
 sudo cp <SIEM CA bundle> /etc/wd2l/siem-ca.pem
+rpm -V wd2l wd2l-receiver       # prints nothing while every file is as packaged
 ```
+
+The packages create:
+
+* the `wd2l` user, and the `wd2l-audit` group (who may read the audit files);
+* `/etc/wd2l` (0750 root:wd2l); `/var/lib/wd2l` with `spool/` and `pcap/` (0750 wd2l:wd2l);
+  `/var/log/wd2l` (2750 wd2l:wd2l-audit, setgid so the files get the group).
+
+They install the units in `/usr/lib/systemd/system`, the scripts in `/usr/libexec/wd2l`, the
+kernel receive buffer setting, and templates (auditd rules, the Quadlet unit, the Splunk files)
+in `/usr/share/wd2l`. They enable nothing. `dnf upgrade` doesn't restart wd2l: restart it as
+[planned-downtime.md](../planned-downtime.md) says.
+
+To run the receiver as a container instead, see [containers.md](containers.md). Without the
+RPMs, see [Appendix: manual install](#appendix-manual-install).
 
 ## 2. Capture NIC
 
 ```bash
-sudo cp deploy/receiver/capture.env /etc/wd2l/        # edit IFACE if it isn't ens256
-sudo cp deploy/receiver/wd2l-capture-nic.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-capture-nic
+sudo systemctl enable --now wd2l-capture-nic     # the NIC named in /etc/wd2l/capture.env
 ip -d link show ens256        # UP, PROMISC, NOARP, no inet address
 ```
 
@@ -35,8 +47,10 @@ send on that NIC.
 
 ### Kernel receive buffer
 
+The `wd2l-receiver` package installs `/usr/lib/sysctl.d/90-wd2l.conf` and applies it at
+install time. Check it:
+
 ```bash
-sudo cp deploy/receiver/90-wd2l.conf /etc/sysctl.d/ && sudo sysctl --system
 sysctl net.core.rmem_max        # 67108864
 ```
 
@@ -47,23 +61,21 @@ bursts are dropped by the kernel (`kernel_drops`), and the receiver logs a warni
 ## 3. Capture archive
 
 ```bash
-sudo cp deploy/receiver/wd2l-capture.service deploy/receiver/wd2l-pcap-prune.* /etc/systemd/system/
-sudo systemctl daemon-reload
 sudo systemctl enable --now wd2l-capture wd2l-pcap-prune.timer
 ls -l /var/lib/wd2l/pcap/
 ```
 
 One pcap file per hour, kept 7 days. At 1,000 events/s × ~1 KB that's about 3.6 GB/hour, 600 GB
-per week. Size the disk, or shorten the retention in `wd2l-pcap-prune.service`.
+per week. Size the disk, or shorten the retention in a drop-in for `wd2l-pcap-prune.service`
+(`sudo systemctl edit wd2l-pcap-prune.service`: an empty `ExecStart=`, then the `find` line
+with a smaller `-mmin`).
 
 ## 4. Receiver
 
-Copy the options file and edit the SIEM URL and index names in it
-(`sudo cp deploy/receiver/receiver.env /etc/wd2l/`), then:
+The options are in `/etc/wd2l/receiver.env` (section 1); the unit reads them from there.
 
 ```bash
-sudo cp deploy/receiver/wd2l-receiver.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-receiver
+sudo systemctl enable --now wd2l-receiver
 journalctl -u wd2l-receiver -f
 ```
 
@@ -121,22 +133,20 @@ like the data spool. It fills only while the SIEM is unreachable.
 A timer makes the files append-only and deletes them after a year:
 
 ```bash
-sudo cp deploy/common/wd2l-audit-seal.service deploy/common/wd2l-audit-seal.timer /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now wd2l-audit-seal.timer
+sudo systemctl enable --now wd2l-audit-seal.timer
 ```
 
 auditd rules record who changes wd2l's programs, settings, units and files:
 
 ```bash
-sudo cp deploy/receiver/wd2l.rules /etc/audit/rules.d/
-sudo augenrules --load
+sudo cp /usr/share/wd2l/audit/receiver.rules /etc/audit/rules.d/wd2l.rules && sudo augenrules --load
 ```
 
 Check the chain:
 
 ```bash
 sudo -u wd2l python3 -m wd2l.audit verify /var/log/wd2l
-wd2l-audit-report verify --dir /var/log/wd2l      # once installed with pip
+wd2l-audit-report verify --dir /var/log/wd2l
 ```
 
 To turn debug logging on or off so that the audit record names you, signal the receiver from your
@@ -185,8 +195,9 @@ rotate. Why, and why the `--out-dir` file output isn't for production yet:
 
 ### Example: Splunk
 
-Ready-made files for Splunk are in [`deploy/receiver/splunk/`](../../deploy/receiver/splunk/). Put
-them in an app, e.g. `$SPLUNK_HOME/etc/apps/wd2l/local/`:
+Ready-made files for Splunk are in `/usr/share/wd2l/splunk/` (in this repo,
+[`deploy/receiver/splunk/`](../../deploy/receiver/splunk/)). Copy them to the Splunk host and
+put them in an app, e.g. `$SPLUNK_HOME/etc/apps/wd2l/local/`:
 
 * `indexes.conf`: `enclave1`, `wd2l` and `wd2l_audit` (1 year).
 * `inputs.conf`: HEC on 8088 with TLS, and two tokens: `wd2l`, and `wd2l_audit` for audit
@@ -222,3 +233,41 @@ Healthy: events for every expected host, `heartbeat_age_s` ≤ ~1, and `gap_even
 `ok`, `audit_ok` is `true`, `audit_verify` is `ok` (empty until the first daily check) and
 `reconcile_unbalanced` is 0. The sender's health record shows that Enclave 1's records arrive too. Link delay of a few milliseconds, and
 `clock_offset_s` in the health record within a few milliseconds of 0.
+
+## Appendix: manual install
+
+Without the RPMs (any Linux with Python 3.9 or newer, `tcpdump`, `nftables` and `ethtool`),
+from a checkout of this repo. It puts the code in `/opt/wd2l`, and the units and their scripts
+run from there.
+
+```bash
+sudo useradd --system --no-create-home --shell /sbin/nologin wd2l
+sudo mkdir -p /opt/wd2l /etc/wd2l /var/lib/wd2l/pcap /var/lib/wd2l/spool
+sudo chown -R wd2l:wd2l /var/lib/wd2l
+sudo cp -r wd2l deploy /opt/wd2l/                      # from this repo
+echo '<HEC token>' | sudo tee /etc/wd2l/hec.token >/dev/null
+sudo chown root:wd2l /etc/wd2l/hec.token && sudo chmod 640 /etc/wd2l/hec.token
+echo '<HEC audit token>' | sudo tee /etc/wd2l/hec-audit.token >/dev/null
+sudo chown root:wd2l /etc/wd2l/hec-audit.token && sudo chmod 640 /etc/wd2l/hec-audit.token
+sudo groupadd --system wd2l-audit                                # who may read audit files
+sudo install -d -o wd2l -g wd2l-audit -m 2750 /var/log/wd2l      # setgid: files get the group
+git rev-parse HEAD | sudo tee /opt/wd2l/wd2l/BUILD >/dev/null    # the build audit records name
+sudo cp <SIEM CA bundle> /etc/wd2l/siem-ca.pem
+```
+
+The settings, units, kernel receive buffer and auditd rules, in place of the commands in
+sections 2 to 4:
+
+```bash
+sudo cp deploy/receiver/capture.env deploy/receiver/receiver.env /etc/wd2l/   # edit them
+sudo cp deploy/receiver/wd2l-capture-nic.service deploy/receiver/wd2l-capture.service   deploy/receiver/wd2l-pcap-prune.* deploy/receiver/wd2l-receiver.service   deploy/common/wd2l-audit-seal.service deploy/common/wd2l-audit-seal.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo cp deploy/receiver/90-wd2l.conf /etc/sysctl.d/ && sudo sysctl --system
+sudo systemctl enable --now wd2l-capture-nic wd2l-capture wd2l-pcap-prune.timer wd2l-receiver wd2l-audit-seal.timer
+sudo cp deploy/receiver/wd2l.rules /etc/audit/rules.d/ && sudo augenrules --load
+```
+
+`wd2l-audit-report` isn't on the path in a manual install: run
+`sudo -u wd2l env PYTHONPATH=/opt/wd2l python3 -m wd2l.audit_report`, or `pip install` the
+wheel from a release. Likewise `python3 -m wd2l.audit` and `python3 -m wd2l.receiver` need
+`env PYTHONPATH=/opt/wd2l`.
