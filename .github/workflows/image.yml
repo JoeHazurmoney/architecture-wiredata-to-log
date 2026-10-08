@@ -101,6 +101,31 @@ jobs:
           name: build-info
           path: build-info/
 
+  hardening:
+    needs: [build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{image,dist,build-info}"
+          merge-multiple: false
+      - name: Filesystem and config
+        run: |
+          IMG=$(podman load -q -i image/image.oci.tar | awk '{print $NF}')
+          BASE=$(python3 packaging/container/check_containerfile.py --base)
+          podman pull -q "$BASE"
+          podman image inspect "$IMG" > inspect.json
+          COMMIT=$(jq -r .commit build-info/build-info.json); VERSION=$(jq -r .version build-info/build-info.json)
+          podman unshare bash -c 'set -e
+            R=$(podman image mount "$1"); B=$(podman image mount "$2")
+            python3 packaging/container/check_image.py --rootfs "$R" --base-rootfs "$B" \
+              --config inspect.json --wheel dist/*.whl --commit "$3" --version "$4" --base-ref "$2"' \
+            _ "$IMG" "$BASE" "$COMMIT" "$VERSION"
+          echo "IMG=$IMG" >> "$GITHUB_ENV"
+      - name: FIPS in force at run time
+        run: podman run --rm -v "$PWD/packaging/container/fips_check.py:/fips_check.py:ro" "$IMG" python3 /fips_check.py
+
   functional:
     needs: [build]
     runs-on: ubuntu-24.04

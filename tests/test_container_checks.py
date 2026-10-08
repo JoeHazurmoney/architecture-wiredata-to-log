@@ -182,3 +182,116 @@ def test_record_refuses_missing_evidence(tmp_path):
     (d / "sbom-1.spdx.json").unlink()
     _rec, probs = br.record(froms, str(d), str(keys), "now")
     assert any("sbom-1.spdx.json" in p for p in probs)
+
+
+import stat
+import zipfile
+
+ci = load_script("packaging/container/check_image.py")
+SHA = "a" * 40
+
+
+def wheel_and_rootfs(tmp_path, build=SHA):
+    """A wheel and a rootfs that installed it, plus a base rootfs with the same rpmdb."""
+    files = {"wd2l/__init__.py": b'__version__ = "0.3.0"\n', "wd2l/BUILD": (build + "\n").encode()}
+    whl = tmp_path / "wd2l-0.3.0-py3-none-any.whl"
+    with zipfile.ZipFile(str(whl), "w") as z:
+        rec = []
+        for name, data in files.items():
+            z.writestr(name, data)
+            h = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
+            rec.append("%s,sha256=%s,%d" % (name, h, len(data)))
+        rec.append("wd2l-0.3.0.dist-info/RECORD,,")
+        z.writestr("wd2l-0.3.0.dist-info/RECORD", "\n".join(rec) + "\n")
+    roots = []
+    for name in ("rootfs", "base"):
+        root = tmp_path / name
+        (root / "etc/crypto-policies").mkdir(parents=True)
+        (root / "etc/crypto-policies/config").write_text("FIPS\n")
+        (root / "usr/lib/sysimage/rpm").mkdir(parents=True)
+        (root / ci.RPMDB).write_bytes(b"the same rpmdb")
+        (root / "tmp").mkdir()
+        os.chmod(str(root / "tmp"), 0o1777)
+        roots.append(root)
+    site = roots[0] / "usr/lib/python3.12/site-packages"
+    for name, data in files.items():
+        (site / name).parent.mkdir(parents=True, exist_ok=True)
+        (site / name).write_bytes(data)
+    return str(whl), str(roots[0]), str(roots[1])
+
+
+def config(**over):
+    labels = {"name": "wd2l", "vendor": "wd2l project",
+              "org.opencontainers.image.title": "wd2l", "org.opencontainers.image.version": "0.3.0",
+              "org.opencontainers.image.revision": SHA,
+              "org.opencontainers.image.source": "https://github.com/x/y",
+              "org.opencontainers.image.licenses": "MIT",
+              "org.opencontainers.image.base.name": B + ":3.12-fips",
+              "org.opencontainers.image.base.digest": D2}
+    labels.update(over.pop("labels", {}))
+    c = {"User": "65532", "Cmd": ["wd2l-receiver", "--help"], "Labels": labels}
+    c.update(over)
+    return [{"Config": c}]
+
+
+BASE_REF = "%s:3.12-fips@%s" % (B, D2)
+
+
+def test_good_image_passes(tmp_path):
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    assert ci.check_config(config(), "0.3.0", SHA, BASE_REF) == []
+    assert ci.check_filesystem(root, base) == []
+    assert ci.check_wheel_files(root, whl, SHA) == []
+
+
+def test_config_problems(tmp_path):
+    probs = ci.check_config(config(User="0", Entrypoint=["/bin/sh", "-c"],
+                                   labels={"cpe": "cpe:/a:redhat:hummingbird:1",
+                                           "io.hummingbird-project.variant": "fips",
+                                           "name": "hi/python",
+                                           "org.opencontainers.image.base.digest": D1}),
+                            "0.3.0", SHA, BASE_REF)
+    text = "\n".join(probs)
+    for word in ("65532", "shell", "cpe", "io.hummingbird-project.variant", "name", "base.digest"):
+        assert word in text, word
+
+
+def test_shell_and_package_manager_are_refused(tmp_path):
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    for p in ("usr/bin/bash", "usr/bin/dnf"):
+        os.makedirs(os.path.join(root, os.path.dirname(p)), exist_ok=True)
+        open(os.path.join(root, p), "w").close()
+    text = "\n".join(ci.check_filesystem(root, base))
+    assert "shell present: /usr/bin/bash" in text and "package manager present: /usr/bin/dnf" in text
+
+
+def test_setuid_and_world_writable_are_refused(tmp_path):
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    os.makedirs(os.path.join(root, "usr/bin"), exist_ok=True)
+    su = os.path.join(root, "usr/bin/su")
+    open(su, "w").close()
+    os.chmod(su, 0o4755)
+    ww = os.path.join(root, "etc/open")
+    open(ww, "w").close()
+    os.chmod(ww, 0o666)
+    text = "\n".join(ci.check_filesystem(root, base))
+    assert "setuid/setgid file: /usr/bin/su" in text and "world-writable: /etc/open" in text
+    assert "/tmp" not in text
+
+
+def test_non_fips_policy_and_changed_rpmdb_are_refused(tmp_path):
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    with open(os.path.join(root, "etc/crypto-policies/config"), "w") as f:
+        f.write("DEFAULT\n")
+    with open(os.path.join(root, ci.RPMDB), "wb") as f:
+        f.write(b"one more package")
+    text = "\n".join(ci.check_filesystem(root, base))
+    assert "not FIPS" in text and "rpm database differs" in text
+
+
+def test_changed_wd2l_file_and_wrong_build_are_refused(tmp_path):
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    with open(os.path.join(root, "usr/lib/python3.12/site-packages/wd2l/__init__.py"), "a") as f:
+        f.write("# changed\n")
+    text = "\n".join(ci.check_wheel_files(root, whl, "b" * 40))
+    assert "changed: " in text and "wd2l/__init__.py" in text and "BUILD" in text
