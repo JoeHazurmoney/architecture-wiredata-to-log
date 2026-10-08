@@ -227,10 +227,32 @@ def test_chrony_float_round_trips(v):
 
 
 def test_request_is_padded_to_the_reply_size():
+    # chronyd sends the tracking reply up to, not including, its EOR marker: 28 + 76 bytes.
     r = hostinfo.chrony_request(0x01020304)
-    assert len(r) == hostinfo.CHRONY_REPLY_SIZE == 108
+    assert len(r) == hostinfo.CHRONY_REPLY_SIZE == 104
     assert r[:4] == bytes([6, 1, 0, 0]) and r[4:6] == (33).to_bytes(2, "big")
-    assert r[8:12] == bytes([1, 2, 3, 4]) and r[20:] == bytes(88)
+    assert r[8:12] == bytes([1, 2, 3, 4]) and r[20:] == bytes(84)
+
+
+# A real reply, from chronyd 4.8 (Fedora 42) with `local stratum 8`, to a request with sequence
+# 12345, and `chronyc -c tracking` from the same daemon at the same moment.
+REAL_REPLY = bytes.fromhex(
+    "060200000021000500000000000000000000303900000000000000007f7f0101000000000000000000000000"
+    "000000000000000000080000000000006ac7db27136c8d310000000000000000000000000000000000000000"
+    "00000000000000000000000000000000")
+REAL_CHRONYC = ("7F7F0101,,8,1791482663.325881137,0.000000000,0.000000000,0.000000000,0.000,0.000,"
+                "0.000,0.000000000,0.000000000,0.0,Normal")
+
+
+def test_a_real_chronyd_reply_reads_as_chronyc_does():
+    assert len(REAL_REPLY) == 104
+    want = {"stratum": 8, "offset_ms": 0.0, "synced": True, "source": "7F7F0101"}
+    assert hostinfo.parse_chronyc_tracking(REAL_CHRONYC) == want
+    assert hostinfo.parse_chrony_tracking(REAL_REPLY, 12345) == want
+
+
+def test_the_fake_chronyd_sends_what_a_real_one_does():
+    assert len(fake_chronyd.tracking_reply(12345)) == len(REAL_REPLY)
 
 
 def test_query_synced_reference_clock():

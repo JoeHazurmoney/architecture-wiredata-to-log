@@ -17,7 +17,7 @@ from typing import Optional
 
 REQ = struct.Struct("!BBBBHHIII")
 RPY = struct.Struct("!BBBBHHHHHHIII")
-TRACKING = struct.Struct("!I16sHHHHIII9Ii")
+TRACKING = struct.Struct("!I16sHHHHIII9I")      # chronyd sends no EOR marker
 GPS = 0x47505300          # "GPS\0"
 COEF_MAX = (1 << 24) - 1
 
@@ -57,7 +57,7 @@ def tracking_reply(seq: int, ref_id: int = GPS, family: int = 0, addr: bytes = b
     floats = [float_to_chrony(v) for v in
               (correction, 0.000001, 0.000003, -1.0, 0.0, 0.01, 0.0001, 0.00005, 16.0)]
     return head + TRACKING.pack(ref_id, addr.ljust(16, b"\0"), family, 0, stratum, leap,
-                                0, 1791209000, 0, *floats, 0)
+                                0, 1791209000, 0, *floats)
 
 
 def answer(data: bytes, unsynced: bool = False) -> Optional[bytes]:

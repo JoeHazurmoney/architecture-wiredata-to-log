@@ -57,6 +57,8 @@ jobs:
       - run: sudo lab/run-lab.sh --fault siem-down
       - run: sudo lab/run-lab.sh --fault clock
       - run: sudo lab/run-lab.sh --chrony-udp
+      - name: --chrony-addr against a real chronyd, not the lab's stand-in
+        run: podman run --rm -v "$PWD:/src:ro" "$(packaging/ci/tool --ref fedora)" bash /src/packaging/ci/chrony-smoke.sh
       - run: sudo lab/run-lab.sh --fault clock --chrony-udp
       - run: sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
       - run: sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log

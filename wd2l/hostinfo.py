@@ -153,9 +153,10 @@ CHRONY_LEAP_UNSYNCED = 3
 _CHRONY_REQ = struct.Struct("!BBBBHHIII")
 # version, type, res1, res2, command, reply, status, pad, pad, pad, sequence, pad, pad
 _CHRONY_RPY = struct.Struct("!BBBBHHHHHHIII")
-# ref_id, address, family, pad, stratum, leap, ref_time (3), nine Floats, EOR
-_CHRONY_TRACKING = struct.Struct("!I16sHHHHIII9Ii")
-CHRONY_REPLY_SIZE = _CHRONY_RPY.size + _CHRONY_TRACKING.size    # 108
+# ref_id, address, family, pad, stratum, leap, ref_time (3), nine Floats. chronyd sends the
+# reply up to its EOR marker, not including it (PKL_ReplyLength).
+_CHRONY_TRACKING = struct.Struct("!I16sHHHHIII9I")
+CHRONY_REPLY_SIZE = _CHRONY_RPY.size + _CHRONY_TRACKING.size    # 104
 
 
 def chrony_float(x: int) -> float:
