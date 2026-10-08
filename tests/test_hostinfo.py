@@ -319,3 +319,29 @@ def test_fake_chronyd_ignores_short_requests_like_chronyd(tmp_path):
     assert hostinfo.parse_chrony_tracking(fake_chronyd.respond(req, str(flag)), 7)["synced"]
     flag.write_text("")
     assert not hostinfo.parse_chrony_tracking(fake_chronyd.respond(req, str(flag)), 7)["synced"]
+
+
+def test_time_quality_uses_udp_when_given_an_address():
+    with chronyd_server(lambda req: [fake_chronyd.answer(req)]) as (host, port):
+        tq = hostinfo.time_quality("/nonexistent/chronyc", "%s:%d" % (host, port))
+        assert tq.read()["source"] == "GPS"
+
+
+def test_time_quality_runs_chronyc_without_an_address(tmp_path):
+    script = tmp_path / "chronyc.py"
+    script.write_text("print(%r)\n" % SYNCED)
+    tq = hostinfo.time_quality("%s %s" % (sys.executable, script), None, every=5.0)
+    assert tq.cmd[-2:] == ["-c", "tracking"] and tq.every == 5.0
+    assert tq.read()["source"] == "162.159.200.123"
+
+
+def test_both_parsers_take_chrony_addr():
+    from wd2l import receiver, sender
+    assert sender.build_parser().parse_args(["--chrony-addr", "127.0.0.1:323"]).chrony_addr \
+        == "127.0.0.1:323"
+    assert receiver.build_parser().parse_args(["--pcap", "x", "--chrony-addr", "[::1]"]) \
+        .chrony_addr == "[::1]"
+    assert sender.build_parser().parse_args([]).chrony_addr is None
+    for p, base in ((sender.build_parser(), []), (receiver.build_parser(), ["--pcap", "x"])):
+        with pytest.raises(SystemExit):
+            p.parse_args(base + ["--chrony-addr", "host:notaport"])

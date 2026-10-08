@@ -297,6 +297,17 @@ class TimeQuality:
         return time_alarm(self.read() if q is None else q, self.max_stratum, self.max_offset_ms)
 
 
+def time_quality(chronyc: str = "chronyc", chrony_addr: Optional[str] = None,
+                 every: float = 60.0) -> TimeQuality:
+    """The TimeQuality for --chronyc / --chrony-addr: chronyd over UDP when an address is
+    given (the containers have no chronyc), else the chronyc command."""
+    tq = TimeQuality(shlex.split(chronyc) + ["-c", "tracking"], every=every)
+    if chrony_addr:
+        hostport = chrony_hostport(chrony_addr)
+        tq.query = lambda: chrony_tracking(hostport, tq.timeout)
+    return tq
+
+
 # ---------------------------------------------------------------- this process
 
 class ProcStats:

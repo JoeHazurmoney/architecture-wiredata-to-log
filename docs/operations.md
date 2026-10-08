@@ -191,6 +191,9 @@ over 100 ms, a side that can't read chrony at all, or the two enclaves differing
 
 1. **On the side named**, run `chronyc tracking`: reference, stratum and offset. For
    "unavailable", check that `chronyd` is running and that the wd2l service can run `chronyc`.
+   In a container (`--chrony-addr`), "unavailable" can also mean chronyd doesn't answer on
+   127.0.0.1:323. As a normal user (not root) on the host, `chronyc -h 127.0.0.1 tracking`
+   asks the same way and shows whether it does.
 2. **Check that enclave's GPS receiver**, then the switch that serves time at stratum 2.
 3. **Skew while both sides are synced** points to one side's GPS receiver or switch.
 

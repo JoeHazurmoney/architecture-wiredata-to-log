@@ -20,7 +20,6 @@ import logging
 import os
 import platform
 import select
-import shlex
 import signal
 import socket
 import socketserver
@@ -750,6 +749,9 @@ def build_parser() -> argparse.ArgumentParser:
                                           "every heartbeat (deployed: ens224)")
     p.add_argument("--chronyc", default="chronyc",
                    help="chronyc command for time quality (\"-c tracking\" is added)")
+    p.add_argument("--chrony-addr", type=hostinfo.chrony_address, metavar="HOST[:PORT]",
+                   help="ask chronyd over UDP (its command port, 323) for time quality instead "
+                        "of running --chronyc; the container units use 127.0.0.1:323")
     p.add_argument("--log-format", choices=("text", "json"), default="text",
                    help="operational log lines: text, or one JSON object per line")
     return p
@@ -765,7 +767,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     logsetup.setup(a.log_format, a.verbose)
     settings = config_settings(a)
     cfg_sha = auditlog.sha256_hex(auditlog.canonical(settings))
-    tq = hostinfo.TimeQuality(shlex.split(a.chronyc) + ["-c", "tracking"])
+    tq = hostinfo.time_quality(a.chronyc, a.chrony_addr)
     audit = None
     if a.audit_dir:
         try:

@@ -18,7 +18,6 @@ import logging
 import os
 import platform
 import re
-import shlex
 import signal
 import time
 from collections import OrderedDict, deque
@@ -1187,6 +1186,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="free space below this raises audit_failure")
     p.add_argument("--chronyc", default="chronyc",
                    help="chronyc command for time quality (\"-c tracking\" is added)")
+    p.add_argument("--chrony-addr", type=hostinfo.chrony_address, metavar="HOST[:PORT]",
+                   help="ask chronyd over UDP (its command port, 323) for time quality instead "
+                        "of running --chronyc; the container units use 127.0.0.1:323")
     p.add_argument("--capture-iface", help="NIC whose carrier and receive counters are reported "
                                            "(default: the --live interface)")
     p.add_argument("--pcap-dir", help="capture archive directory, to check tcpdump is writing it "
@@ -1253,8 +1255,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     logsetup.setup(a.log_format, a.verbose)
     settings = {k: v for k, v in sorted(vars(a).items())}
     cfg_sha = auditlog.sha256_hex(auditlog.canonical(settings))
-    tq = hostinfo.TimeQuality(shlex.split(a.chronyc) + ["-c", "tracking"],
-                             every=a.time_check_interval)
+    tq = hostinfo.time_quality(a.chronyc, a.chrony_addr, every=a.time_check_interval)
     component = "replay" if a.pcap else "receiver"
     audit = None
     if a.audit_dir:

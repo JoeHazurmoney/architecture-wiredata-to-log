@@ -106,6 +106,7 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | `--audit-min-free-mb` | `256` | Free space the audit directory must keep. Below it, nothing more goes in the audit files: records are still forwarded, counted as missed, and `audit_ok` is false until there is space again |
 | `--egress-iface` | none | The unit uses `ens224`. NIC carrier and transmit counters go into every heartbeat |
 | `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
+| `--chrony-addr` | none | Ask chronyd over UDP (`HOST[:PORT]`, port 323) instead of running `chronyc`. The container unit uses `127.0.0.1:323`. chronyd's default configuration answers it; `cmdport 0` turns it off |
 | `--log-format` | text | The unit uses `json`: one JSON object per log line |
 
 ### Audit files
