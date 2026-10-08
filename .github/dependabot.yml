@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Base image digests (packaging/container/Containerfile) and CI tool digests
+  # (packaging/ci/tools.Containerfile). Each PR runs the whole image pipeline.
+  - package-ecosystem: docker
+    directories: ["/packaging/container", "/packaging/ci"]
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
