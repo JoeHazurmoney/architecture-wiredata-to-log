@@ -27,7 +27,8 @@ jobs:
           mkdir -p .cache
           gh release list --limit 3 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' > tags.txt
           fail=0
-          for tag in $(cat tags.txt); do
+          mapfile -t tags < tags.txt
+          for tag in "${tags[@]}"; do
             v=${tag#v}; ref="ghcr.io/joehazurmoney/wd2l:$v"
             packaging/ci/tool grype "registry:$ref" -q -o json --file "/work/grype-$v.json"
             packaging/ci/tool trivy image --quiet --cache-dir /work/.cache/trivy --scanners vuln \
