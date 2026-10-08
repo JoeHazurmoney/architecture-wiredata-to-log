@@ -38,23 +38,20 @@ sudo podman image inspect --format '{{.Digest}}' ghcr.io/joehazurmoney/wd2l:<ver
 
 ## Or pull it (online)
 
-Make Podman refuse unsigned images from this repository. In `/etc/containers/policy.json`,
-under `"transports": {"docker": {…}}`, add:
+Verify the image's signature with cosign (see [releasing.md](../releasing.md#bringing-a-release-into-an-enclave)
+for where cosign comes from), then pull that digest, so what you run is what you verified:
 
-```json
-"ghcr.io/joehazurmoney/wd2l": [{"type": "sigstoreSigned", "keyPath": "/etc/pki/containers/wd2l-cosign.pub", "signedIdentity": {"type": "matchRepository"}}]
+```bash
+D=sha256:<digest from the release notes>
+cosign verify --key cosign.pub --insecure-ignore-tlog ghcr.io/joehazurmoney/wd2l@$D
+sudo podman pull ghcr.io/joehazurmoney/wd2l@$D
+sudo podman tag ghcr.io/joehazurmoney/wd2l@$D ghcr.io/joehazurmoney/wd2l:<version>
 ```
 
-Copy the release's `cosign.pub` to `/etc/pki/containers/wd2l-cosign.pub`, and tell Podman where
-the signatures are, in `/etc/containers/registries.d/wd2l.yaml`:
-
-```yaml
-docker:
-  ghcr.io/joehazurmoney/wd2l:
-    use-sigstore-attachments: true
-```
-
-Then `sudo podman pull ghcr.io/joehazurmoney/wd2l:<version>`.
+Podman's own signature policy (`sigstoreSigned` in `/etc/containers/policy.json`) isn't used
+here yet. The release's signatures are cosign 3 Sigstore bundles, stored as OCI referrers, and
+it isn't confirmed yet that Podman reads them (see the list under
+[User, SELinux and FIPS](#user-selinux-and-fips)).
 
 ## Install the unit
 
@@ -64,12 +61,29 @@ sudo cp /usr/share/wd2l/quadlet/wd2l-receiver.container /etc/containers/systemd/
 # strict change control: name the release's digest instead of the tag
 sudo sed -i 's|^Image=.*|Image=ghcr.io/joehazurmoney/wd2l@sha256:<digest from the release notes>|' \
   /etc/containers/systemd/wd2l-receiver.container
+# auditd: who changes the Quadlet unit. A file of its own, because the watch needs Podman's
+# /etc/containers/systemd; on a host without it, auditd would stop loading rules there.
+sudo cp /usr/share/wd2l/audit/receiver-quadlet.rules /etc/audit/rules.d/wd2l-quadlet.rules
+sudo augenrules --load
 sudo systemctl daemon-reload && sudo systemctl start wd2l-receiver
 journalctl -u wd2l-receiver -f
 ```
 
-On the log server, the same with `wd2l-sender`. A Quadlet unit isn't "enabled": its `[Install]`
-section takes effect at `daemon-reload`, so it starts at every boot from then on.
+On the log server, the same with `wd2l-sender` and
+`/usr/share/wd2l/audit/log-server-quadlet.rules`. A Quadlet unit isn't "enabled": its
+`[Install]` section takes effect at `daemon-reload`, so it starts at every boot from then on.
+
+**A host that ran wd2l natively first.** The seal timer has made its audit files append-only,
+and SELinux can't relabel an append-only file, so the first start with `:z` fails. Podman
+relabels `/var/log/wd2l` only while the directory isn't labeled for containers yet: at the first
+start, and again after a `restorecon` or a full relabel. Each time, in a planned window, before
+the start:
+
+```bash
+sudo chattr -a /var/log/wd2l/audit-*.jsonl      # note it in the change record
+sudo systemctl start wd2l-receiver               # Podman relabels the directory
+sudo systemctl start wd2l-audit-seal.service     # the files are append-only again
+```
 
 The units run the container:
 
@@ -90,7 +104,9 @@ They stop it within the native units' times: 30 s for the sender and 60 s for th
   release candidate):
   * the user name resolves;
   * `:z` doesn't stop tcpdump writing the archive;
-  * the options from the env file reach wd2l.
+  * the options from the env file reach wd2l;
+  * the first start over sealed audit files, with the steps above;
+  * whether Podman's `sigstoreSigned` policy accepts the release's signatures.
 
   If one doesn't, this section will say what to use instead.
 * **FIPS.** The image always uses OpenSSL's FIPS provider, and MD5 is refused. It is **validated
@@ -129,7 +145,7 @@ sudo podman run --rm --network host --user wd2l \
 ## Upgrade and roll back
 
 1. Verify and load the new release's image.
-2. Change `Image=` in both `.container` files on the host, then `sudo systemctl daemon-reload`.
+2. Change `Image=` in the host's `.container` file, then `sudo systemctl daemon-reload`.
 3. Stop and start each side as [planned-downtime.md](../planned-downtime.md) says.
 
 To roll back, name the previous image and do the same.

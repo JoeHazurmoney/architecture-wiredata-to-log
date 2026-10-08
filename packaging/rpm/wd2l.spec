@@ -93,6 +93,8 @@ install -Dm0640 receiver/capture.env %{buildroot}%{_sysconfdir}/wd2l/capture.env
 install -Dm0644 log-server/nftables-wd2l.nft %{buildroot}%{_datadir}/wd2l/nftables-wd2l.nft
 install -Dm0644 log-server/wd2l.rules %{buildroot}%{_datadir}/wd2l/audit/log-server.rules
 install -Dm0644 receiver/wd2l.rules %{buildroot}%{_datadir}/wd2l/audit/receiver.rules
+install -Dm0644 log-server/wd2l-quadlet.rules %{buildroot}%{_datadir}/wd2l/audit/log-server-quadlet.rules
+install -Dm0644 receiver/wd2l-quadlet.rules %{buildroot}%{_datadir}/wd2l/audit/receiver-quadlet.rules
 install -Dm0644 -t %{buildroot}%{_datadir}/wd2l/quadlet \
     log-server/wd2l-sender.container receiver/wd2l-receiver.container
 install -Dm0644 -t %{buildroot}%{_datadir}/wd2l/splunk receiver/splunk/*
@@ -177,6 +179,7 @@ exit 0
 %config(noreplace) %attr(0640,root,wd2l) %{_sysconfdir}/wd2l/egress.env
 %{_datadir}/wd2l/nftables-wd2l.nft
 %{_datadir}/wd2l/audit/log-server.rules
+%{_datadir}/wd2l/audit/log-server-quadlet.rules
 %{_datadir}/wd2l/quadlet/wd2l-sender.container
 %dir %{_sysconfdir}/systemd/system/wd2l-sender.service.d
 %dir %{_sysconfdir}/systemd/system/wd2l-egress-nic.service.d
@@ -195,6 +198,7 @@ exit 0
 %dir %attr(0750,wd2l,wd2l) %{_sharedstatedir}/wd2l/spool
 %dir %attr(0750,wd2l,wd2l) %{_sharedstatedir}/wd2l/pcap
 %{_datadir}/wd2l/audit/receiver.rules
+%{_datadir}/wd2l/audit/receiver-quadlet.rules
 %{_datadir}/wd2l/quadlet/wd2l-receiver.container
 %{_datadir}/wd2l/splunk/
 %dir %{_sysconfdir}/systemd/system/wd2l-receiver.service.d

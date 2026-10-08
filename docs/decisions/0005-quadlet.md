@@ -99,7 +99,8 @@ flowchart LR
   * `systemctl stop wd2l-receiver` and `journalctl -u wd2l-receiver` work the same either way.
   * The planned-downtime runbook doesn't change.
   * auditd still sees who changes `/etc/wd2l/` (the settings), the units, and the Quadlet files
-    (`/etc/containers/systemd/wd2l-*.container`).
+    (`/etc/containers/systemd/wd2l-*.container`, a rules file of its own: the watch needs Podman's
+    directory, so a host without Podman doesn't get it).
 * **Hardening, two layers** (e.g. NIST AC-6, SC-39).
   * **For a native unit,** systemd's sandbox options (`ProtectSystem`, `CapabilityBoundingSet`
     and the rest) confine wd2l.

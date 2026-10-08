@@ -131,6 +131,21 @@ def test_auditd_rules_are_well_formed():
         assert any("dir=/var/log/wd2l" in r and "auid!=unset" in r for r in rules)
 
 
+def test_host_rules_load_without_podman():
+    # auditd refuses a watch whose directory is missing (/etc/containers/systemd comes with
+    # Podman), and augenrules stops loading there. So the Quadlet watch has its own file, which
+    # only the containers guide installs.
+    with open(os.path.join(REPO, "docs", "deployment", "containers.md")) as f:
+        guide = f.read()
+    for side, unit in (("log-server", "wd2l-sender"), ("receiver", "wd2l-receiver")):
+        with open(os.path.join(REPO, "deploy", side, "wd2l.rules")) as f:
+            assert "/etc/containers" not in f.read()
+        with open(os.path.join(REPO, "deploy", side, "wd2l-quadlet.rules")) as f:
+            rules = [x for x in f.read().splitlines() if x.strip() and not x.startswith("#")]
+        assert rules == ["-w /etc/containers/systemd/%s.container -p wa -k wd2l-units" % unit]
+        assert "/usr/share/wd2l/audit/%s-quadlet.rules" % side in guide
+
+
 import wd2l
 
 

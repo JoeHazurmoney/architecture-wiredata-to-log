@@ -1,0 +1,5 @@
+## wd2l audit rule for the Quadlet unit, Enclave 2 receiver host (docs/deployment/containers.md).
+## Only where Podman is installed: auditd refuses a watch whose directory is missing
+## (/etc/containers/systemd), and augenrules stops loading rules there.
+## Copy to /etc/audit/rules.d/wd2l-quadlet.rules, then: sudo augenrules --load
+-w /etc/containers/systemd/wd2l-receiver.container -p wa -k wd2l-units
