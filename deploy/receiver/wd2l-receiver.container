@@ -12,7 +12,7 @@ Wants=network-online.target
 ContainerName=wd2l-receiver
 # The release's image, verified and loaded beforehand (docs/releasing.md). For strict change
 # control, name it by the digest in the release notes: ghcr.io/joehazurmoney/wd2l@sha256:...
-Image=ghcr.io/joehazurmoney/wd2l:0.3.0
+Image=ghcr.io/joehazurmoney/wd2l:0.3.0rc1
 Pull=never
 Network=host
 User=wd2l
