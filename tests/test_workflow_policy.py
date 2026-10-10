@@ -105,3 +105,16 @@ def test_assets_are_made_once_without_secrets_or_a_token():
     a = jobs(read("release.yml"))["assets"]
     assert "- name: Assemble the assets" in a and "name: assets" in a
     assert "secrets." not in a and "id-token" not in a and "environment:" not in a
+
+
+def test_attest_signs_the_image_keylessly_and_checks_the_identity():
+    att = jobs(read("attest.yml"))["attest"]
+    assert "TOOL_ENV: ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN" in att
+    assert 'packaging/ci/tool cosign sign --yes "$IMAGE@$D"' in att
+    assert ('--certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/'
+            'attest.yml@$GITHUB_REF"') in att
+    assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in att
+    # the identity alone also matches a run of attest.yml called from another repository
+    assert '--certificate-github-workflow-repository "$GITHUB_REPOSITORY"' in att
+    # keyless means Sigstore's public log: never the no-log signing config used with the key
+    assert "signing-config" not in att

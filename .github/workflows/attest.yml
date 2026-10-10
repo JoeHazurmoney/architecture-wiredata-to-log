@@ -54,6 +54,18 @@ jobs:
           push-to-registry: true
           # Storage records are for organization-owned repositories only.
           create-storage-record: false
+      - name: Keyless cosign signature on the image (Sigstore's public instance), checked at once
+        env:
+          TOOL_ENV: ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN
+          D: ${{ inputs.image-digest }}
+        run: |
+          echo "$TOKEN" | podman login ghcr.io -u "$ACTOR" --password-stdin
+          packaging/ci/tool cosign sign --yes "$IMAGE@$D"
+          packaging/ci/tool cosign verify "$IMAGE@$D" \
+            --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/attest.yml@$GITHUB_REF" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-github-workflow-repository "$GITHUB_REPOSITORY" > /dev/null
+          echo "keyless signature: ok"
       - name: The bundles, one per line, for offline verification
         env:
           FILES_BUNDLE: ${{ steps.files.outputs.bundle-path }}
