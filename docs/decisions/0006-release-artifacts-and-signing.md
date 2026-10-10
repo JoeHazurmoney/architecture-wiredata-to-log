@@ -102,11 +102,11 @@ Rejected.
   * The password goes in the secret `COSIGN_PASSWORD`, the private key in `COSIGN_PRIVATE_KEY`.
   * `cosign.pub` is committed.
   * The local private key is then stored offline, or destroyed.
-* **Who can cause a signature:** the signing secrets are repository secrets, so anyone with
-  write access can reach them, by pushing a `v*` tag or a workflow. `release.yml` signs only for
-  a `v*` tag on a commit already on `main`. While one maintainer has write access, that is the
-  maintainer. Before anyone else gets it: a tag ruleset for `v*`, and the secrets moved to a
-  `release` environment with required reviewers ([releasing.md](../releasing.md#one-time-setup)).
+* **Who can cause a signature:** only a `v*` tag on a commit already on `main`, and only once
+  the owner approves the run. The signing secrets live in the `release` environment, which only
+  `v*` tags may use and whose runs the owner approves; a ruleset lets only the admin role create
+  `v*` tags; `main` takes changes only through PRs with green CI, with no bypass
+  ([releasing.md](../releasing.md#one-time-setup)).
 * **Rotation:** a new pair, a new `cosign.pub` committed, and the old one moved to
   `keys/retired/cosign-<from>-<to>.pub`. Releases signed with the old key stay verifiable with
   it.
@@ -141,3 +141,16 @@ Rejected.
     **alongside** the key, and keep the key for offline enclaves;
   * upload the scanners' SARIF to code scanning;
   * make the packages public, and turn on immutable releases.
+
+## Update: the repository is public (2026-10-09)
+
+* **Done:** the scanners' SARIF goes to code scanning from `main`; the packages are public; the
+  signing jobs run in the `release` environment (owner approval, `v*` tags only), whose secrets
+  replace the repository's; rulesets
+  protect `main` (PRs with green CI, no bypass) and `v*` tags (admin only); actions must be
+  pinned by SHA; secret scanning, push protection and Dependabot security updates are on.
+* **Still to do:** immutable releases (a setting); GitHub artifact attestations and keyless
+  signatures alongside the key, which is its own plan:
+  [SLSA Build Level 3](../superpowers/plans/2026-10-09-slsa-build-l3/README.md).
+* **Unchanged:** the key pair and offline verification. Enclaves still verify with
+  `cosign.pub` and no network.
