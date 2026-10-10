@@ -229,8 +229,11 @@ they change with every rebuild and every new disclosure.
 
 ## Action items
 
-1. [ ] **Receiver capture container.** The tcpdump archive stays on the host until one of these
-   is chosen. The archive is the recovery source, so it must stay independent of the receiver.
+1. [ ] **Receiver capture container.** The archive is the recovery source, so it must stay
+   independent of the receiver. **Decided on 2026-10-09: (a).** It is built in a plan of its
+   own, from the design in the release plan's Phase 7 (Task 7.2), and goes through the same
+   image checks. Until then the tcpdump archive stays on the host. (b) isn't pursued for now;
+   (c) is declined. The options were:
    * **(a)** A tcpdump image on UBI 10 micro (tcpdump and libpcap from UBI 10), run under
      Quadlet as non-root with `NET_RAW`, through the same image pipeline. Recommended if wanted
      now.
