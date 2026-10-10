@@ -43,6 +43,19 @@ def notes(names: Dict[str, Any], image: str, digest: str, sums_text: str,
             "sha256sum -c SHA256SUMS",
             "tar -xf wd2l-%s-image-oci.tar" % v,
             "cosign verify --key cosign.pub --insecure-ignore-tlog --local-image wd2l-oci",
+            "```", ""]
+    slug = repo_url.rstrip("/").split("github.com/", 1)[-1]
+    pin = ("--repo %s --signer-workflow %s/.github/workflows/attest.yml --source-ref refs/tags/%s "
+           "--deny-self-hosted-runners" % (slug, slug, tag))
+    out += ["## Build provenance (SLSA Build Level 3)", "",
+            "Every asset below and the image have GitHub build provenance, made only by "
+            "`attest.yml`. With the GitHub CLI:", "",
+            "```bash",
+            "gh attestation verify wd2l-%s-py3-none-any.whl %s" % (v, pin)]
+    if digest:
+        out.append("gh attestation verify oci://%s@%s %s --bundle-from-oci" % (image, digest, pin))
+    out += ["# offline: add --bundle wd2l-%s-attestations.jsonl --custom-trusted-root "
+            "trusted_root.jsonl (docs/releasing.md)" % v,
             "```", "",
             "## Image", ""]
     out.append("`%s@%s`" % (image, digest) if digest else "Image not published (dry run).")

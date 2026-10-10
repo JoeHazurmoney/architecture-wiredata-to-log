@@ -21,8 +21,10 @@ flowchart LR
   tests --> publish["publish.yml<br/>push, mirror the bases, sign, attest,<br/>verify-published"]
   image --> publish
   rpm --> publish
-  publish --> assets["assets, SHA256SUMS,<br/>signature, notes"]
-  assets --> draft["draft release"]
+  publish --> assets["assets<br/>the files, SHA256SUMS"]
+  assets --> attest["attest.yml<br/>GitHub provenance,<br/>keyless image signature"]
+  attest --> release["release<br/>signature, attestations, notes"]
+  release --> draft["draft release"]
   draft --> person["a person publishes it"]
 ```
 
@@ -60,12 +62,19 @@ proves:
   base record; and saves it all as `wd2l-<version>-image-oci.tar`.
 * **verify-published**: checks the pushed image and the saved copy as a consumer would, the
   second time with no network.
-* **release**: `SHA256SUMS` over every asset, signed with our key; the notes
-  ([`notes.py`](../packaging/release/notes.py)); the draft release.
+* **assets**: every release file and `SHA256SUMS` over them, made once for the two jobs
+  below.
+* **attest** ([`attest.yml`](../.github/workflows/attest.yml), tags only): GitHub build
+  provenance (SLSA Build Level 3) for every file and the image, and a keyless signature on
+  the image. It is the only workflow that gets an OIDC token, so the build steps can't reach
+  what signs the provenance ([ADR-0007](decisions/0007-slsa-build-l3.md)).
+* **release**: `SHA256SUMS` signed with our key; the notes
+  ([`notes.py`](../packaging/release/notes.py)); the draft release, with
+  `wd2l-<version>-attestations.jsonl`, the GitHub attestations for offline checks.
 
 **Dry runs.** `release.yml` also runs from `workflow_dispatch` (once it is on `main`) and from
-a branch push that changes it. A dry run builds and checks everything, but pushes, signs and
-releases nothing. The assets and notes are in the run's `release-assets` artifact.
+a branch push that changes it. A dry run builds and checks everything, but pushes, signs,
+attests and releases nothing. The assets and notes are in the run's `release-assets` artifact.
 
 ## Cutting a release
 
@@ -119,7 +128,8 @@ names as served.
   * **`v*` tags:** a ruleset; only the admin role can create, move or delete them.
   * **The `release` environment:** only `v*` tags may use it, and the owner approves each run
     before anything is signed. `publish.yml`'s `publish` job and `release.yml`'s `release` job
-    run in it, and the signing secrets live in it.
+    run in it, and the signing secrets live in it. `attest.yml` has no gate of its own. It runs
+    only after `publish` was approved, and only for a `v*` tag in this repository.
   * **Actions:** every action must be pinned to a commit SHA, and a PR from any outside
     contributor waits for approval before its workflows run (they never get secrets).
   * **Secret scanning** with push protection, and Dependabot alerts and security updates.
@@ -169,6 +179,48 @@ after the checks above pass, install with `--nogpgcheck`, with the security owne
 Then install as the deployment guides say: [log server](deployment/log-server.md),
 [receiver](deployment/receiver.md), or [containers](deployment/containers.md).
 
+## GitHub build provenance, offline
+
+Optional, on top of the checks above. It shows the files were built by this repository's
+`attest.yml`, from the release tag, on GitHub's hosted runners (SLSA Build Level 3,
+[ADR-0007](decisions/0007-slsa-build-l3.md)).
+
+**What to carry in, besides the release:**
+
+* the GitHub CLI (`gh`), from your approved software source (tested with `gh` 2.102.0 or
+  later);
+* Sigstore's trusted root, fetched on a connected machine when you fetch the release:
+  `gh attestation trusted-root > trusted_root.jsonl`. Sigstore rotates its keys from time to
+  time, so carry the one fetched with the release you're bringing in.
+
+After `sha256sum -c SHA256SUMS` passes, check every file it lists:
+
+```bash
+while read -r _ f; do
+  gh attestation verify "$f" --bundle wd2l-<version>-attestations.jsonl \
+    --custom-trusted-root trusted_root.jsonl \
+    --repo JoeHazurmoney/architecture-wiredata-to-log \
+    --signer-workflow JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/attest.yml \
+    --source-ref refs/tags/v<version> --deny-self-hosted-runners > /dev/null && echo "ok $f"
+done < SHA256SUMS
+```
+
+Online, drop `--bundle` and `--custom-trusted-root`. For the image in ghcr, use
+`gh attestation verify oci://ghcr.io/joehazurmoney/wd2l@sha256:<digest> --bundle-from-oci` with the
+same `--repo`, `--signer-workflow` and `--source-ref`.
+
+**The keyless signature on the image.** This is for cosign, and for admission controllers that
+read Sigstore bundles and trust Sigstore's public instance. Podman's own policy is still open
+([containers.md](deployment/containers.md)). Pin the repository as well as the identity: any
+repository can call a public reusable workflow.
+
+```bash
+cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
+  --certificate-identity https://github.com/JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/attest.yml@refs/tags/v<version> \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-github-workflow-repository JoeHazurmoney/architecture-wiredata-to-log
+```
+
 ## Seeing the scan results and attestations
 
 * **Security > Code scanning.** Every Grype and Trivy finding for the image built from
@@ -179,6 +231,9 @@ Then install as the deployment guides say: [log server](deployment/log-server.md
   as `wd2l-<version>-vuln-summary.md`.
 * **A run's artifacts.** `vuln` holds Grype's and Trivy's full JSON and SARIF; `sbom` the SBOMs;
   `base-evidence` the base images' checks. GitHub deletes artifacts after the retention period.
+* **GitHub's attestations page:**
+  `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations` lists every
+  attestation `attest.yml` made, with its subjects.
 * **The image's signed attestations.** The provenance, the SBOM, the scan summary and the base
   record:
 

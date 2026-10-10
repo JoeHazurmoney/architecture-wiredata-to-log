@@ -1,0 +1,80 @@
+name: attest
+# SLSA Build Level 3 provenance for a release (docs/decisions/0007-slsa-build-l3.md). This is
+# the only workflow that gets an OIDC token (tests/test_workflow_policy.py): the jobs that build
+# never hold one, so their steps can't reach what signs the provenance. Consumers pin it:
+#   gh attestation verify FILE --repo JoeHazurmoney/architecture-wiredata-to-log \
+#     --signer-workflow JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/attest.yml
+# release.yml calls it for a v* tag, after publish pushed the image and assets made SHA256SUMS.
+# The job checks the repository and the tag itself: any repository can call a public reusable
+# workflow, and checkout would then fetch the caller's code, next to the OIDC token.
+on:
+  workflow_call:
+    inputs:
+      image-digest:
+        description: the image publish.yml pushed (sha256:...)
+        type: string
+        required: true
+defaults:
+  run:
+    shell: bash
+permissions:
+  contents: read
+jobs:
+  attest:
+    if: ${{ github.repository == 'JoeHazurmoney/architecture-wiredata-to-log' && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      packages: write
+    env:
+      IMAGE: ghcr.io/joehazurmoney/wd2l
+      TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ACTOR: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: assets
+          path: assets
+      - name: Provenance for every release file (each line of SHA256SUMS is a subject)
+        id: files
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: assets/SHA256SUMS
+      - name: Log in to ghcr.io (actions/attest uses Docker's login)
+        run: echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+      - name: Provenance for the image, pushed next to it in ghcr
+        id: image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/joehazurmoney/wd2l
+          subject-digest: ${{ inputs.image-digest }}
+          push-to-registry: true
+          # Storage records are for organization-owned repositories only.
+          create-storage-record: false
+      - name: Keyless cosign signature on the image (Sigstore's public instance), checked at once
+        env:
+          TOOL_ENV: ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN
+          D: ${{ inputs.image-digest }}
+        run: |
+          echo "$TOKEN" | podman login ghcr.io -u "$ACTOR" --password-stdin
+          packaging/ci/tool cosign sign --yes "$IMAGE@$D"
+          packaging/ci/tool cosign verify "$IMAGE@$D" \
+            --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/attest.yml@$GITHUB_REF" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-github-workflow-repository "$GITHUB_REPOSITORY" > /dev/null
+          echo "keyless signature: ok"
+      - name: The bundles, one per line, for offline verification
+        env:
+          FILES_BUNDLE: ${{ steps.files.outputs.bundle-path }}
+          IMAGE_BUNDLE: ${{ steps.image.outputs.bundle-path }}
+        run: |
+          mkdir attestations
+          jq -c . "$FILES_BUNDLE" "$IMAGE_BUNDLE" > attestations/attestations.jsonl
+          wc -l attestations/attestations.jsonl
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: attestations
+          path: attestations/

@@ -17,6 +17,8 @@ Part of the [SLSA Build L3 plan](README.md). Spec requirements 1–3, 6 (the bun
     `attestations`, which holds `attestations.jsonl` (one Sigstore bundle per line).
   * `tests/test_workflow_policy.py`: `jobs(text) -> Dict[str, str]`, which Task 1.2 and
     Phase 2 reuse.
+  * The `attest` job runs only when `github.repository` is this repository and `github.ref`
+    is a `v*` tag. In a reusable workflow, both are the caller's.
 
 - [ ] **Step 1: Write the tests**
 
@@ -24,8 +26,8 @@ Part of the [SLSA Build L3 plan](README.md). Spec requirements 1–3, 6 (the bun
 """Policy over the workflow files (docs/decisions/0007-slsa-build-l3.md):
 
 * only attest.yml may get an OIDC token, so build steps can't reach what signs the provenance;
-* no cache shared between runs on the release path;
-* attestation runs only for a v* tag."""
+* nothing shared between runs on the release path, and only GitHub-hosted runners;
+* attestation runs only for a v* tag, and only in this repository."""
 
 import glob
 import os
@@ -35,6 +37,9 @@ from typing import Dict
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 WORKFLOWS = os.path.join(REPO, ".github", "workflows")
 RELEASE_PATH = ("tests.yml", "image.yml", "rpm.yml", "publish.yml", "release.yml", "attest.yml")
+GITHUB_HOSTED = ("ubuntu-24.04", "ubuntu-latest")
+THIS_REPO_AND_A_TAG = ("if: ${{ github.repository == 'JoeHazurmoney/architecture-wiredata-to-log'"
+                       " && startsWith(github.ref, 'refs/tags/v') }}")
 
 
 def read(name: str) -> str:
@@ -65,6 +70,7 @@ def test_only_attest_yml_can_get_an_oidc_token():
         with open(path, encoding="utf-8") as f:
             text = f.read()
         assert "id-token" not in text.split("\njobs:\n", 1)[0], name
+        assert "write-all" not in text, name      # grants id-token: write without naming it
         if name == "attest.yml":
             continue
         for job, body in jobs(text).items():
@@ -73,9 +79,26 @@ def test_only_attest_yml_can_get_an_oidc_token():
             assert "id-token: write" not in body, (name, job)
 
 
-def test_no_cache_shared_between_runs_on_the_release_path():
+def test_nothing_is_shared_between_runs_on_the_release_path():
     for name in RELEASE_PATH:
-        assert "actions/cache" not in read(name), name
+        text = read(name)
+        assert "actions/cache" not in text and "type=gha" not in text, name
+        assert not re.search(r"^\s+cache(-dependency-path)?:", text, re.M), name   # setup-python
+        assert not re.search(r"^\s+run-id:", text, re.M), name    # another run's artifacts
+
+
+def test_release_path_runs_on_github_hosted_runners():
+    for name in RELEASE_PATH:
+        for label in re.findall(r"^\s+runs-on:\s*(.+?)\s*$", read(name), re.M):
+            assert label in GITHUB_HOSTED, (name, label)
+
+
+def test_attest_yml_runs_only_for_this_repo_and_a_tag():
+    # Any repository can call a public reusable workflow, and checkout then fetches the
+    # caller's code: the job must not start, so no OIDC token exists for it.
+    att = jobs(read("attest.yml"))
+    assert list(att) == ["attest"]
+    assert THIS_REPO_AND_A_TAG in att["attest"]
 
 
 def test_attest_reads_the_checksums_the_release_lists():
@@ -89,9 +112,14 @@ def test_attest_reads_the_checksums_the_release_lists():
 - [ ] **Step 2: Run them**
 
 Run: `T -q tests/test_workflow_policy.py`
-Expected: `test_attest_reads_the_checksums_the_release_lists` FAILS (`FileNotFoundError` for
-`attest.yml`). The other two already pass: they pin today's state, since no workflow asks for
-`id-token` and none uses a cache.
+Expected: four tests FAIL with `FileNotFoundError` for `attest.yml`:
+* `test_nothing_is_shared…` and `test_release_path_runs_on_github_hosted_runners` (both read
+  every file in `RELEASE_PATH`);
+* `test_attest_yml_runs_only_for_this_repo_and_a_tag`;
+* `test_attest_reads_the_checksums_the_release_lists`.
+
+`test_only_attest_yml_can_get_an_oidc_token` already passes: it pins today's state, where no
+workflow asks for `id-token`.
 
 - [ ] **Step 3: Write `.github/workflows/attest.yml`**
 
@@ -103,6 +131,8 @@ name: attest
 #   gh attestation verify FILE --repo JoeHazurmoney/architecture-wiredata-to-log \
 #     --signer-workflow JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/attest.yml
 # release.yml calls it for a v* tag, after publish pushed the image and assets made SHA256SUMS.
+# The job checks the repository and the tag itself: any repository can call a public reusable
+# workflow, and checkout would then fetch the caller's code, next to the OIDC token.
 on:
   workflow_call:
     inputs:
@@ -117,6 +147,7 @@ permissions:
   contents: read
 jobs:
   attest:
+    if: ${{ github.repository == 'JoeHazurmoney/architecture-wiredata-to-log' && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read

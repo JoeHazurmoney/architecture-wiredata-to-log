@@ -19,9 +19,12 @@ existing cosign key signing, and all of it can be verified offline.
   * `attest` calls `attest.yml` on tags only;
   * `release` key-signs `SHA256SUMS`, writes the notes and drafts the release, now with
     `wd2l-<version>-attestations.jsonl` attached.
-* **Policy is tested.** A new `tests/test_workflow_policy.py` reads the workflow files and fails
-  if any other job asks for `id-token: write`, if a cache appears on the release path, or if
-  attestation could run off a tag.
+* **Policy is tested.** A new `tests/test_workflow_policy.py` reads the workflow files. It fails
+  if:
+  * any other job asks for `id-token: write`;
+  * anything is shared between runs on the release path, or a job there runs on a runner that
+    isn't GitHub-hosted;
+  * attestation could run off a tag, or for another repository.
 
 **Tech Stack:**
 
@@ -55,9 +58,19 @@ check it depends on. Phases 1 to 3 merge as one PR. Phase 4 runs on `main` after
 * **An enclave can verify a release with `cosign.pub` and no network,** as `docs/releasing.md`
   says today.
 * **Only `attest.yml` may hold `id-token: write`.** A caller job may grant it only to a job
-  that `uses: ./.github/workflows/attest.yml`.
-* **No `actions/cache` in `tests.yml`, `image.yml`, `rpm.yml`, `publish.yml`, `release.yml` or
-  `attest.yml`.**
+  that `uses: ./.github/workflows/attest.yml`. No workflow may use `write-all`.
+* **`attest.yml` runs only for this repository and a `v*` tag.** Its job's own `if:` says so.
+  The repository is public, so any other repository can call `attest.yml` at one of our tags.
+  In that call, `actions/checkout` fetches the *caller's* code, which would then run next to
+  the OIDC token and get a certificate naming our `attest.yml@refs/tags/v…`.
+* **Keyless verification pins the source repository:**
+  `--certificate-github-workflow-repository JoeHazurmoney/architecture-wiredata-to-log`, on
+  top of `--certificate-identity`. `gh attestation verify` already pins it, through `--repo`.
+* **Nothing shared between runs in `tests.yml`, `image.yml`, `rpm.yml`, `publish.yml`,
+  `release.yml` or `attest.yml`:**
+  * no `actions/cache`, no `cache:` input (setup-python) and no `type=gha`;
+  * no `run-id:` on download-artifact, so no artifacts from another run;
+  * only GitHub-hosted runners (`ubuntu-24.04`, `ubuntu-latest`).
 * **Attestation and keyless signing run only when `startsWith(github.ref, 'refs/tags/v')`.**
   `release.yml` already refuses a tag that isn't on `main`.
 * **Every `uses:` is pinned to a full commit SHA**, with the version in a comment. The repository
@@ -78,7 +91,8 @@ check it depends on. Phases 1 to 3 merge as one PR. Phase 4 runs on `main` after
 ## Review focus
 
 1. **A dry run, on `main` or a branch, must not ask for an OIDC token or an approval, and must
-   not attest.** Test: `test_attestation_runs_only_for_a_tag` (Task 1.1).
+   not attest.** Tests: `test_attestation_runs_only_for_a_tag` (Task 1.2) and
+   `test_attest_yml_runs_only_for_this_repo_and_a_tag` (Task 1.1).
 2. **A release built from a branch, or rebuilt from another ref, must not verify as the tag.**
    The documented commands pin `--source-ref refs/tags/v<version>`. Test:
    `test_notes_show_how_to_verify_the_github_attestations` (Task 3.1).
@@ -87,9 +101,13 @@ check it depends on. Phases 1 to 3 merge as one PR. Phase 4 runs on `main` after
    trusted root fetched with that release, and how to refresh it (Task 3.2).
 4. **The attestations bundle must cover what is downloaded.** Its subjects come from
    `SHA256SUMS`, after the `~` → `.` rename. Test: `test_attest_reads_the_checksums_the_release_lists`
-   (Task 1.2).
+   (Task 1.1).
 5. **A failure after `publish` must leave no half-made release.** If `attest` fails, `release`
-   must not draft. Test: `test_release_waits_for_attest_on_a_tag` (Task 1.3).
+   must not draft. Test: `test_release_waits_for_attest_on_a_tag` (Task 1.2).
+6. **Another repository calling `attest.yml`** must get no OIDC token, and a signature made
+   that way must not verify. Tests: `test_attest_yml_runs_only_for_this_repo_and_a_tag`
+   (Task 1.1), `test_attest_signs_the_image_keylessly_and_checks_the_identity` (Task 2.1),
+   `test_releasing_md_pins_the_signer_workflow_and_the_tag` (Task 3.2).
 
 ## File map
 
@@ -123,3 +141,11 @@ and the rc.
 
 | Task | Spec | As built | Why |
 |---|---|---|---|
+| Review (2026-10-10) | Req. 2, 3, 7, 8 | Before Phase 0, the plan was checked against the code and amended. `attest.yml`'s job checks its own repository and tag. Keyless `cosign verify` pins `--certificate-github-workflow-repository`. The policy tests also cover `write-all`, `cache:`, `type=gha`, `run-id:` and GitHub-hosted runners. Phase 0's `verify` logs in to ghcr for P0-3 and runs every check even when one fails. The docs' offline loop reads `SHA256SUMS`. Task references are fixed | A public reusable workflow can be called from any repository, and it then checks out the caller's code next to the OIDC token. Req. 3 asks for a runner test. The globs missed the SBOMs and records that req. 1 covers |
+| Review (2026-10-10) | Req. 4 | The docs present the keyless signature as being for cosign and for admission controllers that read Sigstore bundles. They don't promise Podman | `containers.md`: it isn't confirmed that Podman's `sigstoreSigned` reads cosign 3 referrer bundles, and the keyless signature is stored the same way |
+| P0-1 | Req. 1, 2, 8 | Run [38064386319](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/actions/runs/38064386319): `actions/attest@v4.2.2` in a reusable workflow, in this user-owned repo, made one attestation for both lines of `SHA256SUMS` ("Attestation created for 2 subjects"). It needed no `artifact-metadata: write`. `--signer-workflow …/slsa-phase0-attest.yml` passes, and the caller's `slsa-phase0.yml` is refused. The certificate's SAN and Build Signer URI are `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/slsa-phase0-attest.yml@refs/heads/slsa-phase0`: the reusable workflow, at the caller's ref. Source Repository URI is this repo, `runnerEnvironment` is `github-hosted`. No fallback | The design holds: `attest.yml@refs/tags/v<version>` is the identity Phases 1–3 pin |
+| P0-2 | Req. 6 | Same run: `gh attestation verify --bundle … --custom-trusted-root …` passes under `sudo unshare --net` with `GH_TOKEN` empty: no network, no login. gh 2.102.0. No fallback | The offline path documented in Task 3.2 works as written |
+| P0-3 | Req. 1 | Same run: with `docker login` and `create-storage-record: false`, the image attestation is pushed to ghcr as an OCI referrer (`https://slsa.dev/provenance/v1`, in `cosign tree`), and `gh attestation verify oci://… --bundle-from-oci` passes. No fallback | — |
+| P0-4 | Req. 4, 8 | Same run: a keyless `cosign sign --yes` through `packaging/ci/tool`, with `TOOL_ENV` set to the two `ACTIONS_ID_TOKEN_REQUEST_*` variables, works. cosign v3.1.3. `cosign verify --certificate-identity https://github.com/<repo>/.github/workflows/slsa-phase0-attest.yml@refs/heads/slsa-phase0 --certificate-oidc-issuer … --certificate-github-workflow-repository <repo>` passes. With `someone-else/…` it fails ("expected GithubWorkflowRepository to be …"). The key signature on the same image still verifies. `cosign tree` lists both signatures and the provenance as referrers. The bundle file has 2 lines. No fallback | The repository pin is enforced, so it goes in every documented keyless check |
+| P0-5 | Req. 2 | Same run: with `sha_pinning_required` on, `actions/attest` (a `node24` action) runs | — |
+| P0 cleanup | — | Branch `slsa-phase0` and the ghcr package `wd2l-slsa-phase0` deleted (2026-10-10) | Throwaway |

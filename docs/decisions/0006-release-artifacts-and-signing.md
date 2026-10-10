@@ -150,7 +150,6 @@ Rejected.
   protect `main` (PRs with green CI, no bypass) and `v*` tags (admin only); actions must be
   pinned by SHA; secret scanning, push protection and Dependabot security updates are on.
 * **Still to do:** immutable releases (a setting); GitHub artifact attestations and keyless
-  signatures alongside the key, which is its own plan:
-  [SLSA Build Level 3](../superpowers/plans/2026-10-09-slsa-build-l3/README.md).
+  signatures alongside the key: [ADR-0007](0007-slsa-build-l3.md).
 * **Unchanged:** the key pair and offline verification. Enclaves still verify with
   `cosign.pub` and no network.
