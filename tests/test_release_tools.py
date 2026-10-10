@@ -122,3 +122,10 @@ def test_only_a_tag_on_main_is_released_and_its_name_never_runs_as_shell():
     assert 'git merge-base --is-ancestor "$GITHUB_SHA" origin/main' in version
     assert "TAG: ${{ github.ref_name }}" in version
     assert "${{ github.ref_name }}\"" not in wf      # never inside a run: script
+
+
+def test_cosign_pub_is_a_public_key_and_never_a_private_one():
+    with open(os.path.join(REPO, "cosign.pub")) as f:
+        text = f.read()
+    assert text.startswith("-----BEGIN PUBLIC KEY-----") and "PRIVATE" not in text
+    assert not os.path.exists(os.path.join(REPO, "cosign.key"))
