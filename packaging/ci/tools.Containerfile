@@ -9,5 +9,6 @@ FROM docker.io/aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52
 FROM docker.io/hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d AS hadolint
 FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:5858f9ace07316e3b12caab62f6c2481a5030bb6bafdca5a9ea324c321ef36df AS ubi9
 FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:27e14f4987d7abe56664d7e1b1dddcd0226d4ca593da5726f0f65697a17d0fee AS ubi10
-# A real chronyd for packaging/ci/chrony-smoke.sh (UBI has no chrony).
-FROM registry.fedoraproject.org/fedora:42@sha256:e78cd1a688cd079c23864f289a89a49a3f4ad66d817864e325e1d058310ee95c AS fedora
+# A real chronyd for packaging/ci/chrony-smoke.sh (UBI has no chrony). From quay.io, the same
+# image as registry.fedoraproject.org, which Dependabot can't read.
+FROM quay.io/fedora/fedora:42@sha256:e78cd1a688cd079c23864f289a89a49a3f4ad66d817864e325e1d058310ee95c AS fedora
