@@ -1,6 +1,6 @@
 # ADR-0007: SLSA Build Level 3 provenance, alongside the key
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-10, proven on 0.3.0rc3)
 **Date:** 2026-10-10
 **Deciders:** System owner. The security owner.
 
@@ -84,4 +84,10 @@ Stays as the offline base, but it tops out at about L2: our workflow signs its o
 
 ## Action items
 
-1. [ ] The rc proves it end to end (the plan's Phase 4), then this ADR becomes Accepted.
+1. [x] The rc proves it end to end (the plan's Phase 4), then this ADR becomes Accepted.
+   Done on 0.3.0rc3 ([run 38072299782](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/actions/runs/38072299782)):
+   * every file in `SHA256SUMS` and the image verify with the pinned `gh` commands, online and
+     with no network;
+   * the keyless signature verifies with the repository pin;
+   * the key path is unchanged;
+   * a branch ref, or another repository, is refused.

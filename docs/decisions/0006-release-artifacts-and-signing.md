@@ -149,7 +149,8 @@ Rejected.
   replace the repository's; rulesets
   protect `main` (PRs with green CI, no bypass) and `v*` tags (admin only); actions must be
   pinned by SHA; secret scanning, push protection and Dependabot security updates are on.
-* **Still to do:** immutable releases (a setting); GitHub artifact attestations and keyless
-  signatures alongside the key: [ADR-0007](0007-slsa-build-l3.md).
+* **Still to do:** immutable releases (a setting).
+* **GitHub artifact attestations and keyless signatures** alongside the key: done,
+  [ADR-0007](0007-slsa-build-l3.md) (from 0.3.0rc3).
 * **Unchanged:** the key pair and offline verification. Enclaves still verify with
   `cosign.pub` and no network.
