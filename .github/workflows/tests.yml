@@ -2,7 +2,22 @@ name: tests
 
 on:
   push:
+    # Branches only: a version tag runs release.yml, which calls this workflow itself.
+    branches: ["**"]
   pull_request:
+  workflow_call:
+    inputs:
+      image:
+        description: also run the image pipeline and the RPMs (release.yml runs them itself)
+        type: boolean
+        default: true
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
 
 jobs:
   pytest:
@@ -12,20 +27,20 @@ jobs:
         # 3.9 is the oldest version the package supports (pyproject.toml).
         python-version: ["3.9", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install pytest
       - run: python -m pytest -q
       - name: Byte-compile everything (catches syntax the oldest Python can't read)
-        run: python -m compileall -q wd2l lab tests
+        run: python -m compileall -q wd2l lab tests packaging
 
   lab:
     # The full one-way path in network namespaces, including loss, outage and crash runs.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update -q && sudo apt-get install -y -q iproute2 nftables tcpdump
       - run: sudo lab/run-lab.sh
       - run: sudo lab/run-lab.sh --loss 1
@@ -41,5 +56,27 @@ jobs:
       - run: sudo lab/run-lab.sh --fault receiver-slow
       - run: sudo lab/run-lab.sh --fault siem-down
       - run: sudo lab/run-lab.sh --fault clock
+      - run: sudo lab/run-lab.sh --chrony-udp
+      - name: --chrony-addr against a real chronyd, not the lab's stand-in
+        run: podman run --rm -v "$PWD:/src:ro" "$(packaging/ci/tool --ref fedora)" bash /src/packaging/ci/chrony-smoke.sh
+      - name: The key-generation command in docs/releasing.md works (a throwaway key)
+        run: |
+          COSIGN_PASSWORD=throwaway TOOL_ENV=COSIGN_PASSWORD \
+            packaging/ci/tool cosign generate-key-pair --output-key-prefix ci-throwaway
+          test -s ci-throwaway.key && test -s ci-throwaway.pub && rm ci-throwaway.key ci-throwaway.pub
+      - run: sudo lab/run-lab.sh --fault clock --chrony-udp
       - run: sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
       - run: sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log
+
+  image:
+    # The container image's checks (.github/workflows/image.yml); nothing is published.
+    # format(): on push and PR there are no inputs, and in expressions null == false.
+    if: ${{ format('{0}', inputs.image) != 'false' }}
+    uses: ./.github/workflows/image.yml
+
+  rpm:
+    # The RPMs, from the dist artifact the image job's build made. release.yml calls tests.yml
+    # with image: false and calls rpm.yml itself.
+    if: ${{ format('{0}', inputs.image) != 'false' }}
+    needs: [image]
+    uses: ./.github/workflows/rpm.yml

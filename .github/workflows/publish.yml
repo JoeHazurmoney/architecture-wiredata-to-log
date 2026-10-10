@@ -1,0 +1,118 @@
+name: publish
+# Pushes, signs and attests the image that image.yml built in the same run, mirrors its base
+# images with their records and sources, and verifies it all as a consumer would, offline too
+# (docs/decisions/0006-release-artifacts-and-signing.md). Called by release.yml after image.yml;
+# never on push or PR, so they never hold package-write permission.
+on:
+  workflow_call:
+    secrets:
+      COSIGN_PRIVATE_KEY:
+        required: true
+      COSIGN_PASSWORD:
+        required: true
+    outputs:
+      digest:
+        value: ${{ jobs.publish.outputs.digest }}
+defaults:
+  run:
+    shell: bash
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    env:
+      IMAGE: ghcr.io/joehazurmoney/wd2l
+      BASE_MIRROR: ghcr.io/joehazurmoney/wd2l-base/python
+      ATT: https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{dist,image,build-info,base-evidence,sbom,vuln}"
+      - id: v
+        run: python3 packaging/release/versions.py --github-output "$GITHUB_OUTPUT"
+      - name: Log in to ghcr.io
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - id: push
+        name: Push, with each tag
+        run: |
+          IMG=$(podman load -q -i image/image.oci.tar | awk '{print $NF}')
+          for t in ${{ steps.v.outputs.image_tags }}; do
+            podman push -q --digestfile digest.txt "$IMG" "docker://$IMAGE:$t"
+          done
+          echo "digest=$(cat digest.txt)" >> "$GITHUB_OUTPUT"
+      - name: Mirror the base images, their records and the runtime base's sources
+        run: |
+          O() { packaging/ci/tool oras copy --from-registry-config /auth/config.json --to-registry-config /auth/config.json "$@"; }
+          f=base-evidence/froms.json; last=$(( $(jq length $f) - 1 ))
+          for i in $(seq 0 $last); do
+            name=$(jq -r ".[$i].name" $f); tag=$(jq -r ".[$i].tag" $f); digest=$(jq -r ".[$i].digest" $f)
+            quay="quay.io/hummingbird/${name#registry.access.redhat.com/hi/}"
+            O -r "$name@$digest" "$BASE_MIRROR:$tag-${digest:7:12}"
+            amd=$(jq -r '.manifests[] | select(.platform.architecture == "amd64") | .digest' "base-evidence/index-$i.json")
+            for d in "$digest" "$amd"; do for s in att sbom sig; do
+              O "$quay:sha256-${d#sha256:}.$s" "$BASE_MIRROR:sha256-${d#sha256:}.$s"
+            done; done
+          done
+          name=$(jq -r ".[$last].name" $f)
+          rel=$(jq -r '.config.Labels.release' "base-evidence/config-$last.json")
+          O "$name:$rel-source" "$BASE_MIRROR:$rel-source"
+      - name: Sign and attest (our key, no public log)
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          TOOL_ENV: COSIGN_PRIVATE_KEY COSIGN_PASSWORD
+        run: |
+          D=${{ steps.push.outputs.digest }}
+          python3 packaging/release/provenance.py --wheel dist/*.whl --froms base-evidence/froms.json \
+            --mirror "$BASE_MIRROR" --started "$(jq -r .started build-info/build-info.json)" > provenance.json
+          S() { packaging/ci/tool cosign "$@" --key env://COSIGN_PRIVATE_KEY \
+                  --signing-config /work/packaging/release/signing-config.json --yes; }
+          S sign "$IMAGE@$D"
+          S attest --type slsaprovenance1 --predicate /work/provenance.json "$IMAGE@$D"
+          S attest --type spdxjson --predicate /work/sbom/wd2l.spdx.json "$IMAGE@$D"
+          S attest --type "$ATT/vuln-scan/v1" --predicate /work/vuln/vuln-predicate.json "$IMAGE@$D"
+          S attest --type "$ATT/base-image-record/v1" --predicate /work/base-evidence/base-image-record.json "$IMAGE@$D"
+      - name: Save the image with its signature and attestations, for offline enclaves
+        run: |
+          packaging/ci/tool cosign save --dir /work/wd2l-oci "$IMAGE@${{ steps.push.outputs.digest }}"
+          tar -cf "wd2l-${{ steps.v.outputs.pep440 }}-image-oci.tar" wd2l-oci
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-release
+          path: |
+            wd2l-*-image-oci.tar
+            provenance.json
+
+  verify-published:
+    needs: [publish]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    env:
+      I: ghcr.io/joehazurmoney/wd2l@${{ needs.publish.outputs.digest }}
+      ATT: https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-release
+      - run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Verify as a consumer would, online and then with no network
+        run: |
+          V() { packaging/ci/tool cosign "$@" --key /work/cosign.pub --insecure-ignore-tlog > /dev/null; }
+          TYPES="slsaprovenance1 spdxjson $ATT/vuln-scan/v1 $ATT/base-image-record/v1"
+          V verify "$I" && echo "signature: ok"
+          for t in $TYPES; do V verify-attestation --type "$t" "$I" && echo "attestation $t: ok"; done
+          packaging/ci/tool cosign tree "$I"
+          tar -xf wd2l-*-image-oci.tar
+          export TOOL_NETWORK=none
+          V verify --local-image /work/wd2l-oci && echo "offline signature: ok"
+          for t in $TYPES; do V verify-attestation --type "$t" --local-image /work/wd2l-oci && echo "offline $t: ok"; done

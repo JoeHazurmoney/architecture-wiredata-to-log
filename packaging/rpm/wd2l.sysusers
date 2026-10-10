@@ -1,0 +1,4 @@
+# wd2l's service user, and the group that may read the audit files. packaging/rpm/wd2l.spec
+# creates both in %pre (also over a manual install); this file tells systemd-sysusers too.
+u wd2l - "wd2l one-way log transfer" /var/lib/wd2l /sbin/nologin
+g wd2l-audit -

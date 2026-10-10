@@ -1,0 +1,4 @@
+# wd2l state (both hosts) and audit files (both hosts; setgid so files get wd2l-audit).
+# Owned by the wd2l package too (packaging/rpm/wd2l.spec %files); this recreates them if removed.
+d /var/lib/wd2l 0750 wd2l wd2l -
+d /var/log/wd2l 2750 wd2l wd2l-audit -

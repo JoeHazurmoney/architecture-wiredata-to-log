@@ -199,3 +199,171 @@ def test_archive_status_all_none_when_all_files_pruned(tmp_path, monkeypatch):
     result = hostinfo.archive_status(str(tmp_path), now=3000.0)
     assert result == {
         "archive_file": None, "archive_age_s": None, "archive_bytes": None}
+
+
+import socket
+
+from lab import fake_chronyd
+
+from helpers import chronyd_server
+
+FLOATS = [(0x00000000, 0.0), (0x04800000, 1.0), (0x03000000, -1.0), (0x02800000, 0.5),
+          (0xF0800000, 2.0 ** -10)]
+
+
+def seq_of(request):
+    return int.from_bytes(request[8:12], "big")
+
+
+def test_chrony_float_known_values():
+    for raw, value in FLOATS:
+        assert hostinfo.chrony_float(raw) == value
+        assert fake_chronyd.float_to_chrony(value) == raw
+
+
+@pytest.mark.parametrize("v", [0.000012345, -0.000001, 0.0137, -12.345, 1024.5, 3.0e-9])
+def test_chrony_float_round_trips(v):
+    assert hostinfo.chrony_float(fake_chronyd.float_to_chrony(v)) == pytest.approx(v, rel=1e-7)
+
+
+def test_request_is_padded_to_the_reply_size():
+    # chronyd sends the tracking reply up to, not including, its EOR marker: 28 + 76 bytes.
+    r = hostinfo.chrony_request(0x01020304)
+    assert len(r) == hostinfo.CHRONY_REPLY_SIZE == 104
+    assert r[:4] == bytes([6, 1, 0, 0]) and r[4:6] == (33).to_bytes(2, "big")
+    assert r[8:12] == bytes([1, 2, 3, 4]) and r[20:] == bytes(84)
+
+
+# A real reply, from chronyd 4.8 (Fedora 42) with `local stratum 8`, to a request with sequence
+# 12345, and `chronyc -c tracking` from the same daemon at the same moment.
+REAL_REPLY = bytes.fromhex(
+    "060200000021000500000000000000000000303900000000000000007f7f0101000000000000000000000000"
+    "000000000000000000080000000000006ac7db27136c8d310000000000000000000000000000000000000000"
+    "00000000000000000000000000000000")
+REAL_CHRONYC = ("7F7F0101,,8,1791482663.325881137,0.000000000,0.000000000,0.000000000,0.000,0.000,"
+                "0.000,0.000000000,0.000000000,0.0,Normal")
+
+
+def test_a_real_chronyd_reply_reads_as_chronyc_does():
+    assert len(REAL_REPLY) == 104
+    want = {"stratum": 8, "offset_ms": 0.0, "synced": True, "source": "7F7F0101"}
+    assert hostinfo.parse_chronyc_tracking(REAL_CHRONYC) == want
+    assert hostinfo.parse_chrony_tracking(REAL_REPLY, 12345) == want
+
+
+def test_the_fake_chronyd_sends_what_a_real_one_does():
+    assert len(fake_chronyd.tracking_reply(12345)) == len(REAL_REPLY)
+
+
+def test_query_synced_reference_clock():
+    with chronyd_server(lambda req: [fake_chronyd.answer(req)]) as addr:
+        assert hostinfo.chrony_tracking(addr) == {
+            "stratum": 3, "offset_ms": 0.004, "synced": True, "source": "GPS"}
+
+
+def test_query_unsynced():
+    with chronyd_server(lambda req: [fake_chronyd.answer(req, unsynced=True)]) as addr:
+        q = hostinfo.chrony_tracking(addr)
+    assert q == {"stratum": 0, "offset_ms": 0.0, "synced": False, "source": "00000000"}
+
+
+def test_query_ntp_source_over_ipv4():
+    ip = socket.inet_aton("162.159.200.123")
+    with chronyd_server(lambda req: [fake_chronyd.tracking_reply(
+            seq_of(req), ref_id=0xA29FC87B, family=1, addr=ip, correction=0.000012345)]) as addr:
+        assert hostinfo.chrony_tracking(addr) == {
+            "stratum": 3, "offset_ms": 0.012, "synced": True, "source": "162.159.200.123"}
+
+
+def test_stale_reply_is_skipped():
+    def replies(req):
+        return [fake_chronyd.tracking_reply(seq_of(req) ^ 1, stratum=9), fake_chronyd.answer(req)]
+    with chronyd_server(replies) as addr:
+        assert hostinfo.chrony_tracking(addr)["stratum"] == 3
+
+
+def test_refused_request_is_unavailable_with_the_status():
+    with chronyd_server(lambda req: [fake_chronyd.tracking_reply(seq_of(req), status=2)]) as addr:
+        q = hostinfo.TimeQuality(query=lambda: hostinfo.chrony_tracking(addr, 1.0)).read()
+    assert q["synced"] is None and q["source"] == "unavailable" and "status 2" in q["error"]
+
+
+def test_garbage_reply_is_unavailable():
+    with chronyd_server(lambda req: [b"hello"]) as addr:
+        q = hostinfo.TimeQuality(query=lambda: hostinfo.chrony_tracking(addr, 1.0)).read()
+    assert q["source"] == "unavailable" and "not a chrony reply" in q["error"]
+
+
+def test_short_tracking_reply_is_unavailable():
+    with chronyd_server(lambda req: [fake_chronyd.answer(req)[:60]]) as addr:
+        q = hostinfo.TimeQuality(query=lambda: hostinfo.chrony_tracking(addr, 1.0)).read()
+    assert q["source"] == "unavailable" and "short" in q["error"]
+
+
+def test_no_answer_times_out():
+    with chronyd_server(lambda req: []) as addr:
+        t0 = time.monotonic()
+        q = hostinfo.TimeQuality(query=lambda: hostinfo.chrony_tracking(addr, 0.3)).read()
+    assert q["source"] == "unavailable" and time.monotonic() - t0 < 2
+
+
+def test_nothing_listening_is_unavailable_quickly():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(("127.0.0.1", 0))
+    addr = s.getsockname()
+    s.close()
+    t0 = time.monotonic()
+    q = hostinfo.TimeQuality(query=lambda: hostinfo.chrony_tracking(addr, 2.0)).read()
+    assert q["source"] == "unavailable" and time.monotonic() - t0 < 1.0
+
+
+@pytest.mark.parametrize("s, want", [
+    ("127.0.0.1", ("127.0.0.1", 323)), ("127.0.0.1:1323", ("127.0.0.1", 1323)),
+    ("localhost:323", ("localhost", 323)), ("[::1]:323", ("::1", 323)), ("[::1]", ("::1", 323)),
+    ("::1", ("::1", 323))])
+def test_chrony_hostport(s, want):
+    assert hostinfo.chrony_hostport(s) == want
+    assert hostinfo.chrony_address(s) == s
+
+
+@pytest.mark.parametrize("s", ["", ":323", "host:", "host:0", "host:70000", "host:abc", "[::1",
+                               "[::1]x"])
+def test_chrony_hostport_rejects(s):
+    with pytest.raises(ValueError):
+        hostinfo.chrony_hostport(s)
+
+
+def test_fake_chronyd_ignores_short_requests_like_chronyd(tmp_path):
+    assert fake_chronyd.answer(hostinfo.chrony_request(1)[:20]) is None
+    assert fake_chronyd.answer(b"junk") is None
+    flag = tmp_path / "clock-bad"
+    req = hostinfo.chrony_request(7)
+    assert hostinfo.parse_chrony_tracking(fake_chronyd.respond(req, str(flag)), 7)["synced"]
+    flag.write_text("")
+    assert not hostinfo.parse_chrony_tracking(fake_chronyd.respond(req, str(flag)), 7)["synced"]
+
+
+def test_time_quality_uses_udp_when_given_an_address():
+    with chronyd_server(lambda req: [fake_chronyd.answer(req)]) as (host, port):
+        tq = hostinfo.time_quality("/nonexistent/chronyc", "%s:%d" % (host, port))
+        assert tq.read()["source"] == "GPS"
+
+
+def test_time_quality_runs_chronyc_without_an_address(tmp_path):
+    script = tmp_path / "chronyc.py"
+    script.write_text("print(%r)\n" % SYNCED)
+    tq = hostinfo.time_quality("%s %s" % (sys.executable, script), None, every=5.0)
+    assert tq.cmd[-2:] == ["-c", "tracking"] and tq.every == 5.0
+    assert tq.read()["source"] == "162.159.200.123"
+
+
+def test_both_parsers_take_chrony_addr():
+    from wd2l import receiver, sender
+    assert sender.build_parser().parse_args(["--chrony-addr", "127.0.0.1:323"]).chrony_addr \
+        == "127.0.0.1:323"
+    assert receiver.build_parser().parse_args(["--pcap", "x", "--chrony-addr", "[::1]"]) \
+        .chrony_addr == "[::1]"
+    assert sender.build_parser().parse_args([]).chrony_addr is None
+    for p, base in ((sender.build_parser(), []), (receiver.build_parser(), ["--pcap", "x"])):
+        with pytest.raises(SystemExit):
+            p.parse_args(base + ["--chrony-addr", "host:notaport"])

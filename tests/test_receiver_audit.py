@@ -183,6 +183,21 @@ def replay_pcap(tmp_path):
     return path
 
 
+def test_replay_reads_time_quality_from_chronyd_over_udp(tmp_path):
+    from lab import fake_chronyd
+    from helpers import chronyd_server
+    p = replay_pcap(tmp_path)
+    adir, out = str(tmp_path / "audit"), str(tmp_path / "out")
+    with chronyd_server(lambda req: [fake_chronyd.answer(req)]) as (host, port):
+        receiver.main(["--pcap", p, "--out-dir", out, "--audit-dir", adir,
+                       "--chrony-addr", "%s:%d" % (host, port)])
+    recs = read_audit(adir)
+    assert recs[0]["event"] == "start"
+    assert recs[0]["time_quality"] == {"stratum": 3, "offset_ms": 0.004, "synced": True,
+                                       "source": "GPS"}
+    assert auditlog.verify_dir(adir).ok
+
+
 def test_replay_run_records_the_files_and_their_hashes(tmp_path):
     p = replay_pcap(tmp_path)
     adir, out = str(tmp_path / "audit"), str(tmp_path / "out")

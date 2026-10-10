@@ -266,6 +266,10 @@ sudo lab/run-lab.sh --fault tap-down
 
 A fault run sends more events than the default (20,000) so that it outlasts the injection. It can't be combined with `--loss`, `--receiver-outage`, `--maintenance` or `--files`.
 
+`--chrony-udp` runs the same lab with both sides asking a chronyd stand-in over UDP, as the
+container images do (`--chrony-addr`); `--fault clock --chrony-udp` checks the clock alarm that
+way.
+
 To look at the answer, search the receiver's health file:
 
 ```bash
@@ -273,6 +277,26 @@ grep '"type": "fault"' lab/out/received/health.jsonl
 ```
 
 For how the answer appears on the dashboard, see section 12 of the [audit and health plan](audit-and-health-plan.md).
+
+## 10. Run the container image through the lab
+
+The same runs, with `wd2l-sender` and `wd2l-receiver` running from the container image, as the
+Quadlet units run them: user 65532, no capabilities except `NET_RAW` for the receiver, a
+read-only image. It needs Podman.
+
+```bash
+python3 -m pip install --user build && git rev-parse HEAD > wd2l/BUILD && python3 -m build
+packaging/container/build.sh dist localhost/wd2l:dev
+podman save localhost/wd2l:dev | sudo podman load
+sudo lab/run-lab.sh --image localhost/wd2l:dev
+sudo lab/run-lab.sh --image localhost/wd2l:dev --files samples/logs/messages samples/logs/secure samples/logs/audit.log
+```
+
+Both sides ask a chronyd stand-in over UDP (`--chrony-addr`), as the containers do. The run
+raises `net.core.rmem_max` for its duration, as
+[the receiver guide](deployment/receiver.md#kernel-receive-buffer) has production do.
+`--receiver-outage` works with `--image`. The fault runs and `--receiver-crash` don't: they
+freeze or kill the process, and with `--image` that would be the podman client.
 
 ## If something goes wrong
 

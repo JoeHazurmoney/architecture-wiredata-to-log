@@ -1,0 +1,42 @@
+# wd2l-receiver as a container under systemd (Quadlet): docs/deployment/containers.md,
+# docs/decisions/0005-quadlet.md. Copy to /etc/containers/systemd/, then:
+#   sudo systemctl daemon-reload && sudo systemctl start wd2l-receiver
+# Use this or wd2l-receiver.service on a host, never both. Options: /etc/wd2l/receiver.env.
+[Unit]
+Description=wd2l receiver (container): rebuild logs from the tapped stream and send them to the SIEM
+After=wd2l-capture-nic.service network-online.target
+Requires=wd2l-capture-nic.service
+Wants=network-online.target
+
+[Container]
+ContainerName=wd2l-receiver
+# The release's image, verified and loaded beforehand (docs/releasing.md). For strict change
+# control, name it by the digest in the release notes: ghcr.io/joehazurmoney/wd2l@sha256:...
+Image=ghcr.io/joehazurmoney/wd2l:0.3.0
+Pull=never
+Network=host
+User=wd2l
+Group=wd2l
+Volume=/etc/passwd:/etc/passwd:ro
+Volume=/etc/group:/etc/group:ro
+Volume=/etc/wd2l:/etc/wd2l:ro,z
+Volume=/var/lib/wd2l:/var/lib/wd2l:z
+Volume=/var/log/wd2l:/var/log/wd2l:z
+DropCapability=all
+# Raw socket for capture, nothing else.
+AddCapability=NET_RAW
+NoNewPrivileges=true
+ReadOnly=true
+PodmanArgs=--umask=0027
+# Final health record, up to 15 s for the SIEM, then the state file.
+StopTimeout=60
+Exec=wd2l-receiver $WD2L_RECEIVER_ARGS --chrony-addr 127.0.0.1:323
+
+[Service]
+EnvironmentFile=/etc/wd2l/receiver.env
+Restart=always
+RestartSec=2
+TimeoutStopSec=70
+
+[Install]
+WantedBy=multi-user.target

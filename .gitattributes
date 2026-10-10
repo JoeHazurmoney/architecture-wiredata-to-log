@@ -1,2 +1,16 @@
 # Shell scripts run in Linux even when checked out on Windows.
 *.sh text eol=lf
+# Shell scripts without an extension, run in Linux.
+packaging/ci/tool text eol=lf
+# Containerfiles are parsed by scripts that run in Linux.
+Containerfile text eol=lf
+*.Containerfile text eol=lf
+# systemd and the NIC scripts read these in Linux.
+*.env text eol=lf
+*.container text eol=lf
+# Public keys are read by cosign; keep them byte-for-byte.
+*.pub text eol=lf
+# RPM sources are read on Linux.
+*.spec text eol=lf
+*.sysusers text eol=lf
+*.tmpfiles text eol=lf

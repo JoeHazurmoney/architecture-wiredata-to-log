@@ -4,6 +4,9 @@ Use this for patching, reboots, hardware or link work: anything where you know i
 the sender, the receiver or the link will be down. Done in this order, nothing is lost, nothing
 needs replaying, and Enclave 2 sees two linked sender runs with no gap.
 
+Package upgrades (`dnf upgrade`) don't restart wd2l. After an upgrade, stop and start each side
+here, in this order.
+
 ## The rule
 
 **Stop from the source end. Start from the far end.**
@@ -64,7 +67,9 @@ and every event byte for byte.
 ## Full procedure (both sides, or link work)
 
 Commands are for RHEL; they're the same on Ubuntu. Interface names are the defaults (`ens224`
-on the log server, `ens256` on the receiver).
+on the log server, `ens256` on the receiver). With the container units
+([containers.md](deployment/containers.md)) the commands are the same: `systemctl stop wd2l-sender`
+stops the container cleanly (it waits `StopTimeout`).
 
 ### Stop
 

@@ -1,0 +1,244 @@
+name: image
+# The container image's checks (docs/decisions/0004-container-base-image.md): every push and PR
+# via tests.yml, and every release via release.yml, which then runs publish.yml.
+on:
+  workflow_call:
+  workflow_dispatch:
+defaults:
+  run:
+    shell: bash
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Every FROM pinned, a Hardened Image, a FIPS variant
+        run: python3 packaging/container/check_containerfile.py
+      - name: hadolint
+        run: packaging/ci/tool hadolint /bin/hadolint /work/packaging/container/Containerfile
+      - name: trivy config (High and Critical), on the shipped Containerfile
+        run: packaging/ci/tool trivy config --quiet --exit-code 1 --severity HIGH,CRITICAL /work/packaging/container/Containerfile
+
+  base-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Collect each base image's signature, provenance, SBOM, index and config
+        run: |
+          mkdir -p evidence
+          python3 packaging/container/check_containerfile.py --json > evidence/froms.json
+          for i in $(seq 0 $(( $(jq length evidence/froms.json) - 1 ))); do
+            name=$(jq -r ".[$i].name" evidence/froms.json)
+            digest=$(jq -r ".[$i].digest" evidence/froms.json)
+            mirror="quay.io/hummingbird/${name#registry.access.redhat.com/hi/}"
+            skopeo inspect --raw "docker://$name@$digest" > "evidence/index-$i.json"
+            skopeo inspect --config --override-os linux --override-arch amd64 \
+              "docker://$name@$digest" > "evidence/config-$i.json"
+            packaging/ci/tool cosign verify --key /work/packaging/container/keys/redhat-release3.pub \
+              --insecure-ignore-tlog "$name@$digest" > "evidence/signature-$i.json"
+            packaging/ci/tool cosign verify-attestation --key /work/packaging/container/keys/hummingbird-ci.pub \
+              --insecure-ignore-tlog --type slsaprovenance "$mirror@$digest" > "evidence/provenance-$i.json"
+            amd=$(jq -r '.manifests[] | select(.platform.architecture == "amd64") | .digest' "evidence/index-$i.json")
+            layer=$(packaging/ci/tool oras manifest fetch "$mirror:sha256-${amd#sha256:}.sbom" | jq -r '.layers[0].digest')
+            packaging/ci/tool oras blob fetch --output "/work/evidence/sbom-$i.spdx.json" "$mirror@$layer"
+          done
+      - name: Cross-check and record
+        run: python3 packaging/container/base_record.py --evidence evidence --out evidence/base-image-record.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: base-evidence
+          path: evidence/
+
+  build:
+    needs: [lint, base-verify]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Wheel and sdist (BUILD = the commit; file times = the commit's)
+        run: |
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"; export SOURCE_DATE_EPOCH
+          python -m pip install -q build
+          git rev-parse HEAD > wd2l/BUILD
+          python -m build
+          python packaging/check_dist.py dist --commit "$(git rev-parse HEAD)"
+      - name: Image
+        run: |
+          started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          packaging/container/build.sh dist localhost/wd2l:ci
+          mkdir -p image build-info
+          podman save --format oci-archive -o image/image.oci.tar localhost/wd2l:ci
+          jq -n --arg commit "$(git rev-parse HEAD)" \
+                --arg version "$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' wd2l/__init__.py)" \
+                --arg image_id "$(podman image inspect --format '{{.Id}}' localhost/wd2l:ci)" \
+                --arg epoch "$(git log -1 --format=%ct)" --arg started "$started" \
+                '{commit: $commit, version: $version, image_id: $image_id, epoch: $epoch, started: $started}' \
+                > build-info/build-info.json
+          cat build-info/build-info.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image
+          path: image/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-info
+          path: build-info/
+
+  reproducible:
+    needs: [build]
+    runs-on: ubuntu-24.04
+    continue-on-error: true      # report-only until it has matched on 10 pushes in a row
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{dist,image,build-info}"
+      - name: Rebuild the wheel and the image from the same commit, on a fresh runner
+        run: |
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"; export SOURCE_DATE_EPOCH
+          python -m pip install -q build
+          git rev-parse HEAD > wd2l/BUILD
+          python -m build --wheel --outdir dist2
+          if cmp -s dist/*.whl dist2/*.whl; then echo "wheel: identical"; else echo "wheel: DIFFERS"; fi
+          packaging/container/build.sh dist localhost/wd2l:again
+          want=$(jq -r .image_id build-info/build-info.json)
+          got=$(podman image inspect --format '{{.Id}}' localhost/wd2l:again)
+          echo "first build $want"; echo "rebuild     $got"
+          if [ "$want" = "$got" ]; then echo "image: identical"; exit 0; fi
+          first=$(podman load -q -i image/image.oci.tar | awk '{print $NF}')
+          for i in "$first" localhost/wd2l:again; do
+            c=$(podman create -q "$i")
+            podman export "$c" | tar -tv --full-time | sort -k6 > "list-$(echo "$i" | tr -c 'a-z0-9\n' _).txt"
+            podman rm -f "$c" > /dev/null
+          done
+          diff <(podman image inspect "$first" | jq '.[0] | {Config, RootFS, Created}') \
+               <(podman image inspect localhost/wd2l:again | jq '.[0] | {Config, RootFS, Created}') || true
+          diff list-*.txt || true
+          exit 1
+
+  hardening:
+    needs: [build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{image,dist,build-info}"
+          merge-multiple: false
+      - name: Filesystem and config
+        run: |
+          IMG=$(podman load -q -i image/image.oci.tar | awk '{print $NF}')
+          BASE=$(python3 packaging/container/check_containerfile.py --base)
+          podman pull -q "$BASE"
+          podman image inspect "$IMG" > inspect.json
+          COMMIT=$(jq -r .commit build-info/build-info.json); VERSION=$(jq -r .version build-info/build-info.json)
+          podman unshare bash -c 'set -e
+            R=$(podman image mount "$1"); B=$(podman image mount "$2")
+            python3 packaging/container/check_image.py --rootfs "$R" --base-rootfs "$B" \
+              --config inspect.json --wheel dist/*.whl --commit "$3" --version "$4" --base-ref "$2"' \
+            _ "$IMG" "$BASE" "$COMMIT" "$VERSION"
+          echo "IMG=$IMG" >> "$GITHUB_ENV"
+      - name: FIPS in force at run time
+        run: podman run --rm -v "$PWD/packaging/container/fips_check.py:/fips_check.py:ro" "$IMG" python3 /fips_check.py
+
+  vuln-scan:
+    needs: [build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+          path: image
+      - name: Grype and Trivy
+        run: |
+          mkdir -p vuln .cache
+          packaging/ci/tool grype oci-archive:/work/image/image.oci.tar -q \
+            -o json=/work/vuln/grype.json -o sarif=/work/vuln/grype.sarif
+          # Trivy reads an OCI directory (or a docker archive), not an OCI archive tar.
+          mkdir -p image/oci && tar -xf image/image.oci.tar -C image/oci
+          packaging/ci/tool trivy image --quiet --cache-dir /work/.cache/trivy --input /work/image/oci \
+            --scanners vuln,secret --format json --output /work/vuln/trivy.json
+          packaging/ci/tool trivy convert --format sarif --output /work/vuln/trivy.sarif /work/vuln/trivy.json
+      - name: Gate (fixable High/Critical, or a secret)
+        run: |
+          rc=0
+          python3 packaging/container/vuln_gate.py --grype vuln/grype.json --trivy vuln/trivy.json \
+            --exceptions packaging/container/vuln-exceptions.json \
+            --summary vuln/vuln-summary.md --predicate vuln/vuln-predicate.json || rc=$?
+          cat vuln/vuln-summary.md >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: vuln
+          path: vuln/
+
+  sbom:
+    needs: [build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+          path: image
+      - name: SBOMs of the image and of its base
+        run: |
+          mkdir -p sbom
+          packaging/ci/tool syft oci-archive:/work/image/image.oci.tar -q \
+            -o spdx-json=/work/sbom/wd2l.spdx.json -o cyclonedx-json=/work/sbom/wd2l.cdx.json
+          BASE=$(python3 packaging/container/check_containerfile.py --base)
+          podman pull -q "$BASE" && podman save -q --format oci-archive -o base.oci.tar "$BASE"
+          packaging/ci/tool syft oci-archive:/work/base.oci.tar -q -o spdx-json=/work/sbom/base.spdx.json
+      - run: python3 packaging/container/sbom_diff.py sbom/base.spdx.json sbom/wd2l.spdx.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: sbom/
+
+  functional:
+    needs: [build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+          path: image
+      - run: sudo apt-get update -q && sudo apt-get install -y -q iproute2 nftables tcpdump
+      - name: Load
+        run: echo "IMG=$(sudo podman load -q -i image/image.oci.tar | awk '{print $NF}')" >> "$GITHUB_ENV"
+      - name: Smoke
+        run: |
+          for c in wd2l-sender wd2l-receiver wd2l-audit-report; do sudo podman run --rm "$IMG" "$c" --help > /dev/null; done
+          if sudo podman run --rm "$IMG" python3 -m wd2l.audit verify /tmp; then exit 1; fi
+          echo "an empty audit directory is refused, as expected"
+      - run: sudo lab/run-lab.sh --image "$IMG"
+      - run: sudo lab/run-lab.sh --image "$IMG" --loss 1
+      - run: sudo lab/run-lab.sh --image "$IMG" --maintenance
+      - run: sudo lab/run-lab.sh --image "$IMG" --receiver-outage
+      - run: sudo lab/run-lab.sh --image "$IMG" --files samples/logs/messages samples/logs/secure samples/logs/audit.log
+
+  fips-tests:
+    # The whole test suite under the OpenSSL FIPS provider (the builder has the same Python and
+    # crypto policy as the runtime image, plus a shell and dnf for pytest).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          B=$(python3 packaging/container/check_containerfile.py --json | jq -r '.[] | select(.tag | endswith("-builder")) | .ref')
+          podman run --rm --userns=keep-id -v "$PWD:/src" -w /src "$B" bash -c \
+            'python3 -c "import _hashlib; assert _hashlib.get_fips_mode() == 1, \"not FIPS\"" &&
+             python3 -m pip install -q --user pytest && python3 -m pytest -q -p no:cacheprovider'

@@ -146,6 +146,21 @@ class PcapWriter:
 
 # ---------------------------------------------------------------- live capture
 
+SO_RCVBUFFORCE = 33
+
+
+def set_rcvbuf(sock: Any, wanted: int) -> int:
+    """Ask for a `wanted`-byte receive buffer and return what the kernel gave (getsockopt
+    reports double the size set). SO_RCVBUFFORCE needs CAP_NET_ADMIN, which the receiver
+    doesn't have (native unit or container), so the size is normally capped at
+    net.core.rmem_max: deploy/receiver/90-wd2l.conf raises it."""
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, SO_RCVBUFFORCE, wanted)
+    except OSError:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, wanted)
+    return sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+
+
 class LiveCapture:
     """Receive every frame arriving on an interface via an AF_PACKET raw socket.
 
@@ -154,10 +169,7 @@ class LiveCapture:
 
     def __init__(self, iface: str, rcvbuf: int = 64 * 1024 * 1024, timeout: float = 0.5):
         self.sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_ALL))
-        try:
-            self.sock.setsockopt(socket.SOL_SOCKET, 33, rcvbuf)  # SO_RCVBUFFORCE (root)
-        except OSError:
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rcvbuf)
+        self.rcvbuf = set_rcvbuf(self.sock, rcvbuf)
         self.sock.bind((iface, 0))
         self.sock.settimeout(timeout)
 

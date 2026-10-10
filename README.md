@@ -101,6 +101,8 @@ for each, are recorded as Architecture Decision Records (ADRs) in
 | `deploy/switch/` | Black-hole port config (example for one switch platform) |
 | `deploy/receiver/` | Capture NIC script, tcpdump archive, receiver unit, example SIEM configs (Splunk) |
 | `docs/` | Architecture, wire format, interface description (ICD input), deployment guides, operations and planned-downtime runbooks, accreditation notes, Architecture Decision Records (ADRs, `docs/decisions/`) |
+| `packaging/` | How releases are built: the RPM spec, the Containerfile, and the CI checks (`packaging/container/`, `packaging/rpm/`, `packaging/release/`, `packaging/ci/`) |
+| `docs/releasing.md` | Cutting a release, and bringing one into an enclave |
 | `lab/` | Whole path simulated with Linux network namespaces |
 | `samples/` | Real `messages`, `secure` and `audit.log` sample logs, and the script that generated them |
 | `tests/` | Unit, fuzz and end-to-end tests |
@@ -120,6 +122,7 @@ sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/lo
                                                   # real logs: rebuilt files must hash the same
 sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log
                                                   # same, interleaved as if written at the same time
+sudo lab/run-lab.sh --image localhost/wd2l:dev    # the same path, from the container image (docs/running-the-lab.md §10)
 ```
 
 The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `python3`.
@@ -134,13 +137,18 @@ The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `pyt
 3. [Log retention server](docs/deployment/retention-server.md): 1-year copy in Enclave 1, replay
    source, wd2l audit files
 4. [Receiver](docs/deployment/receiver.md): capture NIC, archive, `wd2l-receiver`, SIEM
-5. [Operations](docs/operations.md): health records, alerts, replay, re-send
-6. [Planned downtime](docs/planned-downtime.md): stopping and starting the sender and receiver
+5. [Containers](docs/deployment/containers.md): the sender and receiver as containers under
+   systemd (Quadlet), on the FIPS Red Hat Hardened Images base
+6. [Operations](docs/operations.md): health records, alerts, replay, re-send
+7. [Planned downtime](docs/planned-downtime.md): stopping and starting the sender and receiver
    cleanly for patching, reboots and link work
-7. [State of health](docs/state-of-health.md): what the dashboard shows and how to read it
+8. [State of health](docs/state-of-health.md): what the dashboard shows and how to read it
 
 What crosses between the enclaves, packet by packet, for the interface control document (ICD):
 [docs/interface-description.md](docs/interface-description.md).
+
+Releases (RPMs and the signed container image), and how to verify one offline:
+[docs/releasing.md](docs/releasing.md).
 
 ## Status
 
@@ -156,3 +164,9 @@ how to read the dashboard is in [docs/state-of-health.md](docs/state-of-health.m
 
 How several live log files are tracked and rebuilt from one stream:
 [docs/multiple-files.md](docs/multiple-files.md).
+
+## License
+
+MIT, see [LICENSE](LICENSE). The container image also contains Red Hat Hardened Images packages
+under their own licenses (the UBI EULA); their sources are mirrored with every release
+([ADR-0006](docs/decisions/0006-release-artifacts-and-signing.md)).

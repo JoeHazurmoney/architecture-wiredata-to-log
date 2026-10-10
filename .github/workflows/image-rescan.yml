@@ -1,0 +1,46 @@
+name: image-rescan
+# Re-scans the released images with today's vulnerability data: a CVE disclosed after a release
+# opens an issue (docs/decisions/0004-container-base-image.md, docs/releasing.md).
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+defaults:
+  run:
+    shell: bash
+permissions:
+  contents: read
+  packages: read
+  issues: write
+jobs:
+  rescan:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GRYPE_DB_CACHE_DIR: /work/.cache/grype
+      TOOL_ENV: GRYPE_DB_CACHE_DIR
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Scan the last three releases
+        run: |
+          mkdir -p .cache
+          gh release list --limit 3 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' > tags.txt
+          fail=0
+          mapfile -t tags < tags.txt
+          for tag in "${tags[@]}"; do
+            v=${tag#v}; ref="ghcr.io/joehazurmoney/wd2l:$v"
+            packaging/ci/tool grype "registry:$ref" -q -o json --file "/work/grype-$v.json"
+            packaging/ci/tool trivy image --quiet --cache-dir /work/.cache/trivy --scanners vuln \
+              --format json --output "/work/trivy-$v.json" "$ref"
+            if ! python3 packaging/container/vuln_gate.py --grype "grype-$v.json" --trivy "trivy-$v.json" \
+                 --exceptions packaging/container/vuln-exceptions.json --summary "summary-$v.md" > /dev/null; then
+              fail=1
+              title="Image rescan: wd2l $v has a fixable High/Critical vulnerability"
+              n=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+              if [ -n "$n" ]; then gh issue comment "$n" --body-file "summary-$v.md"
+              else gh issue create --title "$title" --body-file "summary-$v.md"; fi
+            fi
+            { echo "## wd2l $v"; cat "summary-$v.md"; } >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $fail

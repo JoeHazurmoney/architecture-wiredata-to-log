@@ -1,0 +1,40 @@
+# wd2l-sender as a container under systemd (Quadlet): docs/deployment/containers.md,
+# docs/decisions/0005-quadlet.md. Copy to /etc/containers/systemd/, then:
+#   sudo systemctl daemon-reload && sudo systemctl start wd2l-sender
+# Use this or wd2l-sender.service on a host, never both. Options: /etc/wd2l/sender.env.
+[Unit]
+Description=wd2l sender (container): log aggregator JSON lines in, one-way UDP frames out
+After=network-online.target wd2l-egress-nic.service
+Wants=network-online.target
+Requires=wd2l-egress-nic.service
+
+[Container]
+ContainerName=wd2l-sender
+# The release's image, verified and loaded beforehand (docs/releasing.md). For strict change
+# control, name it by the digest in the release notes: ghcr.io/joehazurmoney/wd2l@sha256:...
+Image=ghcr.io/joehazurmoney/wd2l:0.3.0
+Pull=never
+Network=host
+User=wd2l
+Group=wd2l
+Volume=/etc/passwd:/etc/passwd:ro
+Volume=/etc/group:/etc/group:ro
+Volume=/etc/wd2l:/etc/wd2l:ro,z
+Volume=/var/lib/wd2l:/var/lib/wd2l:z
+Volume=/var/log/wd2l:/var/log/wd2l:z
+DropCapability=all
+NoNewPrivileges=true
+ReadOnly=true
+PodmanArgs=--umask=0027
+# On SIGTERM the sender drains its input, then sends the final heartbeat (planned-downtime.md).
+StopTimeout=30
+Exec=wd2l-sender $WD2L_SENDER_ARGS --chrony-addr 127.0.0.1:323
+
+[Service]
+EnvironmentFile=/etc/wd2l/sender.env
+Restart=always
+RestartSec=2
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target

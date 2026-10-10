@@ -78,6 +78,8 @@ log flow.
    If yes, the packets are probably in the archive. **Replay** (below).
 3. **Kernel drops?** `kernel_drops` rising means the host can't keep up. Check CPU and the NIC
    ring size. Replay may still recover them, because tcpdump has its own buffer.
+   If the receiver's log has a `capture receive buffer is … KiB` warning, apply `90-wd2l.conf`
+   ([receiver guide](deployment/receiver.md#kernel-receive-buffer)) and restart the receiver.
 4. **Heartbeat stale at the same time?** Then the link (cable, network tap, fiber) or Enclave 1
    was down. The packets never arrived and archive replay won't help. Ask the Enclave 1 team to
    replay that time window from the log retention server (below).
@@ -191,6 +193,9 @@ over 100 ms, a side that can't read chrony at all, or the two enclaves differing
 
 1. **On the side named**, run `chronyc tracking`: reference, stratum and offset. For
    "unavailable", check that `chronyd` is running and that the wd2l service can run `chronyc`.
+   In a container (`--chrony-addr`), "unavailable" can also mean chronyd doesn't answer on
+   127.0.0.1:323. As a normal user (not root) on the host, `chronyc -h 127.0.0.1 tracking`
+   asks the same way and shows whether it does.
 2. **Check that enclave's GPS receiver**, then the switch that serves time at stratum 2.
 3. **Skew while both sides are synced** points to one side's GPS receiver or switch.
 
@@ -287,7 +292,7 @@ more files than you need.
 
 ```bash
 sudo systemctl stop wd2l-receiver            # the replay and live receiver share the state file
-sudo -u wd2l env PYTHONPATH=/opt/wd2l python3 -m wd2l.receiver \
+sudo -u wd2l python3 -m wd2l.receiver \
     --pcap /var/lib/wd2l/pcap/cap-20260925*.pcap \
     --state /var/lib/wd2l/state.json \
     --hec-url https://siem.enclave2.example:8088 --hec-token-file /etc/wd2l/hec.token \
@@ -296,6 +301,9 @@ sudo -u wd2l env PYTHONPATH=/opt/wd2l python3 -m wd2l.receiver \
     --audit-dir /var/log/wd2l --hec-audit-token-file /etc/wd2l/hec-audit.token
 sudo systemctl start wd2l-receiver
 ```
+
+On a manual install (code in `/opt/wd2l`), put `env PYTHONPATH=/opt/wd2l` after `sudo -u wd2l`.
+In a container, see [containers.md](deployment/containers.md#replay-from-the-archive).
 
 `--audit-dir` makes the replay write its `replay_run` records, naming you, to the receiver's
 audit trail. Audit records need their own token: with `--audit-dir` and `--hec-url`, the receiver

@@ -1,0 +1,47 @@
+# wd2l on Red Hat Hardened Images, FIPS variant (docs/decisions/0004-container-base-image.md).
+# Build with packaging/container/build.sh DIST TAG: the context is dist/ (the wheel), and the
+# script passes the labels. Both bases are pinned by digest. Dependabot proposes new ones, and
+# .github/workflows/image.yml verifies their signatures and provenance before every build.
+FROM registry.access.redhat.com/hi/python:3.12-fips-builder@sha256:99339c3b61bf7b014701b780e3e4ffa620b92eb6ba07ddb79f6420da4998b850 AS build
+# Root only in this build stage, to write /out; the runtime stage runs as 65532.
+# hadolint ignore=DL3002
+USER 0
+COPY wd2l-*-py3-none-any.whl /tmp/
+# Compiled with checked hashes so the .pyc files don't depend on file times (reproducible), and
+# with their real path (/usr/lib/...), not /out.
+RUN python3 -m pip install --no-deps --no-index --no-cache-dir --no-compile \
+      --root /out --prefix /usr /tmp/wd2l-*-py3-none-any.whl \
+ && python3 -m compileall -q --invalidation-mode checked-hash -s /out -p / \
+      /out/usr/lib/python3.12/site-packages/wd2l
+
+FROM registry.access.redhat.com/hi/python:3.12-fips@sha256:42c1aef787508a4d822fa2378d407a38c7957b98e12c5d9128caf833b26bb379
+ARG VERSION=dev
+ARG REVISION=unknown
+ARG BASE_NAME=unknown
+ARG BASE_DIGEST=unknown
+LABEL name="wd2l" \
+      vendor="wd2l project" \
+      maintainer="wd2l project" \
+      version="${VERSION}" \
+      summary="One-way log transfer: wd2l-sender and wd2l-receiver" \
+      description="Frames logs into UDP in Enclave 1 and rebuilds them from tapped packets in Enclave 2" \
+      io.k8s.description="Frames logs into UDP in Enclave 1 and rebuilds them from tapped packets in Enclave 2" \
+      url="https://github.com/JoeHazurmoney/architecture-wiredata-to-log" \
+      org.opencontainers.image.title="wd2l" \
+      org.opencontainers.image.description="One-way log transfer: wd2l-sender and wd2l-receiver" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.source="https://github.com/JoeHazurmoney/architecture-wiredata-to-log" \
+      org.opencontainers.image.url="https://github.com/JoeHazurmoney/architecture-wiredata-to-log" \
+      org.opencontainers.image.vendor="wd2l project" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.base.name="${BASE_NAME}" \
+      org.opencontainers.image.base.digest="${BASE_DIGEST}"
+# The base installs pip with ensurepip (not as an RPM, so the RPM set doesn't change). wd2l
+# installs nothing at run time, so the image keeps no package installer and none of the
+# libraries pip vendors. There's no shell: python3 removes it.
+USER 0
+RUN ["python3", "-I", "-B", "-c", "import glob, os, shutil; found = sorted(glob.glob('/usr/local/bin/pip*') + glob.glob('/usr/local/lib/python3.*/site-packages/pip*')); print('removing', *found); [shutil.rmtree(p) if os.path.isdir(p) and not os.path.islink(p) else os.remove(p) for p in found]"]
+COPY --from=build /out/ /
+USER 65532
+CMD ["wd2l-receiver", "--help"]

@@ -574,6 +574,10 @@ The body grows from about 200–300 bytes to about 700, still one packet. Enclav
 >   clock, the sender's heartbeat keys and the skew. It is in every summary, and each change is
 >   also a `type=time_status` record, so the time alert fires at once, not on the next summary.
 > * The alert is built: "WD2L - Time quality" (section 13).
+> * `--chrony-addr HOST[:PORT]` (added with the release packaging) asks chronyd over UDP
+>   with the request `chronyc` sends, for the container images, which have no `chronyc`
+>   ([ADR-0004](decisions/0004-container-base-image.md)). The `time_quality` keys are the
+>   same.
 
 ## 12. The "where is the fault" dashboard
 

@@ -132,3 +132,52 @@ def write_pcap(path, datagrams, t0=1000.0):
         w = packets.PcapWriter(f)
         for i, d in enumerate(datagrams):
             w.write(t0 + i * 0.0005, eth(d, i))
+
+
+def load_script(relpath):
+    """Load a script under packaging/ by its path. packaging/ has no __init__.py on purpose:
+    a regular package called `packaging` would shadow the library pytest and pip import."""
+    import importlib.util
+    import os
+    import sys
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    path = os.path.join(root, relpath)
+    name = "wd2l_script_" + relpath.replace("/", "_").replace(".", "_").replace("-", "_")
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+import contextlib
+
+
+@contextlib.contextmanager
+def chronyd_server(replies):
+    """A chronyd stand-in on a free UDP port of 127.0.0.1. replies(request) returns the
+    datagrams to send back, in order (none, one, or a stale one first)."""
+    import socket
+    import threading
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(("127.0.0.1", 0))
+    s.settimeout(0.05)
+    stop = threading.Event()
+
+    def run():
+        while not stop.is_set():
+            try:
+                data, peer = s.recvfrom(4096)
+            except socket.timeout:
+                continue
+            for out in replies(data):
+                s.sendto(out, peer)
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    try:
+        yield s.getsockname()
+    finally:
+        stop.set()
+        t.join()
+        s.close()

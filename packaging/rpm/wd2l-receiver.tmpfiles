@@ -1,0 +1,3 @@
+# wd2l receiver: the SIEM spool and the capture archive (packaging/rpm/wd2l.spec).
+d /var/lib/wd2l/spool 0750 wd2l wd2l -
+d /var/lib/wd2l/pcap 0750 wd2l wd2l -

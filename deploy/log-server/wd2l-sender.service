@@ -8,18 +8,12 @@ Requires=wd2l-egress-nic.service
 User=wd2l
 Group=wd2l
 Environment=PYTHONPATH=/opt/wd2l
-ExecStart=/usr/bin/python3 -m wd2l.sender \
-    --listen 127.0.0.1:10070 \
-    --bind 10.255.255.1:5514 \
-    --dst 10.255.255.2:5514 \
-    --max-datagram 1472 \
-    --auth-token-file /etc/wd2l/aggregator.token \
-    --state /var/lib/wd2l/sender.json \
-    --audit-dir /var/log/wd2l \
-    --egress-iface ens224 \
-    --log-format json
+# Site options (addresses, NIC, token, paths): /etc/wd2l/sender.env.
+EnvironmentFile=/etc/wd2l/sender.env
+ExecStart=/usr/bin/python3 -m wd2l.sender $WD2L_SENDER_ARGS
 # Restart count + previous stream, so the receiver can link runs (see docs/wire-format.md).
 StateDirectory=wd2l
+StateDirectoryMode=0750
 # Audit records (docs/audit-and-health-plan.md section 10). The install step creates
 # /var/log/wd2l (owner wd2l, group wd2l-audit, mode 2750); wd2l-audit-seal.timer makes the files
 # append-only and keeps them a year.

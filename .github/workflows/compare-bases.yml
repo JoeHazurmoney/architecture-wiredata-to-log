@@ -1,0 +1,25 @@
+name: compare-bases
+# Measures the candidate base images for ADR-0004 (docs/decisions/0004-container-base-image.md).
+# Runs when the measuring files change; by hand once on main: gh workflow run compare-bases.yml
+on:
+  push:
+    paths:
+      - packaging/container/compare-bases.sh
+      - packaging/container/candidates/**
+      - .github/workflows/compare-bases.yml
+  workflow_dispatch:
+defaults:
+  run:
+    shell: bash
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: packaging/container/compare-bases.sh | tee compare.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: compare-bases
+          path: compare.md
