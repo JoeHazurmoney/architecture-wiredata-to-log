@@ -170,3 +170,16 @@ def test_dry_run_notes_have_no_image_attestation_line():
     text = notes.notes(versions.names("0.4.0"), **dict(ARGS, digest=""))
     assert "gh attestation verify wd2l-0.4.0-py3-none-any.whl" in text
     assert "gh attestation verify oci://" not in text
+
+
+def test_releasing_md_pins_the_signer_workflow_and_the_tag():
+    with open(os.path.join(REPO, "docs", "releasing.md"), encoding="utf-8") as f:
+        doc = f.read()
+    assert "## GitHub build provenance, offline" in doc
+    assert "--signer-workflow JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/attest.yml" in doc
+    assert "--source-ref refs/tags/v<version>" in doc
+    assert "gh attestation trusted-root > trusted_root.jsonl" in doc
+    assert "done < SHA256SUMS" in doc          # every listed file, not a few globs
+    assert ("--certificate-identity https://github.com/JoeHazurmoney/architecture-wiredata-to-log"
+            "/.github/workflows/attest.yml@refs/tags/v<version>") in doc
+    assert "--certificate-github-workflow-repository JoeHazurmoney/architecture-wiredata-to-log" in doc
