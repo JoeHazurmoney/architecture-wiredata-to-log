@@ -135,7 +135,13 @@ names as served.
   * **Secret scanning** with push protection, and Dependabot alerts and security updates.
 
   `release.yml` also refuses a tag whose commit isn't on `main`.
-* **Immutable releases.** Turn them on in the repository's settings (General, Releases).
+* **Immutable releases.** On (Settings, General, Releases).
+  * Once a release is published, its tag and assets are locked. The title, the notes and the
+    pre-release flag can still be edited.
+  * So review the draft's assets before you publish. A bad file means a new rc or patch
+    release.
+  * GitHub also attests each published release. `gh release verify v<version>` and
+    `gh release verify-asset v<version> FILE` check it (gh 2.81.0 or later).
 * **Packages.** `wd2l` and `wd2l-base/python` are public, like the repository. Enclaves still
   use the release assets, not the registry.
 
