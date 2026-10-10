@@ -129,3 +129,28 @@ def test_cosign_pub_is_a_public_key_and_never_a_private_one():
         text = f.read()
     assert text.startswith("-----BEGIN PUBLIC KEY-----") and "PRIVATE" not in text
     assert not os.path.exists(os.path.join(REPO, "cosign.key"))
+
+
+def workflow(name):
+    with open(os.path.join(REPO, ".github", "workflows", name)) as f:
+        return f.read()
+
+
+def test_asset_names_are_what_github_serves_before_sha256sums_lists_them():
+    # GitHub turns "~" in an asset name into ".": a pre-release RPM (X.Y.Z~rcN) would be
+    # downloaded under a name SHA256SUMS doesn't list (found on v0.3.0rc1).
+    step = workflow("release.yml").split("- name: Assemble the assets", 1)[1].split("- name:", 1)[0]
+    rename = step.index(r'mv -- "$f" "${f//\~/.}"')
+    assert rename < step.index("sha256sum -- *")
+
+
+def test_signing_jobs_use_the_release_environment():
+    rel, pub = workflow("release.yml"), workflow("publish.yml")
+    assert "environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}" in rel
+    assert "secrets: inherit" in rel and "COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}\n      COSIGN_PASSWORD" not in rel
+    publish_job = pub.split("\n  publish:\n", 1)[1].split("\n  verify-published:\n", 1)[0]
+    assert "    environment: release\n" in publish_job
+    # tests.yml's code-scanning job asks for security-events: write; a caller must grant it,
+    # or the whole release run fails to start.
+    tests_job = rel.split("\n  tests:\n", 1)[1].split("\n  image:\n", 1)[0]
+    assert "security-events: write" in tests_job

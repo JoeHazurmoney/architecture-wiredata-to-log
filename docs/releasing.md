@@ -79,7 +79,9 @@ releases nothing. The assets and notes are in the run's `release-assets` artifac
    git push origin vX.Y.Z
    ```
 
-4. Watch `release.yml`.
+4. Watch `release.yml`. It waits twice for your approval (the `release` environment): before
+   `publish` signs the image, and before `release` signs `SHA256SUMS` and drafts the release.
+   Approve on the run's page with **Review deployments**.
 5. Review the draft release:
    * the assets list, and the notes;
    * the `vuln-scan` gate summary, the `hardening` result and the `reproducible` result in the
@@ -87,13 +89,15 @@ releases nothing. The assets and notes are in the run's `release-assets` artifac
 6. Edit the notes if needed (a short "What changed" section on top), then publish.
 
 Pre-releases are `X.Y.ZrcN` (tag `vX.Y.ZrcN`). Their RPMs sort before the release
-(`X.Y.Z~rcN`).
+(`X.Y.Z~rcN`). GitHub doesn't allow `~` in an asset's name, so the files are named
+`…-X.Y.Z.rcN-…rpm`; the package inside is still `X.Y.Z~rcN`, and `SHA256SUMS` lists the
+names as served.
 
 ## One-time setup
 
 * **The signing key.** The security owner makes it on a trusted machine with Podman, in a
   checkout of this repository. The private key never leaves that machine except into the
-  repository's secrets
+  `release` environment's secrets
   ([ADR-0006, key management](decisions/0006-release-artifacts-and-signing.md#key-management)).
   `packaging/ci/tool` runs the pinned `hi/cosign` image as your own user, so it can write the
   key files here:
@@ -101,24 +105,29 @@ Pre-releases are `X.Y.ZrcN` (tag `vX.Y.ZrcN`). Their RPMs sort before the releas
   ```bash
   read -rsp "Password for the new key: " COSIGN_PASSWORD; echo; export COSIGN_PASSWORD
   TOOL_ENV=COSIGN_PASSWORD packaging/ci/tool cosign generate-key-pair
-  gh secret set COSIGN_PRIVATE_KEY < cosign.key
-  printf '%s' "$COSIGN_PASSWORD" | gh secret set COSIGN_PASSWORD
+  gh secret set COSIGN_PRIVATE_KEY --env release < cosign.key
+  printf '%s' "$COSIGN_PASSWORD" | gh secret set COSIGN_PASSWORD --env release
   unset COSIGN_PASSWORD
   ```
 
   Keep `cosign.key` offline, or destroy it: the secret is then the only copy. Commit
-  `cosign.pub` (`.gitignore` keeps `cosign.key` out).
-* **Who can cause a signature.** `release.yml` signs only for a `v*` tag on a commit already on
-  `main`. Anyone who can push a tag, or push a workflow, can still reach the signing secrets.
-  Before the repository has more than one person with write access:
-  * add a tag ruleset so only maintainers can create or move `v*` tags;
-  * move `COSIGN_PRIVATE_KEY` and `COSIGN_PASSWORD` to a GitHub Environment named `release`,
-    with required reviewers and a `v*` tag policy, and add `environment: release` to the
-    `publish` job in `publish.yml` and the `release` job in `release.yml`. (Environments need a
-    paid plan for a private repository, and work on every plan once it is public.)
-* **Immutable releases.** Turn them on if the repository's settings offer it.
-* **Packages.** `wd2l` and `wd2l-base` live in the repository's packages, and are private while
-  the repository is. Enclaves use the release assets, not the registry.
+  `cosign.pub` (`.gitignore` keeps `cosign.key` out). Don't keep the two as repository
+  secrets: any workflow on any branch can read those.
+* **Who can cause a signature.** These settings are in place:
+  * **`main`:** a ruleset with no bypass, even for the owner. Every change goes through a PR
+    whose `ci-ok` check passed (`tests.yml`); no force-push, no deletion.
+  * **`v*` tags:** a ruleset; only the admin role can create, move or delete them.
+  * **The `release` environment:** only `v*` tags may use it, and the owner approves each run
+    before anything is signed. `publish.yml`'s `publish` job and `release.yml`'s `release` job
+    run in it, and the signing secrets live in it.
+  * **Actions:** every action must be pinned to a commit SHA, and a PR from any outside
+    contributor waits for approval before its workflows run (they never get secrets).
+  * **Secret scanning** with push protection, and Dependabot alerts and security updates.
+
+  `release.yml` also refuses a tag whose commit isn't on `main`.
+* **Immutable releases.** Turn them on in the repository's settings (General, Releases).
+* **Packages.** `wd2l` and `wd2l-base/python` are public, like the repository. Enclaves still
+  use the release assets, not the registry.
 
 ## Bringing a release into an enclave
 
@@ -148,8 +157,9 @@ sudo dnf install ./wd2l-<version>-1.el10.noarch.rpm ./wd2l-receiver-<version>-1.
 * `verify`: the image is signed with our key.
 * `verify-attestation`: the provenance names the commit and the exact Red Hat base images.
 
-`--insecure-ignore-tlog` is expected: while the repository is private, nothing goes to a public
-transparency log, so there is no log entry to check.
+`--insecure-ignore-tlog` is expected: signatures made with our key don't go to a public
+transparency log (`packaging/release/signing-config.json` names none), so there is no log entry
+to check.
 
 The RPMs aren't GPG-signed. `SHA256SUMS`, signed, covers them
 ([ADR-0006](decisions/0006-release-artifacts-and-signing.md)). On a host that sets
@@ -158,6 +168,30 @@ after the checks above pass, install with `--nogpgcheck`, with the security owne
 
 Then install as the deployment guides say: [log server](deployment/log-server.md),
 [receiver](deployment/receiver.md), or [containers](deployment/containers.md).
+
+## Seeing the scan results and attestations
+
+* **Security > Code scanning.** Every Grype and Trivy finding for the image built from
+  `main`, one alert each, with filters and history (`tests.yml`'s `code-scanning` job uploads
+  the SARIF files after each push to `main`).
+* **A run's Summary tab.** The vulnerability gate's verdict, then every finding with the reason
+  it did or didn't block (for example "passed: no fix yet"). A release carries the same table
+  as `wd2l-<version>-vuln-summary.md`.
+* **A run's artifacts.** `vuln` holds Grype's and Trivy's full JSON and SARIF; `sbom` the SBOMs;
+  `base-evidence` the base images' checks. GitHub deletes artifacts after the retention period.
+* **The image's signed attestations.** The provenance, the SBOM, the scan summary and the base
+  record:
+
+  ```bash
+  I=ghcr.io/joehazurmoney/wd2l@sha256:<digest from the release notes>
+  cosign tree "$I"
+  cosign verify-attestation --key cosign.pub --insecure-ignore-tlog --type slsaprovenance1 "$I" \
+    | jq -r .payload | base64 -d | jq .predicate
+  ```
+
+  The other `--type` values are `spdxjson`,
+  `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations/vuln-scan/v1` and
+  `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations/base-image-record/v1`.
 
 ## After a release
 

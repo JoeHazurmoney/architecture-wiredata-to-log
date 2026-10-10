@@ -43,6 +43,9 @@ jobs:
   tests:
     needs: [version]
     uses: ./.github/workflows/tests.yml
+    permissions:
+      contents: read
+      security-events: write    # tests.yml's code-scanning job asks for it (it runs on main only)
     with:
       image: false
 
@@ -59,9 +62,9 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     needs: [version, tests, image, rpm]
     uses: ./.github/workflows/publish.yml
-    secrets:
-      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+    # publish.yml's job runs in the `release` environment, whose secrets it then reads;
+    # repository secrets come through inherit until they move there (docs/releasing.md).
+    secrets: inherit
     permissions:
       contents: read
       packages: write
@@ -75,6 +78,9 @@ jobs:
           || (needs.publish.result == 'skipped' && !startsWith(github.ref, 'refs/tags/v'))) }}
     needs: [version, tests, image, rpm, publish]
     runs-on: ubuntu-24.04
+    # The signing secrets and the approval gate live in the `release` environment, which only a
+    # v* tag may use; a dry run needs neither.
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     permissions:
       contents: write
     env:
@@ -102,6 +108,10 @@ jobs:
             cp "image-release/wd2l-$V-image-oci.tar" assets/
             cp image-release/provenance.json "assets/wd2l-$V-provenance.json"
           fi
+          # GitHub serves an asset whose name has "~" under a name with "." instead: name the
+          # files that way first, so SHA256SUMS lists what a download gets. Only pre-release
+          # RPMs have one (X.Y.Z~rcN); the package inside keeps its version.
+          for f in assets/*~*; do if [ -e "$f" ]; then mv -- "$f" "${f//\~/.}"; fi; done
           (cd assets && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
       - name: Sign SHA256SUMS (our key, no public log)
         if: ${{ env.REAL == 'true' }}

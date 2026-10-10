@@ -391,6 +391,25 @@ def test_cli_exit_codes_summary_and_predicate(tmp_path):
     assert vg.main(args) == 0
 
 
+def test_the_summary_lists_every_finding_and_why_it_passed_the_gate():
+    # The run's Summary tab and the release's vuln-summary.md show what was found, not only
+    # what was gated.
+    found = vg.grype_findings(grype_doc(("CVE-1", "Medium", "fixed", "zlib"),
+                                        ("CVE-2", "High", "not-fixed", "glibc"),
+                                        ("CVE-3", "Critical", "fixed", "openssl-libs"))) \
+        + vg.trivy_findings(trivy_doc([("CVE-4", "LOW", "", "x")]))
+    valid, probs = vg.load_exceptions({"exceptions": [exc("CVE-3", "openssl-libs")]}, TODAY)
+    gated, excepted = vg.gate(found, valid)
+    text = vg.summary(gated, excepted, probs, {"grype": 3, "trivy": 1}, found)
+    rows = [line for line in text.splitlines() if line.startswith("| grype") or line.startswith("| trivy")]
+    every = rows[-4:]                                   # the last table: every finding, worst first
+    assert [r.split(" | ")[1] for r in every] == ["CVE-3", "CVE-2", "CVE-1", "CVE-4"]
+    assert every[0].endswith("| exception |")
+    assert every[1].endswith("| passed: no fix yet |")
+    assert every[2].endswith("| passed: below High |")
+    assert every[3].endswith("| passed: below High |")
+
+
 def test_the_committed_exceptions_file_is_valid():
     with open(os.path.join(REPO, "packaging", "container", "vuln-exceptions.json")) as f:
         _valid, probs = vg.load_exceptions(json.load(f), TODAY)

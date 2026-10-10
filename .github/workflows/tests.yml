@@ -80,3 +80,40 @@ jobs:
     if: ${{ format('{0}', inputs.image) != 'false' }}
     needs: [image]
     uses: ./.github/workflows/rpm.yml
+
+  code-scanning:
+    # Grype's and Trivy's findings in Security > Code scanning, from main only: alerts are tracked
+    # against the default branch, and a fork PR's token can't upload.
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: [image]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vuln
+          path: vuln
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: vuln/grype.sarif
+          category: grype-image
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: vuln/trivy.sarif
+          category: trivy-image
+
+  ci-ok:
+    # The one check main's ruleset requires: every job above passed, or was skipped by design
+    # (release.yml calls this workflow with image: false).
+    if: ${{ always() }}
+    needs: [pytest, lab, image, rpm]
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<< "$NEEDS" > /dev/null
