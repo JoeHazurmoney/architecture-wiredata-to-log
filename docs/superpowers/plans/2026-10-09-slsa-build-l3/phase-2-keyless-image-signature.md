@@ -1,8 +1,10 @@
 # Phase 2: a keyless signature on the image
 
 Part of the [SLSA Build L3 plan](README.md). Spec requirement 4. The key signature stays
-(Global constraints); this one is for consumers who pull from ghcr and check against
-Sigstore's public instance.
+(Global constraints). This one is for consumers who pull from ghcr and check it against
+Sigstore's public instance, with cosign or an admission controller that reads Sigstore
+bundles. The docs don't promise Podman: whether its `sigstoreSigned` policy reads cosign 3
+referrer bundles is still open in `docs/deployment/containers.md` (As-built, Review).
 
 ---
 
@@ -17,7 +19,8 @@ Sigstore's public instance.
 - Produces: a keyless signature on `ghcr.io/joehazurmoney/wd2l@<digest>`, whose certificate
   identity is
   `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/attest.yml@refs/tags/v<version>`
-  and whose issuer is `https://token.actions.githubusercontent.com`.
+  and whose issuer is `https://token.actions.githubusercontent.com`. Its GitHub workflow
+  repository extension is `JoeHazurmoney/architecture-wiredata-to-log`, and every verify pins it.
 
 - [ ] **Step 1: Write the failing test** (append to `tests/test_workflow_policy.py`)
 
@@ -29,6 +32,8 @@ def test_attest_signs_the_image_keylessly_and_checks_the_identity():
     assert ('--certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/'
             'attest.yml@$GITHUB_REF"') in att
     assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in att
+    # the identity alone also matches a run of attest.yml called from another repository
+    assert '--certificate-github-workflow-repository "$GITHUB_REPOSITORY"' in att
     # keyless means Sigstore's public log: never the no-log signing config used with the key
     assert "signing-config" not in att
 ```
@@ -51,7 +56,8 @@ Expected: FAIL (the `TOOL_ENV` line isn't there).
           packaging/ci/tool cosign sign --yes "$IMAGE@$D"
           packaging/ci/tool cosign verify "$IMAGE@$D" \
             --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/attest.yml@$GITHUB_REF" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-github-workflow-repository "$GITHUB_REPOSITORY" > /dev/null
           echo "keyless signature: ok"
 ```
 

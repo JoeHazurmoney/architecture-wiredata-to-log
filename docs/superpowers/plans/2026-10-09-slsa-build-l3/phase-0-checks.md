@@ -6,9 +6,9 @@ throwaway branch before anything lands on `main`:
 | Check | What could go wrong | Fallback |
 |---|---|---|
 | **P0-1** `actions/attest@v4` in a **reusable** workflow, in a **user-owned** public repo: one attestation over every line of a checksums file; `gh attestation verify --signer-workflow` passes for that workflow, and fails for another | Storage records refused on a user-owned repo; `actions/attest` asks for `artifact-metadata: write` even with storage records off (the checks run without it); signer identity names the caller | `create-storage-record: false` (already planned); if `attest` asks for it, add `artifact-metadata: write` to the reusable job and its caller (Phase 1 too); pin `--signer-workflow` to what the certificate shows, and record it |
-| **P0-2** Offline: `gh attestation verify --bundle … --custom-trusted-root …` with **no network** | gh still reaches the network | Verify bundles with `cosign verify-blob-attestation --bundle --trusted-root` instead, and document that |
-| **P0-3** The image's attestation, pushed to ghcr (`push-to-registry`), verifies with `--bundle-from-oci` | The push needs Docker's login, not Podman's | Log in with `docker login` before `actions/attest` (already planned) |
-| **P0-4** A keyless `cosign sign` through `packaging/ci/tool` (the OIDC request variables passed in), then `cosign verify --certificate-identity …/<reusable>.yml@<ref>`; a key signature on the same image still verifies | The container can't reach the token; the identity is the caller's workflow | Run cosign on the runner from the pinned image's binary; pin the identity the certificate shows |
+| **P0-2** Offline: `gh attestation verify --bundle … --custom-trusted-root …` with **no network** and no `GH_TOKEN` | gh still reaches the network; gh asks for a login even with `--bundle` | Network: verify bundles with `cosign verify-blob-attestation --bundle --trusted-root` instead, and document that. Login: retry with a dummy `GH_TOKEN=offline`; if that passes, document it |
+| **P0-3** The image's attestation, pushed to ghcr (`push-to-registry`), verifies with `--bundle-from-oci` | The push needs Docker's login, not Podman's | Log in with `docker login` before `actions/attest` (already planned). The `verify` job logs in too, since the throwaway package may be private |
+| **P0-4** A keyless `cosign sign` through `packaging/ci/tool` (the OIDC request variables passed in), then `cosign verify --certificate-identity …/<reusable>.yml@<ref> --certificate-github-workflow-repository <owner>/<repo>`, which must fail for another repository; a key signature on the same image still verifies | The container can't reach the token; the identity is the caller's workflow; cosign ignores the repository flag | Run cosign on the runner from the pinned image's binary; pin the identity the certificate shows. If the repository flag isn't enforced, pin the certificate's Source Repository URI extension with `--certificate-identity-regexp` plus a `cosign verify --output json` check, and record that |
 | **P0-5** `sha_pinning_required` (on for this repository) lets `actions/attest` run | A nested action isn't SHA-pinned | None needed if it runs: `actions/attest` is a `node24` action, not a composite one |
 
 ---
@@ -112,7 +112,17 @@ jobs:
         with:
           name: phase0-bundles
           path: bundles
+      - name: Versions, and the bundle file's line count (Phase 4 expects 2)
+        run: |
+          gh --version | head -1
+          packaging/ci/tool cosign version 2>&1 | grep -i gitversion
+          wc -l < bundles/attestations.jsonl
+      - name: Log in to ghcr.io for gh (Docker's login) and cosign (Podman's)
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          echo "$GH_TOKEN" | podman login ghcr.io -u "$ACTOR" --password-stdin
       - name: P0-1 files, online, pinned to the signer workflow
+        if: ${{ !cancelled() }}
         run: |
           gh attestation verify out/file-a.txt --repo "$R" --signer-workflow "$W" \
             --source-ref "$GITHUB_REF" --deny-self-hosted-runners
@@ -123,10 +133,12 @@ jobs:
           fi
           echo "P0-1: ok"
       - name: P0-3 the image, from the attestation in ghcr
+        if: ${{ !cancelled() }}
         run: |
           gh attestation verify "oci://$I" --repo "$R" --signer-workflow "$W" --bundle-from-oci
           echo "P0-3: ok"
       - name: P0-2 offline, with the bundles and Sigstore's trusted root
+        if: ${{ !cancelled() }}
         run: |
           gh attestation trusted-root > trusted_root.jsonl
           sudo unshare --net -- env HOME="$HOME" PATH="$PATH" GH_TOKEN= \
@@ -134,12 +146,17 @@ jobs:
             --custom-trusted-root trusted_root.jsonl --repo "$R" --signer-workflow "$W"
           echo "P0-2: ok"
       - name: P0-4 the keyless signature, and the key signature beside it
+        if: ${{ !cancelled() }}
         run: |
-          echo "$GH_TOKEN" | podman login ghcr.io -u "$ACTOR" --password-stdin
-          packaging/ci/tool cosign verify "$I" \
-            --certificate-identity "https://github.com/$W@$GITHUB_REF" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          K() { packaging/ci/tool cosign verify "$I" \
+                  --certificate-identity "https://github.com/$W@$GITHUB_REF" \
+                  --certificate-oidc-issuer https://token.actions.githubusercontent.com "$@" > /dev/null; }
+          K --certificate-github-workflow-repository "$R"
           echo "P0-4 keyless: ok"
+          if K --certificate-github-workflow-repository someone-else/architecture-wiredata-to-log; then
+            echo "P0-4: another repository passed" >&2; exit 1
+          fi
+          echo "P0-4 repository pin: ok"
           packaging/ci/tool cosign verify --key /work/out/phase0.pub --insecure-ignore-tlog "$I" > /dev/null
           echo "P0-4 key: ok"
           packaging/ci/tool cosign tree "$I"
@@ -224,8 +241,9 @@ gh run watch "$(gh run list --branch slsa-phase0 --workflow slsa-phase0 --limit 
 ```
 
 Expected: `build`, `attest` and `verify` are green, and the `verify` log has `P0-1: ok`,
-`P0-3: ok`, `P0-2: ok`, `P0-4 keyless: ok` and `P0-4 key: ok`. P0-5 passes by the
-`attest` job running at all.
+`P0-3: ok`, `P0-2: ok`, `P0-4 keyless: ok`, `P0-4 repository pin: ok` and `P0-4 key: ok`.
+P0-5 passes by the `attest` job running at all. Every check step runs even when an earlier
+one fails, so one run reports all of them.
 
 For each failure, read the log, apply the check's fallback from the table above, push again,
 and write down what changed.
@@ -233,7 +251,9 @@ and write down what changed.
 - [ ] **Step 5: Record P0-1 to P0-5** as rows in the README's As-built log: the result, the
   run ID, and the fallback if one was used. **Also record from the `attest` job's log** the
   certificate's SubjectAlternativeName, which `cosign tree` and `gh attestation verify
-  --format json` show. Phases 1 and 2 pin that identity.
+  --format json` show. Phases 1 and 2 pin that identity. Record the `gh` and cosign versions
+  and the bundle file's line count, from the "Versions" step. `releasing.md` names those
+  versions as the ones tested.
 
 ```bash
 git checkout main   # the README's As-built rows go in with Phase 1's first commit

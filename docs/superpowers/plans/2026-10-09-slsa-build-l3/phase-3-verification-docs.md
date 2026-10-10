@@ -56,7 +56,7 @@ with
     pin = ("--repo %s --signer-workflow %s/.github/workflows/attest.yml --source-ref refs/tags/%s "
            "--deny-self-hosted-runners" % (slug, slug, tag))
     out += ["## Build provenance (SLSA Build Level 3)", "",
-            "Every file above and the image have GitHub build provenance, made only by "
+            "Every asset below and the image have GitHub build provenance, made only by "
             "`attest.yml`. With the GitHub CLI:", "",
             "```bash",
             "gh attestation verify wd2l-%s-py3-none-any.whl %s" % (v, pin)]
@@ -102,8 +102,10 @@ def test_releasing_md_pins_the_signer_workflow_and_the_tag():
     assert "--signer-workflow JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/attest.yml" in doc
     assert "--source-ref refs/tags/v<version>" in doc
     assert "gh attestation trusted-root > trusted_root.jsonl" in doc
+    assert "done < SHA256SUMS" in doc          # every listed file, not a few globs
     assert ("--certificate-identity https://github.com/JoeHazurmoney/architecture-wiredata-to-log"
             "/.github/workflows/attest.yml@refs/tags/v<version>") in doc
+    assert "--certificate-github-workflow-repository JoeHazurmoney/architecture-wiredata-to-log" in doc
 ```
 
 - [ ] **Step 2: Run it.** `T -q tests/test_release_tools.py -k signer` → FAIL.
@@ -115,6 +117,11 @@ def test_releasing_md_pins_the_signer_workflow_and_the_tag():
       GitHub build provenance (SLSA Build Level 3) for every file and the image, and a keyless
       signature on the image. It is the only workflow that gets an OIDC token, so the build
       steps can't reach what signs the provenance ([ADR-0007](decisions/0007-slsa-build-l3.md))."
+    * the **release** bullet adds: "and `wd2l-<version>-attestations.jsonl`, the GitHub
+      attestations for offline checks".
+  * **"Who can cause a signature":** the `release` environment bullet adds: "`attest.yml`
+    has no gate of its own. It runs only after `publish` was approved, and only for a `v*` tag
+    in this repository."
   * **A new section, after "Bringing a release into an enclave":**
 
 ````markdown
@@ -126,32 +133,38 @@ Optional, on top of the checks above. It shows the files were built by this repo
 
 **What to carry in, besides the release:**
 
-* the GitHub CLI (`gh`), from your approved software source;
+* the GitHub CLI (`gh`), from your approved software source (tested with `gh` <the version
+  P0 recorded> or later);
 * Sigstore's trusted root, fetched on a connected machine when you fetch the release:
   `gh attestation trusted-root > trusted_root.jsonl`. Sigstore rotates its keys from time to
   time, so carry the one fetched with the release you're bringing in.
 
+After `sha256sum -c SHA256SUMS` passes, check every file it lists:
+
 ```bash
-for f in wd2l-*.rpm wd2l-*.whl wd2l-*.tar.gz wd2l-*-image-oci.tar; do
+while read -r _ f; do
   gh attestation verify "$f" --bundle wd2l-<version>-attestations.jsonl \
     --custom-trusted-root trusted_root.jsonl \
     --repo JoeHazurmoney/architecture-wiredata-to-log \
     --signer-workflow JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/attest.yml \
-    --source-ref refs/tags/v<version> --deny-self-hosted-runners
-done
+    --source-ref refs/tags/v<version> --deny-self-hosted-runners > /dev/null && echo "ok $f"
+done < SHA256SUMS
 ```
 
 Online, drop `--bundle` and `--custom-trusted-root`. For the image in ghcr, use
 `gh attestation verify oci://ghcr.io/joehazurmoney/wd2l@sha256:<digest> --bundle-from-oci` with the
 same `--repo`, `--signer-workflow` and `--source-ref`.
 
-**The keyless signature on the image** (for Podman or Kubernetes policies that use Sigstore's
-public instance):
+**The keyless signature on the image.** This is for cosign, and for admission controllers that
+read Sigstore bundles and trust Sigstore's public instance. Podman's own policy is still open
+([containers.md](deployment/containers.md)). Pin the repository as well as the identity: any
+repository can call a public reusable workflow.
 
 ```bash
 cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
   --certificate-identity https://github.com/JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/attest.yml@refs/tags/v<version> \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-github-workflow-repository JoeHazurmoney/architecture-wiredata-to-log
 ```
 ````
 
@@ -212,10 +225,12 @@ git commit -m "releasing.md: verifying GitHub build provenance online and offlin
   * The build jobs never get `id-token: write`; `tests/test_workflow_policy.py` fails if one does.
 * **Runs don't share caches** on the release path (same test), and run on GitHub-hosted,
   ephemeral runners.
-* **Tags only:** a `v*` tag on `main`, created by the admin, with the owner approving the
-  signing jobs.
-* **Verification is pinned** to `--signer-workflow …/attest.yml`, `--source-ref
-  refs/tags/v<version>` and `--deny-self-hosted-runners`.
+* **Tags only:** a `v*` tag on `main`, created by the admin. `attest` runs only after the
+  owner approved `publish`, and its job checks for itself that the run is for a `v*` tag in
+  this repository.
+* **Verification is pinned** to `--repo`, `--signer-workflow …/attest.yml`, `--source-ref
+  refs/tags/v<version>` and `--deny-self-hosted-runners`. The keyless signature's check pins
+  the identity and also `--certificate-github-workflow-repository`.
 * **The key stays.** Enclaves verify with `cosign.pub` and no network, as before. GitHub's
   provenance can be checked offline too, with the release's bundles and Sigstore's trusted root.
 
@@ -254,6 +269,11 @@ Stays as the offline base, but it tops out at about L2: our workflow signs its o
   * An offline check needs a trusted root fetched with the release.
   * Keyless signing writes the workflow's identity to the public transparency log, which is
     fine for a public repository.
+* **A public reusable workflow can be called by anyone.** In such a call, the certificate
+  names our `attest.yml` and tag, but the source repository is the caller's. So:
+  * `attest.yml` refuses to run for another repository;
+  * every documented check pins our repository (`--repo` for `gh`, and
+    `--certificate-github-workflow-repository` for cosign).
 * **The claim's limits:** L3 holds as long as `attest.yml` is the only OIDC holder and changes
   only through `main`'s rules. Both are enforced (the policy test, the rulesets).
 

@@ -37,19 +37,23 @@ git tag -a vX.Y.ZrcN -m "wd2l X.Y.ZrcN" && git push origin vX.Y.ZrcN
 V=X.Y.ZrcN; R=JoeHazurmoney/architecture-wiredata-to-log
 P="--repo $R --signer-workflow $R/.github/workflows/attest.yml --source-ref refs/tags/v$V --deny-self-hosted-runners"
 gh release download "v$V" -R "$R" -D "rc-$V" && cd "rc-$V"
-for f in *.rpm *.whl *.tar.gz *-image-oci.tar; do gh attestation verify "$f" $P > /dev/null && echo "ok $f"; done
+sha256sum -c SHA256SUMS
+while read -r _ f; do gh attestation verify "$f" $P > /dev/null && echo "ok $f"; done < SHA256SUMS
 D=$(gh release view "v$V" -R "$R" --json body --jq .body \
     | grep -o 'ghcr.io/joehazurmoney/wd2l@sha256:[0-9a-f]\{64\}' | head -1 | cut -d@ -f2)
 gh attestation verify "oci://ghcr.io/joehazurmoney/wd2l@$D" $P --bundle-from-oci
 cosign verify "ghcr.io/joehazurmoney/wd2l@$D" \
   --certificate-identity "https://github.com/$R/.github/workflows/attest.yml@refs/tags/v$V" \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null && echo "keyless ok"
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-github-workflow-repository "$R" > /dev/null && echo "keyless ok"
 cosign verify --key cosign.pub --insecure-ignore-tlog "ghcr.io/joehazurmoney/wd2l@$D" > /dev/null && echo "key ok"
 ```
 
-  Expected: `ok` for every file, the image verifies both ways, and the key path still passes.
-  Then a **negative check**: `gh attestation verify` with `--source-ref refs/heads/main` must
-  fail.
+  Expected: `ok` for every line of `SHA256SUMS`, the image verifies both ways, and the key
+  path still passes. Then two **negative checks**, which must both fail:
+  * `gh attestation verify` with `--source-ref refs/heads/main`;
+  * the keyless `cosign verify` with `--certificate-github-workflow-repository
+    someone-else/architecture-wiredata-to-log`.
 
 - [ ] **Step 5: Verify offline.** Fetch the trusted root while still online
   (`gh attestation trusted-root > trusted_root.jsonl`). Then cut the network: a VM with its
