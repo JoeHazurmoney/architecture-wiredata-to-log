@@ -82,3 +82,26 @@ def test_attest_reads_the_checksums_the_release_lists():
     assert "push-to-registry: true" in att and "subject-name: ghcr.io/joehazurmoney/wd2l\n" in att
     assert "create-storage-record: false" in att
     assert "name: attestations" in att
+
+
+def test_attestation_runs_only_for_a_tag():
+    att = jobs(read("release.yml"))["attest"]
+    assert "if: ${{ startsWith(github.ref, 'refs/tags/v') }}" in att
+    assert "uses: ./.github/workflows/attest.yml" in att
+    assert "image-digest: ${{ needs.publish.outputs.digest }}" in att
+    for p in ("id-token: write", "attestations: write", "packages: write"):
+        assert p in att, p
+
+
+def test_release_waits_for_attest_on_a_tag():
+    rel = jobs(read("release.yml"))["release"]
+    assert "needs: [version, publish, assets, attest]" in rel
+    assert "needs.attest.result == 'success'" in rel
+    assert "(needs.attest.result == 'skipped' && !startsWith(github.ref, 'refs/tags/v'))" in rel
+    assert '"assets/wd2l-$V-attestations.jsonl"' in rel
+
+
+def test_assets_are_made_once_without_secrets_or_a_token():
+    a = jobs(read("release.yml"))["assets"]
+    assert "- name: Assemble the assets" in a and "name: assets" in a
+    assert "secrets." not in a and "id-token" not in a and "environment:" not in a

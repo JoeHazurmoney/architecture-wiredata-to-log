@@ -69,8 +69,9 @@ jobs:
       contents: read
       packages: write
 
-  release:
-    # publish is skipped on a dry run; on a tag it must have succeeded.
+  assets:
+    # The release files and SHA256SUMS, made once, for attest and release. No secrets and no
+    # OIDC token here. publish is skipped on a dry run; on a tag it must have succeeded.
     if: >-
       ${{ !cancelled() && needs.tests.result == 'success' && needs.image.result == 'success'
       && needs.rpm.result == 'success'
@@ -78,11 +79,6 @@ jobs:
           || (needs.publish.result == 'skipped' && !startsWith(github.ref, 'refs/tags/v'))) }}
     needs: [version, tests, image, rpm, publish]
     runs-on: ubuntu-24.04
-    # The signing secrets and the approval gate live in the `release` environment, which only a
-    # v* tag may use; a dry run needs neither.
-    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
-    permissions:
-      contents: write
     env:
       V: ${{ needs.version.outputs.pep440 }}
     steps:
@@ -113,6 +109,51 @@ jobs:
           # RPMs have one (X.Y.Z~rcN); the package inside keeps its version.
           for f in assets/*~*; do if [ -e "$f" ]; then mv -- "$f" "${f//\~/.}"; fi; done
           (cd assets && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: assets
+          path: assets/
+
+  attest:
+    # SLSA Build L3 provenance and the keyless signature (docs/decisions/0007-slsa-build-l3.md):
+    # only attest.yml gets an OIDC token, and only for a tag.
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: [publish, assets]
+    uses: ./.github/workflows/attest.yml
+    with:
+      image-digest: ${{ needs.publish.outputs.digest }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      packages: write
+
+  release:
+    # attest is skipped on a dry run; on a tag it must have succeeded.
+    if: >-
+      ${{ !cancelled() && needs.assets.result == 'success'
+      && (needs.attest.result == 'success'
+          || (needs.attest.result == 'skipped' && !startsWith(github.ref, 'refs/tags/v'))) }}
+    needs: [version, publish, assets, attest]
+    runs-on: ubuntu-24.04
+    # The signing secrets and the approval gate live in the `release` environment, which only a
+    # v* tag may use; a dry run needs neither.
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
+    permissions:
+      contents: write
+    env:
+      V: ${{ needs.version.outputs.pep440 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: assets
+          path: assets
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: ${{ needs.attest.result == 'success' }}
+        with:
+          name: attestations
+          path: attestations
       - name: Sign SHA256SUMS (our key, no public log)
         if: ${{ env.REAL == 'true' }}
         env:
@@ -125,6 +166,9 @@ jobs:
             --bundle /work/assets/SHA256SUMS.sigstore.json /work/assets/SHA256SUMS
           TOOL_NETWORK=none packaging/ci/tool cosign verify-blob --key /work/cosign.pub \
             --insecure-ignore-tlog --bundle /work/assets/SHA256SUMS.sigstore.json /work/assets/SHA256SUMS
+      - name: Attach the GitHub attestations (one bundle per line)
+        if: ${{ needs.attest.result == 'success' }}
+        run: cp attestations/attestations.jsonl "assets/wd2l-$V-attestations.jsonl"
       - name: Notes
         run: |
           python3 packaging/release/notes.py --image-digest "${{ needs.publish.outputs.digest }}" \
