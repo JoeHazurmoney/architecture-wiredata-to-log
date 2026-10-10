@@ -78,8 +78,20 @@ def gate(findings: List[Dict[str, Any]],
     return gated, excepted
 
 
+SEVERITY_ORDER = ("SECRET", "CRITICAL", "HIGH", "MEDIUM", "LOW", "NEGLIGIBLE", "UNKNOWN")
+
+
+def _gate_reason(f: Dict[str, Any], gated: List[Dict[str, Any]],
+                 excepted: List[Dict[str, Any]]) -> str:
+    if any(f is g for g in gated):
+        return "gated"
+    if any(f is e for e in excepted):
+        return "exception"
+    return "passed: no fix yet" if f["severity"] in GATED else "passed: below High"
+
+
 def summary(gated: List[Dict[str, Any]], excepted: List[Dict[str, Any]], probs: List[str],
-            counts: Dict[str, int]) -> str:
+            counts: Dict[str, int], findings: Sequence[Dict[str, Any]] = ()) -> str:
     lines = ["### Vulnerability gate: %s" % ("FAILED" if gated or probs else "passed"), "",
              "Findings: %s." % ", ".join("%s %d" % kv for kv in sorted(counts.items())), ""]
     for title, rows in (("Gated (fixable High/Critical, or a secret)", gated),
@@ -90,6 +102,17 @@ def summary(gated: List[Dict[str, Any]], excepted: List[Dict[str, Any]], probs: 
             lines += ["| %(scanner)s | %(id)s | %(package)s | %(version)s | %(severity)s | %(fixed_in)s |" % f
                       for f in rows]
             lines.append("")
+    if findings:
+        rank = {s: i for i, s in enumerate(SEVERITY_ORDER)}
+        lines += ["**Every finding, worst first**", "",
+                  "| Scanner | ID | Package | Version | Severity | Fixed in | Gate |",
+                  "|---|---|---|---|---|---|---|"]
+        for f in sorted(findings, key=lambda f: (rank.get(f["severity"], len(rank)),
+                                                 f["scanner"], str(f["id"]))):
+            lines.append("| %s | %s | %s | %s | %s | %s | %s |" % (
+                f["scanner"], f["id"], f["package"], f["version"], f["severity"], f["fixed_in"],
+                _gate_reason(f, gated, excepted)))
+        lines.append("")
     lines += ["- " + p for p in probs]
     return "\n".join(lines) + "\n"
 
@@ -110,7 +133,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     g, t = grype_findings(docs["grype"]), trivy_findings(docs["trivy"])
     valid, probs = load_exceptions(docs["exceptions"], a.today)
     gated, excepted = gate(g + t, valid)
-    text = summary(gated, excepted, probs, {"grype": len(g), "trivy": len(t)})
+    text = summary(gated, excepted, probs, {"grype": len(g), "trivy": len(t)}, g + t)
     print(text)
     if a.summary:
         with open(a.summary, "w") as f:
