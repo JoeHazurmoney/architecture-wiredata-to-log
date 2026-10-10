@@ -1,0 +1,84 @@
+"""Policy over the workflow files (docs/decisions/0007-slsa-build-l3.md):
+
+* only attest.yml may get an OIDC token, so build steps can't reach what signs the provenance;
+* nothing shared between runs on the release path, and only GitHub-hosted runners;
+* attestation runs only for a v* tag, and only in this repository."""
+
+import glob
+import os
+import re
+from typing import Dict
+
+REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+WORKFLOWS = os.path.join(REPO, ".github", "workflows")
+RELEASE_PATH = ("tests.yml", "image.yml", "rpm.yml", "publish.yml", "release.yml", "attest.yml")
+GITHUB_HOSTED = ("ubuntu-24.04", "ubuntu-latest")
+THIS_REPO_AND_A_TAG = ("if: ${{ github.repository == 'JoeHazurmoney/architecture-wiredata-to-log'"
+                       " && startsWith(github.ref, 'refs/tags/v') }}")
+
+
+def read(name: str) -> str:
+    with open(os.path.join(WORKFLOWS, name), encoding="utf-8") as f:
+        return f.read()
+
+
+def jobs(text: str) -> Dict[str, str]:
+    """Each job's name -> its lines, from a workflow file (two-space job keys under jobs:)."""
+    body = text.split("\njobs:\n", 1)[1]
+    out, name, lines = {}, None, []
+    for line in body.splitlines():
+        m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+        if m:
+            if name:
+                out[name] = "\n".join(lines)
+            name, lines = m.group(1), []
+        elif name:
+            lines.append(line)
+    if name:
+        out[name] = "\n".join(lines)
+    return out
+
+
+def test_only_attest_yml_can_get_an_oidc_token():
+    for path in glob.glob(os.path.join(WORKFLOWS, "*.yml")):
+        name = os.path.basename(path)
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        assert "id-token" not in text.split("\njobs:\n", 1)[0], name
+        assert "write-all" not in text, name      # grants id-token: write without naming it
+        if name == "attest.yml":
+            continue
+        for job, body in jobs(text).items():
+            if "uses: ./.github/workflows/attest.yml" in body:
+                continue                      # a caller grants it to attest.yml only
+            assert "id-token: write" not in body, (name, job)
+
+
+def test_nothing_is_shared_between_runs_on_the_release_path():
+    for name in RELEASE_PATH:
+        text = read(name)
+        assert "actions/cache" not in text and "type=gha" not in text, name
+        assert not re.search(r"^\s+cache(-dependency-path)?:", text, re.M), name   # setup-python
+        assert not re.search(r"^\s+run-id:", text, re.M), name    # another run's artifacts
+
+
+def test_release_path_runs_on_github_hosted_runners():
+    for name in RELEASE_PATH:
+        for label in re.findall(r"^\s+runs-on:\s*(.+?)\s*$", read(name), re.M):
+            assert label in GITHUB_HOSTED, (name, label)
+
+
+def test_attest_yml_runs_only_for_this_repo_and_a_tag():
+    # Any repository can call a public reusable workflow, and checkout then fetches the
+    # caller's code: the job must not start, so no OIDC token exists for it.
+    att = jobs(read("attest.yml"))
+    assert list(att) == ["attest"]
+    assert THIS_REPO_AND_A_TAG in att["attest"]
+
+
+def test_attest_reads_the_checksums_the_release_lists():
+    att = read("attest.yml")
+    assert "subject-checksums: assets/SHA256SUMS" in att
+    assert "push-to-registry: true" in att and "subject-name: ghcr.io/joehazurmoney/wd2l\n" in att
+    assert "create-storage-record: false" in att
+    assert "name: attestations" in att
