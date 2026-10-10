@@ -154,3 +154,19 @@ def test_signing_jobs_use_the_release_environment():
     # or the whole release run fails to start.
     tests_job = rel.split("\n  tests:\n", 1)[1].split("\n  image:\n", 1)[0]
     assert "security-events: write" in tests_job
+
+
+def test_notes_show_how_to_verify_the_github_attestations():
+    text = notes.notes(versions.names("0.4.0"), **ARGS)
+    pin = ("--repo o/r --signer-workflow o/r/.github/workflows/attest.yml "
+           "--source-ref refs/tags/v0.4.0 --deny-self-hosted-runners")
+    assert "gh attestation verify wd2l-0.4.0-py3-none-any.whl " + pin in text
+    assert "gh attestation verify oci://ghcr.io/joehazurmoney/wd2l@sha256:%s %s --bundle-from-oci" % (
+        "d" * 64, pin) in text
+    assert "--bundle wd2l-0.4.0-attestations.jsonl --custom-trusted-root trusted_root.jsonl" in text
+
+
+def test_dry_run_notes_have_no_image_attestation_line():
+    text = notes.notes(versions.names("0.4.0"), **dict(ARGS, digest=""))
+    assert "gh attestation verify wd2l-0.4.0-py3-none-any.whl" in text
+    assert "gh attestation verify oci://" not in text
