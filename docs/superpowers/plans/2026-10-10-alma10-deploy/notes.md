@@ -71,10 +71,54 @@ SELinux enforcing, firewalld on, `nftables.service` off. Splunk runs on the PC (
 | A6-8 | units | doc-unclear | Restarting `wd2l-egress-nic` restarts the sender (`Requires=`) | One line in log-server.md | Handler ordering |
 | A6-9 | audit | works | `wd2l.audit verify` and `wd2l-audit-report verify`: both directories `result ok` (19 and 13 records). Seal: both files `+a`; root's truncate refused. Single-box needs the seal drop-in for the second directory | — | Verify task |
 
+## Reboot test (2026-10-11)
+
+A clean stop before a reboot, the full both-sides procedure in planned-downtime.md. The baseline
+after about 12 h: `last_seq` 1878, health ok, **no new AVCs overnight** (A6-1's fix holds).
+
+| # | Step | Type | What happened | Proposed fix | Ansible |
+|---|---|---|---|---|---|
+| R-1 | before you start | doc-unclear / missing-automation | Muting the three alerts is UI-only in the runbook. Over REST it is one call each: `POST /servicesNS/nobody/wd2l/saved/searches/<name> -d disabled=1` (and `0` afterwards) | Give the REST call (or a 5-line script) next to the UI steps | Optional `wd2l_siem_mute` / `wd2l_siem_unmute` tasks, run by the stop/start tags |
+| R-2 | step 1 | doc-wrong | The runbook says the egress NIC shows "only ~1 packet per second: heartbeats". It shows **2 per second**: one heartbeat per stream (the events stream, and the sender's records stream; 688 and 172 bytes) | "about 2 packets per second (one heartbeat per stream)" | Verify task: no packet bigger than a heartbeat for 5 s |
+| R-3 | step 1 | works | Holding rsyslog = `systemctl stop rsyslog`; `ss` shows no connection on :10070. On a reboot rsyslog starts again at boot and still holds: the sender is disabled, so its disk-assisted queue fills until the sender is back | One line in the runbook for rsyslog | The hold/release is a per-aggregator hook (rsyslog: stop/start the service) |
+| R-4 | step 2 | doc-unclear | The `final:` line in JSON logs comes out escaped (`\"shutdown_unread_bytes\": 0`) and gets cut off on narrow terminals. `journalctl -o json` and a short JSON decode prints it readably | Have the sender also log the final counters as plain `key=value`, or give the decode one-liner | Parse `shutdown_unread_bytes` and fail the stop if it isn't 0 |
+| R-5 | steps 2–4 | works | `final: last_seq=1896`, `events_in` = `events_sent` = 1896, `shutdown_unread_bytes` 0. Splunk: `stream_end` for both streams, no `gap`. The receiver logged amber `e1-sender` rule 2 at stop, as documented. Spool 0, state files saved, `wd2l-sender` disabled for the reboot | — | These are the stop tag's checks |
+
+## Requirement from the user: start/stop/restart tags
+
+The Ansible roles need **tags for clean start, stop and restart**, so downtime and patching are
+one command. They follow planned-downtime.md, across hosts and in order:
+
+* **Stop** (`wd2l_stop`):
+  1. Optionally mute the three SIEM alerts (R-1).
+  2. Hold the aggregator (a hook; rsyslog = stop the service).
+  3. Check the sender's input is quiet.
+  4. Stop the sender, and check `shutdown_unread_bytes` is 0 (R-4). Disable it if the receiver
+     side is going down too.
+  5. Optionally check `stream_end` with no `gap` in the SIEM.
+  6. Stop the receiver, and the capture if the host is going down.
+* **Start** (`wd2l_start`), the other way round:
+  1. The capture NIC, the capture and the receiver, then check them: `wd2l_notx` loaded, a new
+     pcap file, `loaded state`, no "not confirmed" warning.
+  2. Check the egress NIC: the `PERMANENT` ARP entry and `inet wd2l`.
+  3. Enable and start the sender, and check `boot N after stream …`.
+  4. Wait for heartbeats.
+  5. Release the aggregator.
+  6. Check: no `gap`, `stream_lost`, `stream_missing` or `sender_boot_reset`.
+  7. Unmute the alerts.
+* **Restart** (`wd2l_restart`): stop, then start.
+* **Patching** (e.g. `wd2l_patch`): stop, `dnf upgrade`, reboot if needed, start. The variants in
+  the runbook's "Shorter variants" table (log server only, receiver host only, link work) become
+  variables or separate tags.
+
+Use `tags: [never, wd2l_stop]` and so on, so a normal run never stops anything. Cross-host order
+comes from separate plays: sender hosts first for a stop, receiver hosts first for a start.
+
 ## Not done yet
 
-* **Reboot test** (does everything come back: veth unit ordering, nft drop-in, NetworkManager, the
-  SELinux labels, rsyslog). Ask the user first: it reboots their Pi.
+* **Reboot test**, the start half: after the user reboots, follow planned-downtime.md steps 6–10
+  and check everything came back (veth unit ordering, the nft drop-in, NetworkManager, the SELinux
+  labels, rsyslog's held queue draining).
 * **Container mode (Quadlet)**: blocked on the Pi by A0-1 (no arm64 image) and A2-6.
 * **Re-send from Enclave 1** for the 110 events lost in the fault tests: optional demo of
   operations.md "Re-sending from Enclave 1" (no retention server here; the journal is the source).

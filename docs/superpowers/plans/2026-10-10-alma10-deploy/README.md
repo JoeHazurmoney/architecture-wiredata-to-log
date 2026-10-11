@@ -64,8 +64,12 @@ was refused three ways (A1-7).
    A0-1 for containers). Each one gets a test, aimed at 0.3.0 (or rc4).
    * These can go first, as step 0 of the Ansible session, so the roles carry no workarounds.
      Otherwise the roles carry the workarounds behind a version check. Ask the user.
-3. **Finish the deployment checks:** a reboot test (ask first: it reboots the Pi). Then container
-   mode, once there is an arm64 image.
+3. **Finish the deployment checks.**
+   * The reboot test: the clean-stop half was done on 2026-10-11 ([notes.md](notes.md#reboot-test-2026-10-11)).
+   * If the start half isn't recorded there, the Pi may still have `wd2l-sender` **disabled**, and
+     the three alerts **muted** in Splunk: "WD2L - Heartbeat stale", "WD2L - Receiver silent" and
+     "WD2L - Fault segment".
+   * Then container mode, once there is an arm64 image.
 4. **Docs rewrite** (the user's original goals, [plan.md](plan.md) Part C):
    * streamline the install;
    * the README shows the supply chain (two vulnerability scanners, SBOMs, signing, SLSA L3
@@ -106,6 +110,10 @@ In short:
   * Stop: the aggregator, then the sender, then the receiver.
   * Start: the capture and receiver, then the sender, then the aggregator.
   * Restarting `wd2l-egress-nic` restarts the sender.
+* **Tags for clean stop, start, restart and patching (a requirement from the user).** The tags
+  are `wd2l_stop`, `wd2l_start`, `wd2l_restart` and `wd2l_patch`. They're tagged `never`, so a
+  normal run doesn't touch running services, and they run the runbook's checks as they go. The
+  steps are in [notes.md](notes.md#requirement-from-the-user-startstoprestart-tags).
 * **Verify tasks**, as the session did by hand:
   * `rpm -V` as root;
   * `nft list table netdev wd2l_notx` (the capture NIC's egress drop) and `inet wd2l`;
