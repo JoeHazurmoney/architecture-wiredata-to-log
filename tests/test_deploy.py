@@ -208,3 +208,16 @@ def test_arp_watch_runs_whenever_the_egress_nic_does():
     assert "WantedBy" not in arp          # started by wd2l-egress-nic's Wants=, never enabled alone
     with open(os.path.join(REPO, "deploy", "log-server", "wd2l.rules")) as f:
         assert "-w /etc/systemd/system/wd2l-egress-arp.service -p wa -k wd2l-units" in f.read().splitlines()
+
+
+@pytest.mark.parametrize("path", [SENDER_UNIT, RECEIVER_UNIT])
+def test_units_wait_for_the_clock_but_dont_need_it(path):
+    # At boot the receiver read chrony before it had synced: a time alarm on every reboot.
+    u = unit(path)
+    assert "time-sync.target" in u["After"][0].split()
+    assert {"time-sync.target", "chrony-wait.service"} <= set(u["Wants"][0].split())
+    assert "chrony-wait" not in " ".join(u.get("Requires", []))   # NTP down must not stop wd2l
+
+
+def test_capture_doesnt_wait_for_the_clock():
+    assert "time-sync" not in " ".join(unit(CAPTURE_UNIT).get("After", []))

@@ -1,7 +1,9 @@
 [Unit]
 Description=wd2l sender: log aggregator JSON lines in, one-way UDP frames out
-After=network-online.target wd2l-egress-nic.service
-Wants=network-online.target
+# Wait for the clock (chrony-wait, at most about 3 minutes), so the first time stamps and the
+# first time check aren't from an unsynced clock. The capture (tcpdump) doesn't wait.
+After=network-online.target wd2l-egress-nic.service time-sync.target
+Wants=network-online.target time-sync.target chrony-wait.service
 Requires=wd2l-egress-nic.service
 
 [Service]
