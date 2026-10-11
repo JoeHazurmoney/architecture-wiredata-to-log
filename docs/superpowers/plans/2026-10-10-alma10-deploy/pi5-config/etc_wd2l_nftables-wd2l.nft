@@ -1,0 +1,48 @@
+destroy table inet wd2l
+destroy table arp wd2l_arp
+destroy table netdev wd2l_egress
+#!/usr/sbin/nft -f
+# Central log server: lock the egress NIC down to exactly one flow.
+# Include from /etc/sysconfig/nftables.conf (RHEL) or /etc/nftables.conf (Debian/Ubuntu).
+# Replace ens224 with your egress NIC and keep the addresses in step with egress.env.
+
+define WD2L_IF = "wd2l-tx"
+define WD2L_SRC = 10.255.255.1
+define WD2L_BH = 10.255.255.2
+define WD2L_PORT = 5514
+# wd2l-sender's fixed source port (--bind 10.255.255.1:5514 in wd2l-sender.service).
+define WD2L_SPORT = 5514
+
+table inet wd2l {
+    chain input {
+        type filter hook input priority filter; policy accept;
+        iifname $WD2L_IF counter drop comment "nothing is ever accepted from the tapped cable"
+    }
+    chain output {
+        type filter hook output priority filter; policy accept;
+        oifname $WD2L_IF meta skuid "wd2l" ip saddr $WD2L_SRC ip daddr $WD2L_BH udp sport $WD2L_SPORT udp dport $WD2L_PORT accept
+        oifname $WD2L_IF counter drop comment "only wd2l-sender may use this NIC"
+    }
+}
+
+# ARP is not IP, so the inet table does not see it. The static neighbor entry means the
+# kernel never needs to ARP for the black hole; this makes sure it never does.
+table arp wd2l_arp {
+    chain output {
+        type filter hook output priority filter; policy accept;
+        oifname $WD2L_IF counter drop
+    }
+    chain input {
+        type filter hook input priority filter; policy accept;
+        iifname $WD2L_IF counter drop
+    }
+}
+
+# Kernel 5.16+ only (RHEL 9.x may not have it; delete this table if nft rejects it).
+# Catches anything else a daemon might put on the wire (LLDP, IPv6 RS, ...).
+table netdev wd2l_egress {
+    chain out {
+        type filter hook egress device $WD2L_IF priority filter; policy drop;
+        ip saddr $WD2L_SRC ip daddr $WD2L_BH udp sport $WD2L_SPORT udp dport $WD2L_PORT accept
+    }
+}
