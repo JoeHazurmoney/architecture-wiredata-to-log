@@ -70,6 +70,10 @@ sudo systemctl enable --now wd2l-capture wd2l-pcap-prune.timer
 ls -l /var/lib/wd2l/pcap/
 ```
 
+The receiver package gives `/var/lib/wd2l/pcap` the SELinux type `netutils_tmp_t`, the only one
+tcpdump (started by systemd) may write. Check with `ls -dZ /var/lib/wd2l/pcap`. Without it every
+write is denied and no archive is kept.
+
 One pcap file per hour, kept 7 days. At 1,000 events/s × ~1 KB that's about 3.6 GB/hour, 600 GB
 per week. Size the disk, or shorten the retention in a drop-in for `wd2l-pcap-prune.service`
 (`sudo systemctl edit wd2l-pcap-prune.service`: an empty `ExecStart=`, then the `find` line
