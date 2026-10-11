@@ -4,15 +4,17 @@
 # Use this or wd2l-receiver.service on a host, never both. Options: /etc/wd2l/receiver.env.
 [Unit]
 Description=wd2l receiver (container): rebuild logs from the tapped stream and send them to the SIEM
-After=wd2l-capture-nic.service network-online.target
+# Wait for the clock (chrony-wait, at most about 3 minutes), so the first time stamps and the
+# first time check aren't from an unsynced clock. The capture (tcpdump) doesn't wait.
+After=wd2l-capture-nic.service network-online.target time-sync.target
 Requires=wd2l-capture-nic.service
-Wants=network-online.target
+Wants=network-online.target time-sync.target chrony-wait.service
 
 [Container]
 ContainerName=wd2l-receiver
 # The release's image, verified and loaded beforehand (docs/releasing.md). For strict change
 # control, name it by the digest in the release notes: ghcr.io/joehazurmoney/wd2l@sha256:...
-Image=ghcr.io/joehazurmoney/wd2l:0.3.0rc3
+Image=ghcr.io/joehazurmoney/wd2l:0.3.0rc4
 Pull=never
 Network=host
 User=wd2l

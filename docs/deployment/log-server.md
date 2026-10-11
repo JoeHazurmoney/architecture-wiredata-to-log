@@ -61,6 +61,9 @@ sudo systemctl enable --now wd2l-egress-nic
 turns IPv6 off on that NIC, and tells NetworkManager and lldpd to leave it alone. No gateway: the
 /30 route is all it needs.
 
+`wd2l-egress-arp`, started with it, puts the static ARP entry back if the NIC is taken down and
+up (or the driver resets it), which flushes even permanent entries. It logs each time it does.
+
 Check:
 
 ```bash
@@ -70,19 +73,21 @@ ip neigh show dev ens224         # 10.255.255.2 lladdr 02:00:00:00:00:02 PERMANE
 
 ## 3. Firewall
 
-Load `/usr/share/wd2l/nftables-wd2l.nft` (copy it, then edit the interface name at the top). It:
+`wd2l-egress-nic` (step 2) also loads the egress firewall, from the settings in `egress.env`. It:
 
 * drops everything arriving on the egress NIC,
-* lets only processes running as `wd2l` send UDP from `10.255.255.1:5514` to `10.255.255.2:5514`,
+* lets only processes running as `wd2l` send UDP from `10.255.255.1:5514` to `10.255.255.2:5514`
+  (`PORT` in `egress.env`),
 * blocks ARP in and out on that NIC,
-* on kernel 5.16+, also drops any other frame at the NIC (LLDP, IPv6, ...). Delete that last table
-  if your kernel rejects it.
+* on kernel 5.16+, also drops any other frame at the NIC (LLDP, IPv6, ...). Without the egress
+  hook the unit's log says why, and the rest still loads.
 
 ```bash
-sudo install -d /etc/nftables.d && sudo cp /usr/share/wd2l/nftables-wd2l.nft /etc/nftables.d/
-# include it from /etc/sysconfig/nftables.conf
-sudo nft -f /etc/nftables.d/nftables-wd2l.nft
+sudo nft list table inet wd2l     # the rules, with their drop counters
 ```
+
+Don't load these tables from `nftables.service` as well: its stop and reload flush every table,
+firewalld's included.
 
 ## 4. Sender service
 
@@ -122,7 +127,7 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | `--audit-min-free-mb` | `256` | Free space the audit directory must keep. Below it, nothing more goes in the audit files: records are still forwarded, counted as missed, and `audit_ok` is false until there is space again |
 | `--egress-iface` | none | `sender.env` uses `ens224`. NIC carrier and transmit counters go into every heartbeat |
 | `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
-| `--chrony-addr` | none | Ask chronyd over UDP (`HOST[:PORT]`, port 323) instead of running `chronyc`. The container unit uses `127.0.0.1:323`. chronyd's default configuration answers it; `cmdport 0` turns it off |
+| `--chrony-addr` | none | Ask chronyd over UDP (`HOST[:PORT]`, port 323) instead of running `chronyc`. The env file and the container unit use `127.0.0.1:323`: nothing to run, and no SELinux denial (chronyc can't enter its domain under `NoNewPrivileges`). chronyd's default configuration answers it; `cmdport 0` turns it off |
 | `--log-format` | text | `sender.env` uses `json`: one JSON object per log line |
 
 ### Audit files
@@ -302,15 +307,14 @@ sudo usermod -aG wd2l-audit <aggregator service account>         # it copies the
 git rev-parse HEAD | sudo tee /opt/wd2l/wd2l/BUILD >/dev/null    # the build audit records name
 ```
 
-The units, the firewall template and the auditd rules, in place of sections 2 to 4:
+The units and the auditd rules, in place of sections 2 to 4:
 
 ```bash
-sudo cp deploy/log-server/wd2l-egress-nic.service deploy/log-server/wd2l-sender.service \
+sudo cp deploy/log-server/wd2l-egress-nic.service deploy/log-server/wd2l-egress-arp.service \
+  deploy/log-server/wd2l-sender.service \
   deploy/common/wd2l-audit-seal.service deploy/common/wd2l-audit-seal.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now wd2l-egress-nic wd2l-sender wd2l-audit-seal.timer
-sudo cp deploy/log-server/nftables-wd2l.nft /etc/nftables.d/ 2>/dev/null || sudo cp deploy/log-server/nftables-wd2l.nft /etc/
-# include it from /etc/sysconfig/nftables.conf (RHEL) or /etc/nftables.conf (Debian/Ubuntu)
 sudo cp deploy/log-server/wd2l.rules /etc/audit/rules.d/ && sudo augenrules --load
 ```
 

@@ -119,8 +119,30 @@ one command. They follow planned-downtime.md, across hosts and in order:
 Use `tags: [never, wd2l_stop]` and so on, so a normal run never stops anything. Cross-host order
 comes from separate plays: sender hosts first for a stop, receiver hosts first for a start.
 
+## rc4 pre-release check (2026-10-11)
+
+PR #23's CI-built EL10 RPMs (`0.3.0~rc4-1`, run 38150024200) installed over rc3 on the Pi, in the
+planned-downtime order, after removing every rc3 workaround (the nft and ring-probe drop-ins, the
+fixed `capture-nic.sh` copy, `/etc/wd2l/nftables-wd2l.nft`, the local `semanage fcontext`). The
+single-box pieces stayed (veth unit, sender audit directory and seal drop-in, merged auditd rules,
+rsyslog config and port label). `dnf upgrade` took 14 s, the SELinux module included.
+
+| Fix | Check on the Pi | Result |
+|---|---|---|
+| A2-5 | `ls -dZ /var/lib/wd2l/pcap` with the local fcontext removed; `semodule -l` | `netutils_tmp_t`; `wd2l_pcap` listed; a pcap written |
+| A2-3, A2-4 | `wd2l-capture-nic` on veth with no drop-in | active, no `note:`, `wd2l_notx` loaded |
+| A2-2 | `wd2l-egress-nic` with no drop-in; then a restart | `inet wd2l`, `arp wd2l_arp`, `netdev wd2l_egress` loaded; one copy of the rules after the restart; firewalld's table untouched |
+| A6-7 | `ip link set wd2l-tx down; up` while the sender runs | entry back `PERMANENT`; journal: `egress-arp: restored 10.255.255.2 …`; the 4 events sent during the 2 s outage reported exactly as a gap |
+| A6-6 | `ip link set wd2l-cap down` for 10 s | receiver stayed active (0 restarts); "red in boundary (rule 1): capture NIC has no carrier"; exact gap afterwards |
+| A6-1 | AVC count since boot | 0 |
+| Run linking | sender start after the upgrade | `boot 5 after stream 3ea0… (last seq 2224)` |
+| Splunk | health summaries after the upgrade | `version 0.3.0rc4`, fault ok, time ok, `audit_ok` true |
+
+R-8 (no time alarm at boot) needs a reboot: not done yet.
+
 ## Not done yet
 
+* **R-8 on the Pi:** reboot with rc4 installed and check there is no `time_status=alarm` record.
 * **Container mode (Quadlet)**: blocked on the Pi by A0-1 (no arm64 image) and A2-6.
 * **Re-send from Enclave 1** for the 110 events lost in the fault tests: optional demo of
   operations.md "Re-sending from Enclave 1" (no retention server here; the journal is the source).

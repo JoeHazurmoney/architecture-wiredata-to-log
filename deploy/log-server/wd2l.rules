@@ -5,6 +5,7 @@
 -w /etc/wd2l/ -p wa -k wd2l-config
 -w /etc/systemd/system/wd2l-sender.service -p wa -k wd2l-units
 -w /etc/systemd/system/wd2l-egress-nic.service -p wa -k wd2l-units
+-w /etc/systemd/system/wd2l-egress-arp.service -p wa -k wd2l-units
 -w /etc/systemd/system/wd2l-audit-seal.service -p wa -k wd2l-units
 -w /etc/systemd/system/wd2l-audit-seal.timer -p wa -k wd2l-units
 ## State and audit files: only changes made from a login session (auid set). The daemons write

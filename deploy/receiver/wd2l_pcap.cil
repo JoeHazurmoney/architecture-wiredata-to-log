@@ -1,0 +1,5 @@
+; wd2l receiver: the capture archive's SELinux label. tcpdump, started by systemd
+; (wd2l-capture.service), runs as netutils_t, which may write only netutils_tmp_t files; with the
+; default var_lib_t label every write is denied. This gives /var/lib/wd2l/pcap that label and adds
+; no permission to any domain. The receiver RPM loads it (semodule) and relabels the directory.
+(filecon "/var/lib/wd2l/pcap(/.*)?" any (system_u object_r netutils_tmp_t ((s0) (s0))))

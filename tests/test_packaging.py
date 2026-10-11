@@ -305,3 +305,17 @@ def test_build_script_defines_what_the_spec_requires():
 def test_descriptions_fit_rpmlint_width():
     for block in re.findall(r"^%description.*?\n(.*?)\n\n", spec(), re.M | re.S):
         assert all(len(line) <= 79 for line in block.splitlines()), block
+
+
+def test_receiver_labels_the_capture_archive_for_tcpdump():
+    # tcpdump started by systemd runs as netutils_t, which may only write netutils_tmp_t files.
+    cil = [x for x in read("deploy/receiver/wd2l_pcap.cil").splitlines() if x.strip() and not x.startswith(";")]
+    assert cil == ['(filecon "/var/lib/wd2l/pcap(/.*)?" any (system_u object_r netutils_tmp_t ((s0) (s0))))']
+    s = spec()
+    for line in ("install -Dm0644 receiver/wd2l_pcap.cil %{buildroot}%{_datadir}/wd2l/selinux/wd2l_pcap.cil",
+                 "semodule -X 200 -i %{_datadir}/wd2l/selinux/wd2l_pcap.cil",
+                 "semodule -X 200 -r wd2l_pcap",
+                 "restorecon -R %{_sharedstatedir}/wd2l/pcap",
+                 "%{_datadir}/wd2l/selinux/wd2l_pcap.cil"):
+        assert line in s, line
+    assert "matchpathcon /var/lib/wd2l/pcap/cap-1.pcap" in read("packaging/rpm/install-test.sh")

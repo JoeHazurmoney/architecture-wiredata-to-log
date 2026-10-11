@@ -1,8 +1,10 @@
 [Unit]
 Description=wd2l receiver: rebuild logs from the tapped stream and send them to the SIEM
-After=wd2l-capture-nic.service network-online.target
+# Wait for the clock (chrony-wait, at most about 3 minutes), so the first time stamps and the
+# first time check aren't from an unsynced clock. The capture (tcpdump) doesn't wait.
+After=wd2l-capture-nic.service network-online.target time-sync.target
 Requires=wd2l-capture-nic.service
-Wants=network-online.target
+Wants=network-online.target time-sync.target chrony-wait.service
 
 [Service]
 User=wd2l

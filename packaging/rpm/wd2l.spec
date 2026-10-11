@@ -45,8 +45,9 @@ Requires:       iproute
 
 %description sender
 The sender's systemd units (or a Quadlet example to run it as a container), the
-egress NIC script, its settings in /etc/wd2l, the nftables template and the
-auditd rules for the log server. See docs/deployment/log-server.md.
+egress NIC script (which also loads the egress firewall), its settings in
+/etc/wd2l, and the auditd rules for the log server. See
+docs/deployment/log-server.md.
 
 %package receiver
 Summary:        wd2l receiver for Enclave 2: units, capture NIC script, archive, SIEM examples
@@ -81,16 +82,15 @@ echo rpm > $di/INSTALLER
 cd rpmified
 install -Dm0644 -t %{buildroot}%{_unitdir} \
     common/wd2l-audit-seal.service common/wd2l-audit-seal.timer \
-    log-server/wd2l-sender.service log-server/wd2l-egress-nic.service \
+    log-server/wd2l-sender.service log-server/wd2l-egress-nic.service log-server/wd2l-egress-arp.service \
     receiver/wd2l-receiver.service receiver/wd2l-capture.service receiver/wd2l-capture-nic.service \
     receiver/wd2l-pcap-prune.service receiver/wd2l-pcap-prune.timer
 install -Dm0755 -t %{buildroot}%{_libexecdir}/wd2l \
-    common/wd2l-audit-seal.sh log-server/egress-nic.sh receiver/capture-nic.sh
+    common/wd2l-audit-seal.sh log-server/egress-nic.sh log-server/egress-arp-watch.sh receiver/capture-nic.sh
 install -Dm0640 log-server/sender.env %{buildroot}%{_sysconfdir}/wd2l/sender.env
 install -Dm0640 log-server/egress.env.example %{buildroot}%{_sysconfdir}/wd2l/egress.env
 install -Dm0640 receiver/receiver.env %{buildroot}%{_sysconfdir}/wd2l/receiver.env
 install -Dm0640 receiver/capture.env %{buildroot}%{_sysconfdir}/wd2l/capture.env
-install -Dm0644 log-server/nftables-wd2l.nft %{buildroot}%{_datadir}/wd2l/nftables-wd2l.nft
 install -Dm0644 log-server/wd2l.rules %{buildroot}%{_datadir}/wd2l/audit/log-server.rules
 install -Dm0644 receiver/wd2l.rules %{buildroot}%{_datadir}/wd2l/audit/receiver.rules
 install -Dm0644 log-server/wd2l-quadlet.rules %{buildroot}%{_datadir}/wd2l/audit/log-server-quadlet.rules
@@ -99,6 +99,7 @@ install -Dm0644 -t %{buildroot}%{_datadir}/wd2l/quadlet \
     log-server/wd2l-sender.container receiver/wd2l-receiver.container
 install -Dm0644 -t %{buildroot}%{_datadir}/wd2l/splunk receiver/splunk/*
 install -Dm0644 receiver/90-wd2l.conf %{buildroot}%{_sysctldir}/90-wd2l.conf
+install -Dm0644 receiver/wd2l_pcap.cil %{buildroot}%{_datadir}/wd2l/selinux/wd2l_pcap.cil
 for d in $(%{python3} ../packaging/rpm/rpmify.py --drop-in-dirs log-server/wd2l.rules receiver/wd2l.rules | sort -u); do
     install -d %{buildroot}$d
 done
@@ -127,17 +128,23 @@ exit 0
 %systemd_postun wd2l-audit-seal.service wd2l-audit-seal.timer
 
 %post sender
-%systemd_post wd2l-sender.service wd2l-egress-nic.service
+%systemd_post wd2l-sender.service wd2l-egress-nic.service wd2l-egress-arp.service
 
 %preun sender
-%systemd_preun wd2l-sender.service wd2l-egress-nic.service
+%systemd_preun wd2l-sender.service wd2l-egress-nic.service wd2l-egress-arp.service
 
 %postun sender
 # Not restarted on upgrade: stop and start it as docs/planned-downtime.md says.
-%systemd_postun wd2l-sender.service wd2l-egress-nic.service
+%systemd_postun wd2l-sender.service wd2l-egress-nic.service wd2l-egress-arp.service
 
 %post receiver
+# The capture archive's SELinux label (receiver/wd2l_pcap.cil): tcpdump may write it.
+if [ -x /usr/sbin/semodule ]; then
+    /usr/sbin/semodule -X 200 -i %{_datadir}/wd2l/selinux/wd2l_pcap.cil || \
+        echo "wd2l-receiver: the capture archive's SELinux label didn't load; see docs/deployment/receiver.md" >&2
+fi
 %tmpfiles_create wd2l-receiver.conf
+/usr/sbin/restorecon -R %{_sharedstatedir}/wd2l/pcap 2>/dev/null || :
 %sysctl_apply 90-wd2l.conf
 %systemd_post wd2l-receiver.service wd2l-capture.service wd2l-capture-nic.service wd2l-pcap-prune.service wd2l-pcap-prune.timer
 
@@ -145,6 +152,9 @@ exit 0
 %systemd_preun wd2l-receiver.service wd2l-capture.service wd2l-capture-nic.service wd2l-pcap-prune.service wd2l-pcap-prune.timer
 
 %postun receiver
+if [ $1 -eq 0 ] && [ -x /usr/sbin/semodule ]; then
+    /usr/sbin/semodule -X 200 -r wd2l_pcap >/dev/null 2>&1 || :
+fi
 # Not restarted on upgrade: stop and start it as docs/planned-downtime.md says.
 %systemd_postun wd2l-receiver.service wd2l-capture.service wd2l-capture-nic.service wd2l-pcap-prune.service wd2l-pcap-prune.timer
 
@@ -174,15 +184,17 @@ exit 0
 %files sender
 %{_unitdir}/wd2l-sender.service
 %{_unitdir}/wd2l-egress-nic.service
+%{_unitdir}/wd2l-egress-arp.service
 %{_libexecdir}/wd2l/egress-nic.sh
+%{_libexecdir}/wd2l/egress-arp-watch.sh
 %config(noreplace) %attr(0640,root,wd2l) %{_sysconfdir}/wd2l/sender.env
 %config(noreplace) %attr(0640,root,wd2l) %{_sysconfdir}/wd2l/egress.env
-%{_datadir}/wd2l/nftables-wd2l.nft
 %{_datadir}/wd2l/audit/log-server.rules
 %{_datadir}/wd2l/audit/log-server-quadlet.rules
 %{_datadir}/wd2l/quadlet/wd2l-sender.container
 %dir %{_sysconfdir}/systemd/system/wd2l-sender.service.d
 %dir %{_sysconfdir}/systemd/system/wd2l-egress-nic.service.d
+%dir %{_sysconfdir}/systemd/system/wd2l-egress-arp.service.d
 
 %files receiver
 %{_unitdir}/wd2l-receiver.service
@@ -201,6 +213,8 @@ exit 0
 %{_datadir}/wd2l/audit/receiver-quadlet.rules
 %{_datadir}/wd2l/quadlet/wd2l-receiver.container
 %{_datadir}/wd2l/splunk/
+%dir %{_datadir}/wd2l/selinux
+%{_datadir}/wd2l/selinux/wd2l_pcap.cil
 %dir %{_sysconfdir}/systemd/system/wd2l-receiver.service.d
 %dir %{_sysconfdir}/systemd/system/wd2l-capture.service.d
 %dir %{_sysconfdir}/systemd/system/wd2l-capture-nic.service.d

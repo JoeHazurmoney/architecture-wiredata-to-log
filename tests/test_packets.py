@@ -1,3 +1,4 @@
+import errno
 import io
 import random
 import struct
@@ -94,3 +95,60 @@ def test_pcap_rejects_other_formats():
 def test_mac_bytes():
     assert packets.mac_bytes(DST_MAC) == b"\x02\x00\x00\x00\x00\x02"
     assert packets.mac_bytes(SRC_MAC)[-1] == 1
+
+
+class FakeSock:
+    def __init__(self, items):
+        self.items = list(items)
+
+    def recvfrom(self, n):
+        x = self.items.pop(0)
+        if isinstance(x, BaseException):
+            raise x
+        return x
+
+
+def live(items, monkeypatch, ifindex_now=3):
+    # The NIC the socket was bound to is cap0, ifindex 3. ifindex_now is what the kernel says
+    # cap0's index is when ENETDOWN arrives: an OSError means cap0 no longer exists.
+    cap = packets.LiveCapture.__new__(packets.LiveCapture)     # no raw socket, no root
+    cap.sock, cap.timeout, cap.down_errors = FakeSock(items), 0.5, 0
+    cap.iface, cap.ifindex = "cap0", 3
+
+    def nametoindex(name):
+        if isinstance(ifindex_now, BaseException):
+            raise ifindex_now
+        return ifindex_now
+    monkeypatch.setattr(packets.socket, "if_nametoindex", nametoindex)
+    monkeypatch.setattr(packets.time, "sleep", lambda s: None)
+    return cap
+
+
+DOWN = OSError(errno.ENETDOWN, "Network is down")
+
+
+def test_live_capture_rides_out_the_interface_going_down(monkeypatch):
+    # `ip link set DEV down` makes the packet socket report ENETDOWN once; it delivers again
+    # once the NIC is up. The receiver crashed and restart-looped on it.
+    slept = []
+    cap = live([DOWN, (b"frame", ("cap0", 3, 0, 1, b""))], monkeypatch)
+    monkeypatch.setattr(packets.time, "sleep", slept.append)
+    assert cap.recv() is None and cap.down_errors == 1 and slept == [0.5]
+    assert cap.recv() == b"frame"
+
+
+def test_live_capture_gives_up_when_the_nic_is_gone(monkeypatch):
+    # An unplugged NIC unbinds the socket for good: exit, so systemd restarts and re-binds.
+    with pytest.raises(OSError):
+        live([DOWN], monkeypatch, ifindex_now=OSError(errno.ENODEV, "No such device")).recv()
+
+
+def test_live_capture_gives_up_when_the_nic_was_replaced(monkeypatch):
+    # Plugged back in, the NIC has a new index; the old socket would never receive again.
+    with pytest.raises(OSError):
+        live([DOWN], monkeypatch, ifindex_now=9).recv()
+
+
+def test_live_capture_still_raises_other_socket_errors(monkeypatch):
+    with pytest.raises(OSError):
+        live([OSError(errno.EBADF, "Bad file descriptor")], monkeypatch).recv()

@@ -6,10 +6,12 @@ that is not IPv4/UDP (or is an IP fragment) is reported as such and skipped.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import socket
 import struct
+import time
 from typing import Any, BinaryIO, Dict, Iterator, List, NamedTuple, Optional, Tuple
 
 ETH_P_ALL = 0x0003
@@ -172,13 +174,32 @@ class LiveCapture:
         self.rcvbuf = set_rcvbuf(self.sock, rcvbuf)
         self.sock.bind((iface, 0))
         self.sock.settimeout(timeout)
+        self.iface, self.ifindex = iface, socket.if_nametoindex(iface)
+        self.timeout = timeout
+        self.down_errors = 0
 
     def recv(self) -> Optional[bytes]:
-        """Return the next incoming frame, or None on timeout."""
+        """Return the next incoming frame, or None on timeout. While the interface is down
+        (`ip link set DEV down`) the socket reports ENETDOWN: that counts as a timeout, and
+        frames flow again once it is up. The carrier check reports the NIC meanwhile (rule 1).
+        If the NIC is gone or was replaced (unplugged, driver reloaded), this socket would never
+        receive again: the error is raised, so the receiver exits and systemd starts it anew."""
         while True:
             try:
                 data, addr = self.sock.recvfrom(65535)
             except socket.timeout:
+                return None
+            except OSError as e:
+                if e.errno != errno.ENETDOWN:
+                    raise
+                try:
+                    same_nic = socket.if_nametoindex(self.iface) == self.ifindex
+                except OSError:
+                    same_nic = False
+                if not same_nic:
+                    raise
+                self.down_errors += 1
+                time.sleep(self.timeout)
                 return None
             if addr[2] != PACKET_OUTGOING:
                 return data

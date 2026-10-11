@@ -1,4 +1,5 @@
 import os
+import re
 import shlex
 import subprocess
 import time
@@ -15,21 +16,24 @@ SENDER_ENV = os.path.join(REPO, "deploy", "log-server", "sender.env")
 RECEIVER_ENV = os.path.join(REPO, "deploy", "receiver", "receiver.env")
 CAPTURE_UNIT = os.path.join(REPO, "deploy", "receiver", "wd2l-capture.service")
 CAPTURE_ENV = os.path.join(REPO, "deploy", "receiver", "capture.env")
+EGRESS_NIC_UNIT = os.path.join(REPO, "deploy", "log-server", "wd2l-egress-nic.service")
+ARP_UNIT = os.path.join(REPO, "deploy", "log-server", "wd2l-egress-arp.service")
 
-# What the units passed before the options moved into env files (they must not change).
-SENDER_ARGS_BEFORE = [
+# The options the env files give the native units and the containers.
+SENDER_ARGS = [
     "--listen", "127.0.0.1:10070", "--bind", "10.255.255.1:5514", "--dst", "10.255.255.2:5514",
     "--max-datagram", "1472", "--auth-token-file", "/etc/wd2l/aggregator.token",
     "--state", "/var/lib/wd2l/sender.json", "--audit-dir", "/var/log/wd2l",
-    "--egress-iface", "ens224", "--log-format", "json"]
-RECEIVER_ARGS_BEFORE = [
+    "--egress-iface", "ens224", "--chrony-addr", "127.0.0.1:323", "--log-format", "json"]
+RECEIVER_ARGS = [
     "--live", "ens256", "--dst-ip", "10.255.255.2", "--dst-port", "5514",
     "--src-ip", "10.255.255.1", "--src-port", "5514", "--state", "/var/lib/wd2l/state.json",
     "--spool-dir", "/var/lib/wd2l/spool", "--hec-url", "https://siem.enclave2.example:8088",
     "--hec-token-file", "/etc/wd2l/hec.token", "--hec-ca", "/etc/wd2l/siem-ca.pem",
     "--default-index", "enclave1", "--health-index", "wd2l",
     "--hec-audit-token-file", "/etc/wd2l/hec-audit.token", "--audit-index", "wd2l_audit",
-    "--audit-dir", "/var/log/wd2l", "--pcap-dir", "/var/lib/wd2l/pcap", "--log-format", "json"]
+    "--audit-dir", "/var/log/wd2l", "--pcap-dir", "/var/lib/wd2l/pcap",
+    "--chrony-addr", "127.0.0.1:323", "--log-format", "json"]
 
 
 def unit(path):
@@ -68,10 +72,17 @@ def args(unit_path, env_path, var, module):
     return shlex.split(env_file(env_path)[var])
 
 
-def test_moving_the_options_into_env_files_changed_none_of_them():
-    assert args(SENDER_UNIT, SENDER_ENV, "WD2L_SENDER_ARGS", "wd2l.sender") == SENDER_ARGS_BEFORE
-    assert args(RECEIVER_UNIT, RECEIVER_ENV, "WD2L_RECEIVER_ARGS", "wd2l.receiver") \
-        == RECEIVER_ARGS_BEFORE
+def test_env_files_hold_exactly_these_options():
+    assert args(SENDER_UNIT, SENDER_ENV, "WD2L_SENDER_ARGS", "wd2l.sender") == SENDER_ARGS
+    assert args(RECEIVER_UNIT, RECEIVER_ENV, "WD2L_RECEIVER_ARGS", "wd2l.receiver") == RECEIVER_ARGS
+
+
+def test_native_units_ask_chronyd_over_udp():
+    # chronyc under NoNewPrivileges can't enter its SELinux domain: every check logged a denial.
+    for unit_path, env_path, var, mod in ((SENDER_UNIT, SENDER_ENV, "WD2L_SENDER_ARGS", sender),
+                                          (RECEIVER_UNIT, RECEIVER_ENV, "WD2L_RECEIVER_ARGS", receiver)):
+        a = mod.build_parser().parse_args(args(unit_path, env_path, var, mod.__name__))
+        assert a.chrony_addr == "127.0.0.1:323"
 
 
 def test_sender_unit_turns_audit_and_health_on():
@@ -187,3 +198,40 @@ def test_quadlet_unit_matches_the_native_one(side, name, var, native_path, stop,
     for k in ("After", "Requires", "Wants"):
         assert q["Unit"].get(k) == native.get(k), k
     assert "--umask=0027" in " ".join(c.get("PodmanArgs", []))
+
+
+def test_arp_watch_runs_whenever_the_egress_nic_does():
+    nic, arp = unit(EGRESS_NIC_UNIT), unit(ARP_UNIT)
+    assert "wd2l-egress-arp.service" in nic["Wants"][0].split()
+    assert arp["After"] == ["wd2l-egress-nic.service"] and arp["PartOf"] == ["wd2l-egress-nic.service"]
+    assert arp["ExecStart"] == ["/opt/wd2l/deploy/log-server/egress-arp-watch.sh"]
+    assert arp["Restart"] == ["always"] and arp["CapabilityBoundingSet"] == ["CAP_NET_ADMIN"]
+    assert "WantedBy" not in arp          # started by wd2l-egress-nic's Wants=, never enabled alone
+    with open(os.path.join(REPO, "deploy", "log-server", "wd2l.rules")) as f:
+        assert "-w /etc/systemd/system/wd2l-egress-arp.service -p wa -k wd2l-units" in f.read().splitlines()
+
+
+@pytest.mark.parametrize("path", [SENDER_UNIT, RECEIVER_UNIT])
+def test_units_wait_for_the_clock_but_dont_need_it(path):
+    # At boot the receiver read chrony before it had synced: a time alarm on every reboot.
+    u = unit(path)
+    assert "time-sync.target" in u["After"][0].split()
+    assert {"time-sync.target", "chrony-wait.service"} <= set(u["Wants"][0].split())
+    assert "chrony-wait" not in " ".join(u.get("Requires", []))   # NTP down must not stop wd2l
+
+
+def test_capture_doesnt_wait_for_the_clock():
+    assert "time-sync" not in " ".join(unit(CAPTURE_UNIT).get("After", []))
+
+
+@pytest.mark.parametrize("side", ["log-server", "receiver"])
+def test_manual_install_copies_every_unit(side):
+    # A unit the manual install leaves out is silently skipped (Wants= on a missing unit is ignored).
+    import fnmatch
+    with open(os.path.join(REPO, "docs", "deployment", side + ".md"), encoding="utf-8") as f:
+        appendix = f.read().split("## Appendix: manual install", 1)[1]
+    copied = re.findall(r"deploy/(?:%s|common)/[\w.*-]+" % side, appendix)
+    units = ["deploy/%s/%s" % (d, n) for d in (side, "common")
+             for n in os.listdir(os.path.join(REPO, "deploy", d)) if n.endswith((".service", ".timer"))]
+    missing = [u for u in units if not any(fnmatch.fnmatch(u, c) for c in copied)]
+    assert not missing, missing

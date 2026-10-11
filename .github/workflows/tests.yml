@@ -41,7 +41,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update -q && sudo apt-get install -y -q iproute2 nftables tcpdump
+      - run: sudo apt-get update -q && sudo apt-get install -y -q iproute2 nftables tcpdump ethtool
+      - run: sudo lab/check-nic-scripts.sh
       - run: sudo lab/run-lab.sh
       - run: sudo lab/run-lab.sh --loss 1
       - run: sudo lab/run-lab.sh --receiver-outage

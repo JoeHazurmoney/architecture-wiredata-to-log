@@ -12,7 +12,10 @@ fail() { echo "FAIL ($leg): $*" >&2; exit 1; }
 EDIT='WD2L_SENDER_ARGS="--listen 127.0.0.1:9999"'
 case "$leg" in
   fresh)
-    dnf install -y -q "$rel1"/*.noarch.rpm ;;
+    dnf install -y -q selinux-policy-targeted     # a policy store, so %post can load the label
+    dnf install -y -q "$rel1"/*.noarch.rpm
+    matchpathcon /var/lib/wd2l/pcap/cap-1.pcap | grep -q ':netutils_tmp_t:' \
+      || fail "the capture archive isn't labelled for tcpdump: $(matchpathcon /var/lib/wd2l/pcap)" ;;
   over-manual)
     dnf install -y -q shadow-utils
     groupadd -r wd2l && useradd -r -g wd2l -s /sbin/nologin wd2l && groupadd -r wd2l-audit
