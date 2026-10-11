@@ -310,7 +310,8 @@ git rev-parse HEAD | sudo tee /opt/wd2l/wd2l/BUILD >/dev/null    # the build aud
 The units and the auditd rules, in place of sections 2 to 4:
 
 ```bash
-sudo cp deploy/log-server/wd2l-egress-nic.service deploy/log-server/wd2l-sender.service \
+sudo cp deploy/log-server/wd2l-egress-nic.service deploy/log-server/wd2l-egress-arp.service \
+  deploy/log-server/wd2l-sender.service \
   deploy/common/wd2l-audit-seal.service deploy/common/wd2l-audit-seal.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now wd2l-egress-nic wd2l-sender wd2l-audit-seal.timer

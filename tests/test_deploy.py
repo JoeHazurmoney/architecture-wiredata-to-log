@@ -1,4 +1,5 @@
 import os
+import re
 import shlex
 import subprocess
 import time
@@ -221,3 +222,16 @@ def test_units_wait_for_the_clock_but_dont_need_it(path):
 
 def test_capture_doesnt_wait_for_the_clock():
     assert "time-sync" not in " ".join(unit(CAPTURE_UNIT).get("After", []))
+
+
+@pytest.mark.parametrize("side", ["log-server", "receiver"])
+def test_manual_install_copies_every_unit(side):
+    # A unit the manual install leaves out is silently skipped (Wants= on a missing unit is ignored).
+    import fnmatch
+    with open(os.path.join(REPO, "docs", "deployment", side + ".md"), encoding="utf-8") as f:
+        appendix = f.read().split("## Appendix: manual install", 1)[1]
+    copied = re.findall(r"deploy/(?:%s|common)/[\w.*-]+" % side, appendix)
+    units = ["deploy/%s/%s" % (d, n) for d in (side, "common")
+             for n in os.listdir(os.path.join(REPO, "deploy", d)) if n.endswith((".service", ".timer"))]
+    missing = [u for u in units if not any(fnmatch.fnmatch(u, c) for c in copied)]
+    assert not missing, missing
