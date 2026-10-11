@@ -84,33 +84,20 @@ for each, are recorded as Architecture Decision Records (ADRs) in
 | Path | What |
 |---|---|
 | `wd2l/` | Python package, standard library only (Python ≥ 3.9) |
-| `wd2l/sender.py` | Enclave 1: JSON lines in from the log aggregator, framed UDP out, heartbeats |
-| `wd2l/receiver.py` | Enclave 2: live capture or pcap replay → rebuild → gap tracking → outputs |
-| `wd2l/wire.py` | Packet format shared by both sides ([docs/wire-format.md](docs/wire-format.md)) |
-| `wd2l/audit.py` | Both sides: hash-chained audit records in append-only files, and the self-check (`python3 -m wd2l.audit verify`) ([audit plan](docs/audit-and-health-plan.md)) |
-| `wd2l/audit_report.py` | `wd2l-audit-report`: verify a copy of the audit files or a SIEM export, reconcile per day, list events |
-| `wd2l/hostinfo.py` | Time quality (chrony), process CPU and memory, NIC counters and the capture archive's state, for health records |
-| `wd2l/logsetup.py` | Operational logging (text or JSON lines) and `SIGUSR1` to toggle debug, with the signal sender named in the audit trail |
-| `wd2l/fault.py` | Enclave 2: decides which of six segments has the fault, and by which rule ([docs/state-of-health.md](docs/state-of-health.md)) |
-| `wd2l/reconcile.py` | Set hashes the sender and receiver compare to show every event arrived unchanged |
-| `wd2l/opaque.py` | Enclave 1: spots long encrypted, compressed or random-looking blobs in log text so the sender can flag them ([ADR-0002](docs/decisions/0002-opaque-content.md)) |
-| `wd2l/packets.py` | Ethernet/IPv4/UDP parsing, pcap files, raw-socket capture |
-| `wd2l/outputs.py` | SIEM output over an HTTP event collector (HEC format, with disk spool) and JSONL file output |
-| `deploy/common/` | Audit seal timer and script, shared by both hosts: append-only audit files, deleted after a year |
-| `deploy/log-server/` | Egress NIC script, nftables, systemd units |
-| `deploy/switch/` | Black-hole port config (example for one switch platform) |
-| `deploy/receiver/` | Capture NIC script, tcpdump archive, receiver unit, example SIEM configs (Splunk) |
-| `docs/` | Architecture, wire format, interface description (ICD input), deployment guides, operations and planned-downtime runbooks, accreditation notes, Architecture Decision Records (ADRs, `docs/decisions/`) |
-| `packaging/` | How releases are built: the RPM spec, the Containerfile, and the CI checks (`packaging/container/`, `packaging/rpm/`, `packaging/release/`, `packaging/ci/`) |
-| `docs/releasing.md` | Cutting a release, and bringing one into an enclave |
-| `lab/` | Whole path simulated with Linux network namespaces |
-| `samples/` | Real `messages`, `secure` and `audit.log` sample logs, and the script that generated them |
-| `tests/` | Unit, fuzz and end-to-end tests |
+| `wd2l/sender.py`, `wd2l/receiver.py` | Enclave 1: JSON lines in, framed UDP out, heartbeats. Enclave 2: capture or replay, rebuild, gap tracking, outputs |
+| `wd2l/wire.py`, `wd2l/packets.py` | The frame format ([interface description](docs/interface-description.md)); Ethernet/IPv4/UDP parsing, pcap, raw-socket capture |
+| `wd2l/audit.py`, `wd2l/audit_report.py`, `wd2l/reconcile.py` | Hash-chained audit records and their self-check; `wd2l-audit-report`; the set hashes that prove every event arrived unchanged ([audit design](docs/audit-and-health.md)) |
+| `wd2l/fault.py`, `wd2l/hostinfo.py` | Which of six segments has the fault, and by which rule; time quality, NIC and archive probes |
+| `wd2l/opaque.py`, `wd2l/outputs.py`, `wd2l/logsetup.py` | Flagging blobs that can't be inspected ([ADR-0002](docs/decisions/0002-opaque-content.md)); SIEM (HEC) and file output; JSON logs and `SIGUSR1` |
+| `deploy/` | Per host: NIC scripts, nftables, systemd and Quadlet units, auditd rules, the audit seal timer, example SIEM configs (Splunk), a switch example |
+| `docs/` | Architecture, interface description, audit design, deployment guides, runbooks, accreditation notes, ADRs (`docs/decisions/`) |
+| `packaging/`, `.github/workflows/` | How releases are built and checked ([docs/releasing.md](docs/releasing.md)) |
+| `lab/`, `samples/`, `tests/` | The whole path in network namespaces; real sample logs; unit, fuzz and end-to-end tests |
 
 ## Try it
 
 ```bash
-pip install pytest && python3 -m pytest          # 381 tests, no root needed
+pip install pytest && python3 -m pytest          # no root needed
 
 sudo lab/run-lab.sh                               # full path in network namespaces
 sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly
@@ -120,15 +107,11 @@ sudo lab/run-lab.sh --maintenance                 # planned downtime: stop and s
 sudo lab/run-lab.sh --fault tap-down              # inject one fault: the receiver names its segment and rule
 sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
                                                   # real logs: rebuilt files must hash the same
-sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log
-                                                  # same, interleaved as if written at the same time
-sudo lab/run-lab.sh --image localhost/wd2l:dev    # the same path, from the container image (docs/running-the-lab.md §10)
+sudo lab/run-lab.sh --image localhost/wd2l:dev    # the same path, from the container image
 ```
 
-The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `python3`.
-
-**Want to run the POC yourself and see the results?** Follow the step-by-step guide in
-[docs/running-the-lab.md](docs/running-the-lab.md).
+The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `python3`. The
+step-by-step guide, with what each run proves: [docs/running-the-lab.md](docs/running-the-lab.md).
 
 ## Deploying
 
@@ -139,31 +122,49 @@ The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `pyt
 4. [Receiver](docs/deployment/receiver.md): capture NIC, archive, `wd2l-receiver`, SIEM
 5. [Containers](docs/deployment/containers.md): the sender and receiver as containers under
    systemd (Quadlet), on the FIPS Red Hat Hardened Images base
-6. [Operations](docs/operations.md): health records, alerts, replay, re-send
-7. [Planned downtime](docs/planned-downtime.md): stopping and starting the sender and receiver
-   cleanly for patching, reboots and link work
-8. [State of health](docs/state-of-health.md): what the dashboard shows and how to read it
+6. [Operations](docs/operations.md), [planned downtime](docs/planned-downtime.md) and the
+   [state-of-health dashboard](docs/state-of-health.md)
 
 What crosses between the enclaves, packet by packet, for the interface control document (ICD):
-[docs/interface-description.md](docs/interface-description.md).
+[docs/interface-description.md](docs/interface-description.md). Releases, and how to verify one
+offline: [docs/releasing.md](docs/releasing.md).
 
-Releases (RPMs and the signed container image), and how to verify one offline:
-[docs/releasing.md](docs/releasing.md).
+## Also here: a worked example of a secured software supply chain
+
+The transfer above is what wd2l is for. Its releases go into enclaves, where a tampered or
+vulnerable package would be hard to notice and harder to recall, so the release process is built
+as a complete, working example of supply-chain controls. CI runs the build-time checks on every
+release, and whoever receives the files can check the signatures, checksums, provenance and SBOM
+again offline. [docs/releasing.md](docs/releasing.md) has the details and the commands.
+
+| Practice | What wd2l does | Why it matters |
+|---|---|---|
+| **Two vulnerability scanners, one gate** | Grype and Trivy scan the image. The build fails on any fixable High or Critical finding not covered by an exception. Each exception names who approved it and an expiry date (at most 90 days, by policy), and an expired one fails the build ([`vuln_gate.py`](packaging/container/vuln_gate.py), [`vuln-exceptions.json`](packaging/container/vuln-exceptions.json)) | The scanners use different databases and matching, so each catches things the other misses. Expiring exceptions keep "accepted for now" from becoming "accepted forever" |
+| **Rescan after release** | The three latest full releases (not pre-releases) are scanned again weekly with fresh data, and a new fixable finding opens an issue ([`image-rescan.yml`](.github/workflows/image-rescan.yml)) | Vulnerabilities are published after you ship. A clean scan on release day says nothing about next month |
+| **SBOMs** | An SPDX and a CycloneDX bill of materials for the image, and a check that the image is the base image plus wd2l and nothing else ([`sbom_diff.py`](packaging/container/sbom_diff.py)) | When the next widely exploited library flaw lands, "are we affected?" is a lookup, not a rebuild. The diff shows nothing slipped in |
+| **A verified, minimal base** | FIPS Red Hat Hardened Images, pinned by digest. Red Hat's signature, provenance and SBOM are checked before use. No shell, no package manager, not root ([ADR-0004](docs/decisions/0004-container-base-image.md)) | You inherit your base image's supply chain, so check it instead of trusting a tag. Less in the image means less to patch and less for an attacker to use |
+| **Reproducible builds** | The image is built a second time from the same inputs on a fresh runner and compared with the first. The comparison is report-only for now, and the person publishing a release checks it | When the same inputs always give the same bits, a rebuild can confirm that what was published is what the source produces; a difference points to a hidden input or a tampered build |
+| **Signatures** | `SHA256SUMS` and the image are signed with a key that verifies offline, and the image is also signed keyless through Sigstore ([ADR-0006](docs/decisions/0006-release-artifacts-and-signing.md)) | They prove the files came from this project's release process. The key works inside an enclave with no network |
+| **Build provenance (SLSA Build Level 3)** | GitHub attestations for every file and the image, made by a separate workflow the build steps can't reach ([ADR-0007](docs/decisions/0007-slsa-build-l3.md)) | They show which commit, which workflow and which kind of runner built each file, and a compromised build step can't forge them |
+| **Immutable releases** | Once a release is published, GitHub locks its tag and files | Nobody can swap a file after people have checked it |
+| **A guarded release path** | Rulesets on `main` (a pull request with passing CI, no force-push) and on version tags (admins only), the owner's approval before anything is signed, actions pinned to commits, and Dependabot for the pins | A branch, a pull request or a dependency update can't get anything signed on its own: signing needs a version tag on `main` and the owner's approval. (A compromised owner account still could; a second approver would close that.) |
+
+Changing one byte of a downloaded RPM is enough to see it work: `sha256sum -c` reports it
+`FAILED`, `gh attestation verify` refuses it, and `rpm -K` reports `DIGESTS NOT OK`.
 
 ## Status
 
-Proof of concept. Verified in the namespace lab (see the end of
-[architecture.md](docs/architecture.md)). Not yet verified: the physical tap, switch and fiber
-behavior, and a real log aggregator, log retention server and SIEM (the lab has no retention
-server). The deployment guides list the checks for each.
+Proof of concept. Verified in the namespace lab (the end of
+[architecture.md](docs/architecture.md)). The signed v0.3.0rc3 release was also deployed on one
+AlmaLinux 10 machine (a Raspberry Pi 5, SELinux enforcing), with rsyslog as the aggregator, Splunk
+as the SIEM and a virtual cable standing in for the tap and fiber; the problems it found are fixed
+in 0.3.0rc4. Not yet verified: the physical tap, switch and fiber, and a log retention server; the
+deployment guides list the checks for each.
 
 Audit records (aimed at common audit-control requirements, for example the NIST SP 800-53 AU
-family or SOC 2 CC7.2), end-to-end reconciliation and fault location are built and verified in the
-lab. The design, as built, is in [docs/audit-and-health-plan.md](docs/audit-and-health-plan.md);
-how to read the dashboard is in [docs/state-of-health.md](docs/state-of-health.md).
-
-How several live log files are tracked and rebuilt from one stream:
-[docs/multiple-files.md](docs/multiple-files.md).
+family or SOC 2 CC7.2), end-to-end reconciliation and fault location are built and verified. The
+design, as built, is in [docs/audit-and-health.md](docs/audit-and-health.md); how several live
+log files are tracked and rebuilt from one stream is in [docs/multiple-files.md](docs/multiple-files.md).
 
 ## License
 

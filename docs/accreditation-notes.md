@@ -111,11 +111,9 @@ visibility question. [ADR-0002](decisions/0002-opaque-content.md) has the full r
 | Malicious content inside log text (e.g. strings aimed at analyst tools, log injection) | Same as any log ingest. The SIEM stores it as data. Keep the Enclave 2 SIEM patched. Content filtering beyond the opaque-content flag is out of scope |
 | Data hidden inside log text (encrypted, compressed or encoded) | Long blobs are flagged (`wd2l_opaque`) and alerted on, but still cross. Data hidden in normal-looking text isn't detected. Enclave 1 controls on who can write logs, plus per-source volume monitoring |
 | Enclave 1 compromise injects fake events | Enclave 1 controls today. Optional HMAC (above) |
-| Loss is detected but not recovered | By design (requirement was detect and report). The operator replays the window from the log retention server |
 | Log retention server down, full or lost | Not on the transfer path, so the transfer continues. A window missing there can't be replayed later. Its own persistent queue in the aggregator; Enclave 1 monitoring and backups |
 | Misconfigured tap filter forwards other Enclave 1 traffic | Enclave 2 still only accepts the log flow and counts everything else (`other_packets` alert). The switch-port isolation means little else is on that cable to begin with |
 | Receiver host compromise | It has no path back to Enclave 1. Treat it like any other Enclave 2 server |
-| Parser bugs | Small code base, standard library only, fuzz tests. Runs unprivileged and sandboxed |
 
 ## If a listed cross-domain solution is required
 
@@ -123,3 +121,30 @@ This design relies on your organization's existing acceptance of the one-strand 
 approvers require an evaluated or listed cross-domain product for this data flow, a commercial data
 diode with a syslog/UDP proxy can replace the tap-to-receiver segment. The sender's wire format
 and the receiver's gap reporting still work over such a diode.
+
+## Open items for the security and system owners
+
+Decisions for the owners. Until they make them, the code and the examples do what "Until decided"
+says.
+
+1. **Event list.** Confirm the catalog ([audit-and-health.md, section 4](audit-and-health.md#4-audit-event-catalog)),
+   or add events your control documentation requires. *Until decided:* the catalog as built.
+2. **Failure response.** Keep transferring when the audit log can't be written, or stop.
+   *Until decided:* keep transferring ([section 8](audit-and-health.md#8-protecting-the-audit-trail)).
+3. **Time thresholds.** |offset| 100 ms, skew 50 ms, stratum above 3. *Until decided:* those
+   defaults, in the code (`wd2l/hostinfo.py`, `wd2l/fault.py`), with no option yet.
+4. **Auditor role.** Who may search `wd2l_audit` in the SIEM. *Until decided:* the example's
+   `wd2l_auditor` role (`deploy/receiver/splunk/authorize.conf`), holder not yet named.
+5. **Enclave 1 audit files.** Confirm the log retention server as their 1-year home, so they
+   survive a rebuild of the log server. *Until decided:* the official copy is the one on the log
+   server ([retention-server.md](deployment/retention-server.md#6-wd2l-audit-files)).
+6. **Framework and retention.** Which framework the system is assessed under, and its retention
+   period. *Until decided:* 1 year throughout (the seal timer deletes files after 366 days; the
+   example keeps `wd2l_audit` 366 days).
+7. **Permanent gaps.** Events lost before capture can only be re-sent from Enclave 1, under new
+   numbers, so the old stream never balances again, and past such a gap its set hash can't show
+   a later event that was changed but still valid. Two ways to close this: an operator action that
+   accepts a gap, written as an audit record naming the actor; or set hashes per block of sequence
+   numbers, so the blocks after a permanent gap can still be checked. *Until decided:* the stream
+   stays red on the dashboard, the `gap` records and the re-send are the evidence, and the
+   reconciliation alert stays quiet for it.

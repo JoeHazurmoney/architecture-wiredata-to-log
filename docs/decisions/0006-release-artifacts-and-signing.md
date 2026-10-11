@@ -134,8 +134,8 @@ Rejected.
   * The key is ours to protect.
   * Our provenance is self-asserted until the repository is public. It is still bound to the
     commit, and it is signed.
-  * cosign 3 prefers signing configs; a later version may change these flags again. The release
-    plan's Phase 0 check 7 is the test to rerun after a cosign upgrade.
+  * cosign 3 prefers signing configs; a later version may change these flags again. The [release
+    plan's Phase 0 check 7](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md) is the test to rerun after a cosign upgrade.
 * **Revisit** when the repository goes public:
   * add GitHub artifact attestations (`actions/attest-build-provenance`) and keyless signatures
     **alongside** the key, and keep the key for offline enclaves;

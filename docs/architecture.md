@@ -2,20 +2,14 @@
 
 ## Goal
 
-Move logs from Enclave 1 to Enclave 2 **one way only**. Hosts in Enclave 1
-(firewalls, switches, workstations, physical servers, a small virtualization cluster) send logs to
-a central log server. The log server sends the combined stream toward a "black hole" switch port.
-A network tap copies that cable to Enclave 2, where the logs are rebuilt from the raw packets and
-indexed in a SIEM. Nothing can flow back: the fiber to Enclave 2 has only one strand.
+Move logs from Enclave 1 to Enclave 2 **one way only**, and account for every one: delivered
+intact, or reported lost by number. The [README](../README.md) states the problem and the
+direction rule. Because nothing can flow back, Enclave 2 can't ask for a lost event again, so the
+log aggregator also keeps a copy of every event on a log retention server in Enclave 1 for a
+year; a lost window is replayed from there.
 
-Because nothing can flow back, Enclave 2 can't ask for lost events again. So the log aggregator
-also sends a copy of every event to a log retention server in Enclave 1, which keeps it for one
-year. When Enclave 2 reports a loss, the aggregator replays that time window from the retention
-server.
-
-The design is product-neutral. Where a product is named, it is only an example of a component
-that fills that role (the proof of concept was built against Cribl Stream as the log aggregator
-and Splunk as the SIEM).
+The design is product-neutral: Cribl Stream (aggregator) and Splunk (SIEM) are examples of a
+role.
 
 ## Picture
 
@@ -42,20 +36,20 @@ flowchart LR
 
 | Piece | Where | Job |
 |---|---|---|
-| Log forwarding agents / syslog | every Enclave 1 host | Send logs to the log aggregator, as today. |
-| Log aggregator (e.g. Cribl Stream) | central log server | Collect, parse into events, set host, source, source type and index, hand every event to the sender and a copy to the log retention server. Replay a time window from the retention server when asked. |
-| Log retention server | Enclave 1, its own host | Keep a copy of every event the aggregator collects for 1 year. The source for replaying lost events, and the 1-year home of wd2l's Enclave 1 audit files (to be confirmed by the security owner). Not on the transfer path. |
-| `wd2l-sender` | central log server | Number each event, flag content that can't be inspected (long encrypted, compressed or random-looking blobs), split big events into packet-sized pieces, add checksums, send UDP to the black hole, send a heartbeat every second. |
-| Egress NIC | central log server | Dedicated NIC. One /30 address, static ARP for the black hole, IPv6 off, firewall allows one flow. |
-| Black-hole switch port | Enclave 1 switch | Keeps the log server's link up and throws every frame away. |
-| Network tap | inline on that cable | Copies the log server → switch direction, filtered to the log flow, out a monitor port. |
-| One-strand fiber | tap monitor port → Enclave 2 | The one-way guarantee. Enclave 2 has no transmit path back. |
-| Capture NIC | Enclave 2 receiver host | Receive only: no IP, no ARP, promiscuous, egress dropped. |
-| tcpdump | receiver host | Hourly pcap archive of everything that arrives (7 days by default). |
-| `wd2l-receiver` | receiver host | Rebuild events, verify them, track sequence numbers, report gaps, send to the SIEM. |
-| Audit records | both hosts, and Enclave 2's SIEM | Each host writes hash-chained records of who started, stopped or changed what, and of what crossed or failed. Enclave 1's records also cross in-band, so Enclave 2's SIEM holds both trails. The sender and receiver compare a hash of every event, so loss, change or misnumbering shows. See the [audit plan](audit-and-health-plan.md). |
-| Fault location | `wd2l-receiver`, and the SIEM dashboard | The receiver decides where a fault is (one of six segments, by rule) from its own counters and the sender's heartbeat. The dashboard draws what the receiver decided. See [state-of-health.md](state-of-health.md). |
-| SIEM (e.g. Splunk) | Enclave 2 | Stores events with the original host, source, source type, index and time. |
+| Forwarding agents / syslog | every Enclave 1 host | Send logs to the aggregator, as today |
+| Log aggregator (e.g. Cribl Stream) | central log server | Collect, parse into events, set host, source, source type and index; hand every event to the sender and a copy to the retention server; replay a window from it when asked |
+| Log retention server | Enclave 1, its own host | Keep every collected event for 1 year: the source for replays, and the proposed 1-year home of wd2l's Enclave 1 audit files. Not on the transfer path |
+| `wd2l-sender` | central log server | Number each event, flag content that can't be inspected, split big events into packets, add checksums, send UDP to the black hole, send a heartbeat every second |
+| Egress NIC | central log server | Dedicated: one /30 address, static ARP for the black hole, IPv6 off, a firewall allowing one flow |
+| Black-hole switch port | Enclave 1 switch | Keeps the log server's link up and drops every frame |
+| Network tap | inline on that cable | Copies the log server → switch direction, filtered to the log flow, out a monitor port |
+| One-strand fiber | tap monitor port → Enclave 2 | The one-way guarantee: Enclave 2 has no transmit path back |
+| Capture NIC | receiver host | Receive only: no IP, no ARP, promiscuous, egress dropped |
+| tcpdump | receiver host | Hourly pcap archive of everything that arrives (7 days by default) |
+| `wd2l-receiver` | receiver host | Rebuild and verify events, track sequence numbers, report gaps, send to the SIEM |
+| Audit records | both hosts, and the SIEM | Hash-chained records of who started, stopped or changed what, and of what crossed or failed. Enclave 1's cross in-band, so the SIEM holds both trails, and a hash of every event shows any loss or change ([audit design](audit-and-health.md)) |
+| Fault location | `wd2l-receiver`, and the dashboard | The receiver decides which of six segments a fault is in, by rule; the dashboard draws it ([state-of-health.md](state-of-health.md)) |
+| SIEM (e.g. Splunk) | Enclave 2 | Stores events with their original host, source, source type, index and time |
 
 The sender and receiver ship as RPMs and as a FIPS container image on Red Hat Hardened Images
 ([ADR-0004](decisions/0004-container-base-image.md), [releasing.md](releasing.md)).
@@ -63,145 +57,119 @@ The sender and receiver ship as RPMs and as a FIPS container image on Red Hat Ha
 ## Design rules, and why
 
 1. **UDP only on the tapped cable.** A port that drops everything never completes a TCP
-   handshake, so any TCP-based forwarding (vendor forwarding protocols, TCP syslog) would never put
-   a byte of log data on the wire.
-2. **Static ARP on the log server.** Nothing answers ARP for the black-hole IP. Without a pinned
-   entry the server would only ever send "who has 10.255.255.2?" and never the logs.
-3. **The switch port is alone in its own VLAN, with no SVI (switched virtual interface, i.e. no IP
-   address for that VLAN on the switch), dropping all ingress and sending no CDP (Cisco Discovery
-   Protocol), LLDP (Link Layer Discovery Protocol) or STP (Spanning Tree Protocol) frames.**
-   Otherwise the switch floods unknown-unicast frames to other ports (a leak) and its own chatter
-   ends up on the "logs only" cable.
-4. **The log server's egress NIC stays silent** apart from the log flow: IPv6 off, no DHCP, no LLDP,
+   handshake, so TCP-based forwarding would never put a byte of log data on the wire.
+2. **Static ARP on the log server.** Nothing answers ARP for the black-hole IP; without a pinned
+   entry the server would only ever ask "who has 10.255.255.2?".
+3. **The switch port is alone in its own VLAN**, with no SVI (no IP address for the VLAN on the
+   switch), dropping all ingress, and sending no CDP, LLDP or STP. Otherwise the switch floods
+   unknown-unicast frames to other ports (a leak), and its own chatter lands on the logs-only
+   cable.
+4. **The egress NIC stays silent** apart from the log flow: IPv6 off, no DHCP, no LLDP, and
    nftables allows only `wd2l-sender` → black hole.
 5. **One way is enforced by physics, not configuration.** The tap monitor port's transmit strand
-   is the only fiber connected to Enclave 2. This is the same method already accepted
-   elsewhere. The switch and NIC settings are hygiene on top of it.
-6. **Every event gets a sequence number, and the sender sends a heartbeat every second.** UDP loses
-   packets without telling anyone. With numbers and heartbeats the receiver can prove it got
-   everything, or name exactly what's missing. It can also tell "quiet" apart from "broken". Each
-   sender run is a new stream, and runs are chained (`boot`, `prev_stream`) so a whole missed run
-   is visible too.
-7. **No IP fragmentation.** Events that don't fit one packet are split by the sender and rebuilt by
-   the receiver, which checks a SHA-256 of the whole event. (If one IP fragment is lost the whole
-   packet is lost, and fragments are awkward to filter on the tap.)
-8. **The receiver treats all input as hostile.** Sizes are capped, memory for part-built events is
-   capped, only one fixed JSON shape is accepted, and malformed input is counted and dropped. The
-   code uses only the Python standard library.
-9. **Keep the raw packets.** The pcap archive means a receiver crash or restart loses nothing that
-   reached Enclave 2: replay the archive and only the missing events are sent to the SIEM.
-10. **An event only counts as delivered once it is safe.** The receiver records an event as
-    delivered in its state file only after the SIEM accepted it or it was written to disk.
-    Anything still in memory at a crash is reported as a gap and filled by replay. The rule is
-    duplicates over loss: every event carries `wd2l_stream` and `wd2l_seq`, so copies are easy
-    to remove.
-11. **Keep a full copy in Enclave 1.** Loss is detected, not recovered: nothing can be asked for
-    again across a one-way link. The log retention server keeps every event for a year, so a lost
-    time window can be replayed through the aggregator. Its output in the aggregator has its own
+   is the only fiber connected to Enclave 2, the method already accepted elsewhere. The switch
+   and NIC settings are hygiene on top.
+6. **Every event gets a sequence number, and a heartbeat goes every second.** UDP loses packets
+   silently; with numbers and heartbeats the receiver proves it got everything, or names what is
+   missing, and tells "quiet" from "broken". Runs are chained (`boot`, `prev_stream`), so a whole
+   missed run shows too.
+7. **No IP fragmentation.** The sender splits big events and the receiver rebuilds them, checking
+   a SHA-256 of the whole event. (One lost fragment loses the whole packet, and fragments are
+   awkward to filter on a tap.)
+8. **The receiver treats all input as hostile.** Sizes and buffered memory are capped, only one
+   JSON shape is accepted, malformed input is counted and dropped, and the code uses only the
+   Python standard library.
+9. **Keep the raw packets.** With the pcap archive, a receiver crash or restart loses nothing that
+   reached Enclave 2: a replay sends only the missing events.
+10. **An event counts as delivered only once it is safe**: the SIEM accepted it, or it is on disk.
+    Anything in memory at a crash is reported as a gap and filled by replay. Duplicates over loss:
+    `wd2l_stream` and `wd2l_seq` make copies easy to remove.
+11. **Keep a full copy in Enclave 1.** Loss is detected, not recovered, across a one-way link; the
+    retention server lets a lost window be replayed. Its output in the aggregator has its own
     persistent queue, so a retention-server outage never holds up the transfer.
-12. **Flag content that can't be inspected; don't drop it.** The sender looks for long encrypted,
-    compressed or random-looking blobs in each event and tags them (`wd2l_opaque`). Tagged events
-    cross unchanged and the SIEM alerts on them. Given the direction rule in the
-    [README](../README.md), visibility is the goal, and dropping would break "detect and report".
-    It's a tripwire for blobs, not proof that nothing is hidden. See
-    [ADR-0002](decisions/0002-opaque-content.md).
+12. **Flag content that can't be inspected; don't drop it.** Long encrypted, compressed or
+    random-looking blobs are tagged (`wd2l_opaque`), cross unchanged and raise an alert. Given the
+    direction rule in the [README](../README.md), visibility is the goal, and dropping would break
+    "detect and report". It is a tripwire, not proof that nothing is hidden
+    ([ADR-0002](decisions/0002-opaque-content.md)).
 
 ## Data path details
 
-* **Log aggregator → sender**: newline-delimited JSON over TCP to `127.0.0.1:10070`, compression
-  off. One optional header line (auth token), then one JSON event per line. (This is the format of
-  Cribl Stream's TCP JSON destination. Any aggregator that can write JSON lines to a TCP socket
-  works.) TCP gives backpressure: if the sender can't keep up, the aggregator blocks or queues
-  (a persistent queue is recommended).
-* **Log aggregator → log retention server**: a second output, over the log server's normal
-  Enclave 1 network (never the egress NIC). Every event the aggregator collects, including any
-  that are filtered out of the crossing, with at least the fields that cross. It has its own
-  persistent queue. To replay, the aggregator reads a time window back from the retention server
-  and routes it to the sender only. The replayed events cross as new events with new sequence
-  numbers. See [deployment/retention-server.md](deployment/retention-server.md).
-* **What crosses**: per event `_time, host, source, sourcetype, index, _raw` (plus any fields named
-  with `--extra-field`, which become indexed fields in the SIEM), the sender's send time
-  (indexed field `wd2l_tx_time`), and, only on events with an opaque blob, `wd2l_opaque` and
-  `wd2l_opaque_bytes`. Other aggregator fields are dropped.
-* **Sender → wire**: see [wire-format.md](wire-format.md), and
-  [interface-description.md](interface-description.md) for the full packet as the interface
-  control document needs it. 68 bytes of overhead per packet; 1,404 bytes of event per packet at
-  MTU 1500; 8,904 at MTU 9000.
-* **Big events**: capped at 256 KB (`--max-event`). Bigger events are cut to fit and flagged with
-  indexed field `wd2l_truncated=<original size>`, the same idea as a SIEM's own line-length limit.
-* **Receiver → SIEM**: an HTTP event collector interface (the proof of concept speaks Splunk's HEC
-  format, `/services/collector/event`). Each event keeps its original metadata and gets indexed
-  fields `wd2l_stream`, `wd2l_seq` and `wd2l_rx_time` (its arrival time in Enclave 2; for
-  replayed events, the time the archive captured it). If the SIEM is unreachable, batches go to
-  an on-disk spool and are resent automatically. A message queue (Kafka or similar) between the
-  receiver and the SIEM was considered and deferred: see
-  [ADR-0001](decisions/0001-enclave-2-message-queue.md). Events go straight to the SIEM, with no
-  log forwarder or aggregator in between and no event files to rotate: see
-  [ADR-0003](decisions/0003-receiver-to-siem-delivery.md).
-* **Timing**: three times on every event split the delay by segment. Enclave 1 (sources,
-  forwarders, aggregator): `wd2l_tx_time − _time`. The link and receiver:
-  `wd2l_rx_time − wd2l_tx_time`. The SIEM: index time − `wd2l_rx_time`. The receiver also reports
-  `clock_offset_s` from each heartbeat (receiver clock minus sender clock, plus the sub-millisecond
-  fiber delay), so a clock problem can be told apart from a real delay. See
-  [operations.md](operations.md#measuring-delays).
-* **Health**: the receiver writes `sourcetype=wd2l:health` records: an immediate record for every
-  gap, stale heartbeat, stream start/end/loss, plus a summary every 60 s that includes the clock
-  offset. See [operations.md](operations.md).
+* **Aggregator → sender:** newline-delimited JSON over TCP to `127.0.0.1:10070`, no compression:
+  an optional header line (auth token), then one event per line (the format of Cribl Stream's TCP
+  JSON destination; any aggregator that writes JSON lines to a socket works). TCP gives
+  backpressure: if the sender falls behind, the aggregator blocks or queues (a persistent queue is
+  recommended).
+* **Aggregator → retention server:** a second output over the log server's normal network (never
+  the egress NIC), carrying every event, including any filtered out of the crossing, with its own
+  persistent queue. A replay reads a window back and routes it to the sender only; the events
+  cross again as new events with new numbers ([retention-server.md](deployment/retention-server.md)).
+* **What crosses:** `_time`, `host`, `source`, `sourcetype`, `index`, `_raw`, any fields named
+  with `--extra-field`, the send time (`wd2l_tx_time`) and, on events with a blob,
+  `wd2l_opaque` and `wd2l_opaque_bytes`. Other aggregator fields are dropped.
+* **Sender → wire:** see [interface-description.md](interface-description.md) for every byte.
+  68 bytes of overhead per packet; 1,404 bytes of event per packet at MTU 1500, 8,904 at MTU 9000.
+  Events over 256 KB (`--max-event`) are cut to fit and flagged `wd2l_truncated=<original size>`.
+* **Receiver → SIEM:** the SIEM's HTTP event collector (Splunk's HEC format). Each event keeps its
+  metadata and gains `wd2l_stream`, `wd2l_seq` and `wd2l_rx_time` (arrival, or capture time for a
+  replay). While the SIEM is unreachable, batches spool to disk and are resent. There is no message
+  queue ([ADR-0001](decisions/0001-enclave-2-message-queue.md)), forwarder or event file to rotate
+  ([ADR-0003](decisions/0003-receiver-to-siem-delivery.md)).
+* **Timing:** three times on every event split the delay by segment: Enclave 1
+  (`wd2l_tx_time − _time`), the link (`wd2l_rx_time − wd2l_tx_time`) and the SIEM (index time −
+  `wd2l_rx_time`). `clock_offset_s`, from each heartbeat, tells a clock problem from a real delay
+  ([operations.md](operations.md#measuring-delays)).
+* **Health:** `wd2l:health` records for every gap, stale heartbeat and stream change, and a
+  summary every 60 s ([operations.md](operations.md)).
 
 ## What happens when something breaks
 
-| Failure | Effect on logs | What you see in Enclave 2 | Recovery |
+| Failure | Effect on logs | What Enclave 2 sees | Recovery |
 |---|---|---|---|
-| Packet loss on the wire (bad optic, overrun) | Those events lost | `type=gap` records with exact stream and sequence ranges | Replay that time window from the log retention server (see operations.md) |
-| Receiver process stops cleanly | Nothing lost: tcpdump keeps capturing, queued events go to the spool | `type=gap` after restart | Replay the pcap archive: only the gaps are sent |
-| Receiver process crashes (killed, out of memory, host reboot) | Nothing lost: events still in memory are reported, not assumed delivered | `type=gap reason=receiver_restart` at startup | Replay the pcap archive. A few events may arrive twice (`dedup wd2l_stream wd2l_seq`) |
-| Receiver host down (capture down too) | Events sent during the outage never land in Enclave 2 | `type=gap` covering the outage once it's back (the next heartbeat carries the last sequence number) | Replay the window from the log retention server |
-| SIEM ingest down | Nothing lost | `hec_spool_files` > 0 in health (once the SIEM is back) | Automatic drain |
-| Receiver can't keep up with the SIEM (memory queue full) or spool disk full | Those events are not sent | `type=gap reason=output_dropped`, `output_dropped` in health | Replay the pcap archive once the SIEM or disk is healthy |
-| Cable, tap or fiber down | Events sent during the outage lost | `heartbeat_stale`, then a gap for the exact range when it comes back | Replay the window from the log retention server |
-| `wd2l-sender` stops cleanly | It reads what the aggregator already sent (up to 2 s), then sends a final heartbeat. The aggregator blocks or queues after that | `stream_end`; `sender.shutdown_unread_bytes` > 0 if input was still arriving when it gave up | Restart. It starts a new stream linked to the old one, so no false gaps |
-| `wd2l-sender` crashes | Input the aggregator had already handed over but the sender had not numbered is lost (bounded by a 256 KB receive buffer). Numbered events sent after the last heartbeat that were also lost on the wire show up via the next run's link | Unnumbered input: not visible as a gap. Numbered tail: `gap` once the new run starts | The aggregator's persistent queue narrows this. The unnumbered input is still on the log retention server, but no gap points to it. See accreditation notes |
-| `wd2l-sender` restarts while the link is down | That whole run never reaches Enclave 2 | `stream_missing` (with `--state` on the sender): the run's stream id and event count | Replay the window from the log retention server |
-| Log aggregator down | Hosts buffer or drop per their own settings (agents usually buffer; UDP syslog drops) | Heartbeats continue, no events | Enclave 1 monitoring of the aggregator |
-| Log retention server down or full | Transfer to Enclave 2 unaffected. The aggregator queues the copy and catches up when the server is back. If that queue fills, that window has no Enclave 1 copy to replay from | Nothing: it isn't on the transfer path | Enclave 1 monitoring of the retention server and the aggregator's queue for it |
-| Garbage or foreign traffic on the tap | Ignored | `other_packets` / `bad_frames` in health | Investigate the Enclave 1 cable/switch |
+| Packet loss on the wire | Those events lost | `type=gap` with exact stream and sequence ranges | Replay the window from the retention server |
+| Receiver stops cleanly | Nothing lost: tcpdump keeps capturing, queued events spool | `type=gap` after restart | Replay the archive: only the gaps are sent |
+| Receiver crashes (killed, out of memory, reboot) | Nothing lost: events in memory are reported, not assumed delivered | `type=gap reason=receiver_restart` at startup | Replay the archive; a few events may arrive twice (`dedup wd2l_stream wd2l_seq`) |
+| Receiver host down (capture too) | Events sent meanwhile never land | `type=gap` covering the outage once back | Replay the window from the retention server |
+| SIEM ingest down | Nothing lost | `hec_spool_files` > 0 | Drains by itself |
+| Receiver can't keep up with the SIEM, or the spool disk is full | Those events aren't sent | `type=gap reason=output_dropped` | Replay the archive once the SIEM or disk is healthy |
+| Cable, tap or fiber down | Events sent meanwhile lost | `heartbeat_stale`, then a gap for the exact range | Replay the window from the retention server |
+| `wd2l-sender` stops cleanly | It reads input already arriving (up to 2 s), sends a final heartbeat; the aggregator then blocks or queues | `stream_end`; `shutdown_unread_bytes` > 0 if input was still arriving | Restart: a new stream linked to the old one, no false gaps |
+| `wd2l-sender` crashes | Input handed over but not yet numbered is lost (at most one 256 KB receive buffer); a lost numbered tail shows via the next run's link | Unnumbered input: invisible. Numbered tail: a gap once the new run starts | The aggregator's persistent queue narrows this; see the [accreditation notes](accreditation-notes.md) |
+| Sender restarts while the link is down | That whole run never reaches Enclave 2 | `stream_missing` (with sender `--state`): its stream id and event count | Replay the window from the retention server |
+| Aggregator down | Hosts buffer or drop by their own settings (agents buffer; UDP syslog drops) | Heartbeats continue, no events | Enclave 1 monitoring |
+| Retention server down or full | Transfer unaffected; the aggregator queues the copy. If that queue fills, that window has no copy | Nothing: not on the transfer path | Enclave 1 monitoring of the server and its queue |
+| Garbage or foreign traffic on the tap | Ignored | `other_packets` / `bad_frames` | Investigate the Enclave 1 cable and switch |
 
-Gaps are always reported, never silent. That was the requirement ("detect and report"). There is
-no retransmission because nothing can come back.
+Gaps are always reported, never silent ("detect and report"). There is no retransmission, because
+nothing can come back.
 
 ## Capacity
 
-The environment is under 1,000 events/s. At an average 1 KB/event that's about 8 Mbit/s, a small
-fraction of a 1 G link. The lab ran 5,000 events/s through the full namespace path with no kernel
-drops and no loss, using plain Python.
+The environment is under 1,000 events/s: at about 1 KB an event, 8 Mbit/s, a small fraction of a
+1 G link. The lab ran 5,000 events/s through the whole path with no drops or loss, in plain
+Python.
 
-Loss on a link hits big events hardest: an event split into *n* packets is lost if any one of them
-is lost. At 1% packet loss a 9 KB Windows event (7 packets at MTU 1500) survives about 93% of the
-time. At MTU 9000 it needs only 2 packets (98%). **If every device on the path supports jumbo frames, use
-MTU 9000 end to end** and start the sender with `--max-datagram 8972`. A healthy fiber link has
-essentially zero loss, so this mostly matters when something is failing.
+Loss hits big events hardest: an event split into *n* packets is lost if any one is. At 1% packet
+loss a 9 KB Windows event (7 packets at MTU 1500) survives about 93% of the time; at MTU 9000 it
+needs 2 packets (98%). **If every device on the path supports jumbo frames, use MTU 9000 end to
+end** with `--max-datagram 8972`. A healthy fiber has essentially no loss, so this matters mostly
+when something fails.
 
 ## What was verified
 
-In the network-namespace lab (`lab/run-lab.sh`), which builds the full path in software:
+In the network-namespace lab (`lab/run-lab.sh`, [running-the-lab.md](running-the-lab.md)):
 
 * 5,001 events (short syslog, multi-KB Windows XML, non-ASCII, multi-line, one 300 KB event)
-  arrive byte-for-byte identical to what the sender put on the wire. The 300 KB event arrives
-  truncated and flagged.
-* The three events carrying a random blob, a gzip blob and a PGP message arrive flagged
-  `wd2l_opaque`. The 17,624 real sample log lines produce no flags.
-* With 1% random packet loss on the cable, every lost event was reported as a gap with its exact
-  sequence number. There were no false gaps and no unreported losses.
-* With the receiver stopped for 2 seconds mid-run, the archive replay delivered exactly the
-  missing events with no duplicates.
-* With the receiver killed (SIGKILL) mid-run, nothing was lost: the replay filled every gap and
-  a few hundred events arrived twice, as designed.
-* Planned downtime, done in the order of [planned-downtime.md](planned-downtime.md): sender,
-  receiver and capture stopped, then started again. Two linked sender runs, no input left
-  unread, no gaps, nothing to replay.
-* Zero non-log packets reached Enclave 2, and zero frames came back from it.
-* 5,000 events/s with no drops.
+  arrive byte for byte as sent; the 300 KB event arrives truncated and flagged.
+* Events carrying a random blob, a gzip blob and a PGP message arrive flagged `wd2l_opaque`; the
+  17,624 real sample log lines produce no flags.
+* With 1% random packet loss, every lost event is reported by its exact number, with no false
+  gaps and none unreported.
+* A receiver stopped for 2 s: the archive replay delivers exactly the missing events, no
+  duplicates. A receiver killed mid-run: nothing lost, a few hundred duplicates, as designed.
+* Planned downtime in the [runbook's](planned-downtime.md) order: two linked sender runs, no
+  input left unread, no gaps, nothing to replay.
+* No non-log packet reaches Enclave 2, and no frame comes back.
 
-Not verified in the lab: the physical pieces (network tap, switch, fiber, NIC link behavior) and a
-real log aggregator, log retention server or SIEM. The lab has no retention server. Those steps
-are in `docs/deployment/`.
+Not verified in the lab: the physical tap, switch, fiber and NICs, and a real aggregator,
+retention server or SIEM (checks in `docs/deployment/`).

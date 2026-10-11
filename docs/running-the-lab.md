@@ -1,32 +1,20 @@
 # Running the proof of concept yourself
 
-The lab builds the whole one-way path on one Linux machine, using separate virtual networks
-(network namespaces) for Enclave 1, the black-hole switch port and Enclave 2. It pushes a known set
-of logs through, then checks what comes out the other side. No real network gear is needed.
-
-The commands below are for the RHEL family (RHEL, Rocky, AlmaLinux, Fedora). Ubuntu/Debian
-equivalents are in a note after each step where they differ.
+The lab builds the whole one-way path on one Linux machine, with separate network namespaces for
+Enclave 1, the black-hole switch port and Enclave 2. It pushes a known set of logs through and
+checks what comes out the other side. No network gear is needed. Commands are for the RHEL family
+(RHEL, Rocky, AlmaLinux, Fedora); Ubuntu/Debian differences follow each step.
 
 ## 1. Get a Linux machine
 
-* **A VM is fine** (VMware, KVM, Hyper-V, VirtualBox, a cloud instance). 2 CPUs and 2 GB of RAM is
-  plenty.
-* **Kernel 5.16 or newer.** The lab uses a firewall feature (the nftables "egress" hook on a
-  network card) that older kernels don't have. Check with:
-
-  ```bash
-  uname -r
-  ```
-
-  RHEL 10 / Rocky 10 / AlmaLinux 10 (kernel 6.12) and current Fedora work. **RHEL 9 and its
-  rebuilds ship a 5.14 kernel and may not have this feature**. If step 5 fails with an nftables
-  error mentioning "egress", use a 10.x release or Fedora.
-* **You need root** (`sudo`). Creating virtual networks requires it.
-* A plain container won't work unless it runs `--privileged`. On a Mac or Windows machine, use a
-  Linux VM.
-
-> **Ubuntu/Debian:** Ubuntu 24.04 (kernel 6.8), Debian 12 (6.1) and Ubuntu 22.04 with its newer
-> "HWE" kernel work. The stock Ubuntu 22.04 kernel (5.15) is too old.
+* **A VM is fine**, with 2 CPUs and 2 GB of RAM. On a Mac or Windows machine, use a Linux VM; a
+  plain container works only with `--privileged`.
+* **Kernel 5.16 or newer** (`uname -r`): the lab uses the nftables "egress" hook on a NIC.
+  RHEL 10 and its rebuilds (kernel 6.12) and current Fedora work. RHEL 9 and its rebuilds ship
+  5.14 and may not; if step 5 fails with an nftables error mentioning "egress", use a 10.x
+  release or Fedora. Ubuntu 24.04, Debian 12 and Ubuntu 22.04 with the HWE kernel work; the stock
+  Ubuntu 22.04 kernel (5.15) doesn't.
+* **Root** (`sudo`), to create the namespaces.
 
 ## 2. Install the tools
 
@@ -35,33 +23,24 @@ sudo dnf install -y git python3 python3-pip iproute nftables tcpdump
 python3 -m pip install --user pytest
 ```
 
-> **Ubuntu/Debian:**
-> ```bash
-> sudo apt update
-> sudo apt install -y git python3 python3-pytest iproute2 nftables tcpdump
-> ```
-> Use the `python3-pytest` package. On Ubuntu 24.04, `pip install pytest` is blocked by default.
+Ubuntu/Debian: `sudo apt update && sudo apt install -y git python3 python3-pytest iproute2 nftables tcpdump`
+(on Ubuntu 24.04 `pip install pytest` is blocked by default).
 
 ## 3. Get the code
 
 ```bash
-git clone -b architecture-wd2l https://github.com/JoeHazurmoney/architecture-wiredata-to-log.git
+git clone https://github.com/JoeHazurmoney/architecture-wiredata-to-log.git
 cd architecture-wiredata-to-log
 ```
 
-If the repository is private, git will ask you to sign in to GitHub.
-
 ## 4. Optional: run the unit tests first
 
-```bash
-python3 -m pytest
-```
-
-These run without root and take about 25 seconds. You should see `143 passed`.
+`python3 -m pytest` runs without root in under a minute; every test should pass.
 
 ## 5. Run the lab
 
-Each run takes about 15–20 seconds and cleans up after itself.
+Each run takes 15–25 seconds and cleans up after itself. The README lists every option; the
+ones below show the main results.
 
 ```bash
 sudo lab/run-lab.sh                             # clean run
@@ -86,50 +65,29 @@ clock offset (last heartbeat): 0.0 s
 PASS: every event arrived intact or is accounted for in a reported gap
 ```
 
-The link delay compares each event's send time (sender's clock) with its arrival time
-(receiver's clock). Both namespaces share one clock in the lab, so the clock offset is about 0.
-The three opaque-content events are blobs planted on purpose (random, gzip, PGP): the sender
-must flag each one ([ADR-0002](decisions/0002-opaque-content.md)).
-
-What each run proves:
+Both namespaces share one clock, so the offset is about 0. The three opaque events are blobs
+planted on purpose (random, gzip, PGP), which the sender must flag
+([ADR-0002](decisions/0002-opaque-content.md)).
 
 | Run | What should happen |
 |---|---|
-| Clean | Every log arrives byte-for-byte identical. One 300 KB log arrives cut down and flagged. Three logs with planted encrypted or compressed blobs arrive flagged `wd2l_opaque`. |
-| `--loss 1` | Some logs are lost, and every one is reported by number. PASS means nothing went missing unreported and nothing was falsely reported as missing. |
-| `--receiver-outage` | The receiver misses about 2 seconds of logs, then replay from the packet archive fills them in with no duplicates. |
-| `--receiver-crash` | Same, but the receiver is killed with no chance to clean up. Nothing is lost; some logs arrive twice (the `duplicates` line), which is allowed here because they are identical and carry the same sequence number. |
-| `--maintenance` | Planned downtime, in the order of [planned-downtime.md](planned-downtime.md). Half the logs are sent. The stand-in aggregator stops, the sender stops, then the receiver and the capture stop as if the receiver host were going down. Everything starts again in reverse order and the rest is sent. The `sender runs` line shows two runs, each with `input unread at stop: 0`. No gaps, no replay. |
+| Clean | Every log arrives byte for byte. One 300 KB log arrives cut down and flagged; three with planted blobs arrive flagged `wd2l_opaque` |
+| `--loss 1` | Some logs are lost, and every one is reported by number. PASS means nothing went missing unreported and nothing was falsely reported |
+| `--receiver-outage` | The receiver misses about 2 seconds; the archive replay fills them with no duplicates |
+| `--receiver-crash` | The same, with the receiver killed. Nothing is lost; some logs arrive twice (the `duplicates` line), allowed because they are identical and carry the same number |
+| `--maintenance` | The [planned-downtime](planned-downtime.md) order: half the logs, everything stopped, everything started in reverse, the rest. Two sender runs, each with `input unread at stop: 0`; no gaps, no replay |
 
-Every run also checks two things:
-
-* **Nothing came back:** the line "frames sent back toward Enclave 1 from Enclave 2" must read 0.
-* **The cable was clean:** only log traffic crossed ("other packets on the tapped cable: 0").
+Every run also checks that nothing came back ("frames sent back toward Enclave 1 from Enclave 2"
+reads 0) and that only log traffic crossed ("other packets on the tapped cable: 0").
 
 ## 6. Look at the results
 
-Everything is written to `lab/out/`:
-
-| File | What it is |
-|---|---|
-| `sent.jsonl` | The logs that went in |
-| `received/events.jsonl` | The logs rebuilt in Enclave 2, each with its sequence number |
-| `received/health.jsonl` | The receiver's health, gap and heartbeat records (what the SIEM would get) |
-| `pcap/*.pcap` | The raw packet archive |
-| `sender.log`, `receiver.log`, `tcpdump.log` | Program logs |
-| `manifest.json`, `rebuilt/`, `hashes.txt` | Only with `--files`: what was sent, the files rebuilt in Enclave 2, and the hash comparison (section 8) |
-
-To look at the raw packets:
-
-```bash
-tcpdump -nn -r lab/out/pcap/*.pcap | head
-```
-
-Or open the pcap file in Wireshark.
+Everything is in `lab/out/`: `sent.jsonl` (what went in), `received/events.jsonl` and
+`received/health.jsonl` (what the SIEM would get), `pcap/*.pcap` (the raw archive; open it in
+Wireshark or `tcpdump -nn -r`), the programs' logs, and with `--files` the rebuilt files and their
+hashes.
 
 ## 7. Poke around while it's running (optional)
-
-`--keep` leaves the virtual networks up after the run so you can inspect them:
 
 ```bash
 sudo lab/run-lab.sh --keep
@@ -141,176 +99,95 @@ sudo lab/teardown.sh                                 # remove everything when do
 
 ## 8. Run real log files through and verify byte for byte
 
-`--files` sends whole log files instead of generated events. Each line becomes one event.
-Enclave 2 puts the files back together, and the lab compares SHA-256 hashes of the originals
-and the rebuilt copies. If any byte differed, the hash would differ.
+`--files` sends whole log files, one event per line. Enclave 2 puts the files back together and
+the lab compares SHA-256 hashes of the originals and the rebuilt copies. `--files` must be the
+last option.
 
-### With the sample logs in this repo
-
-`samples/logs/` holds three real logs (`messages`, `secure`, `audit.log`) captured from a
-disposable cloud VM. See [samples/logs/README.md](../samples/logs/README.md).
+**The sample logs** (`samples/logs/`: `messages`, `secure`, `audit.log` from a disposable cloud
+VM; see [samples/logs/README.md](../samples/logs/README.md)):
 
 ```bash
 sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/logs/audit.log
+(cd lab/out/rebuilt && sha256sum -c ../../../samples/logs/SHA256SUMS)    # each file: OK
 ```
 
-It takes about 25 seconds and ends with:
+The lab's own table ends `PASS: every file rebuilt byte for byte`. With `--loss 1` before
+`--files`, damaged files are reported `INCOMPLETE` with the number of missing lines, never a false
+`MATCH`.
 
-```
-file         result     sha256 original                                                  sha256 rebuilt
-messages     MATCH      b40e6d0aa8c8e1ea44aea988e5acb10db9b2dd3c7ff178b2ecd2c1c11ce784b5 b40e6d0aa8c8e1ea...
-secure       MATCH      a1889c62064889fde80f6724bd31cd022e41fd30a9ab05541cb3f9a7f4cdaab0 a1889c62064889fd...
-audit.log    MATCH      45667f63a67123549f835a3233d20605b2dec26ac2574571475b3eddef4fa9c6 45667f63a67123549...
-PASS: every file rebuilt byte for byte
-```
+**As if the files were written at the same time:** a forwarder tailing several logs interleaves
+their lines. `--interleave` merges the files by each line's timestamp; the sender numbers lines
+per file (`--source-seq`) and Enclave 2 separates them again. With `--loss 1`, each damaged file
+is listed with its missing line numbers. How it works, and what the real pipeline needs, is in
+[multiple-files.md](multiple-files.md).
 
-To check the rebuilt copies yourself with the standard tool, against the hashes shipped in the
-repo:
+**Your own logs:** copy them first (live logs keep growing), hash the copies, send them, and check
+the rebuilt files against your hashes. Then delete both copies: they hold real user names, host
+names and addresses (`lab/out/` is ignored by git).
 
 ```bash
-(cd lab/out/rebuilt && sha256sum -c ../../../samples/logs/SHA256SUMS)
+mkdir -p ~/wd2l-logs && sudo cp /var/log/messages /var/log/secure /var/log/audit/audit.log ~/wd2l-logs/
+sudo chown "$USER": ~/wd2l-logs/* && (cd ~/wd2l-logs && sha256sum messages secure audit.log > SHA256SUMS)
+sudo lab/run-lab.sh --eps 5000 --files ~/wd2l-logs/messages ~/wd2l-logs/secure ~/wd2l-logs/audit.log
+(cd lab/out/rebuilt && sha256sum -c ~/wd2l-logs/SHA256SUMS)
+sudo rm -rf lab/out ~/wd2l-logs
 ```
 
-Each file should print `OK`.
-
-With `--loss 1` added before `--files`, some lines are lost on the "cable". The affected files are
-then reported as `INCOMPLETE`, with the number of missing lines, never as a false `MATCH`.
-
-### As if the files were being written at the same time
-
-In production a forwarder tails several logs at once, so their lines arrive interleaved. Add
-`--interleave` to merge the files by each line's timestamp before sending:
-
-```bash
-sudo lab/run-lab.sh --interleave --files samples/logs/messages samples/logs/secure samples/logs/audit.log
-```
-
-The sender then numbers lines per file (`--source-seq`), and Enclave 2 separates the stream back
-into three files and hashes them. With `--loss 1` added, each damaged file is listed with its
-missing line numbers. How the tracking works, and what the real pipeline needs for byte-for-byte
-files, is explained in [multiple-files.md](multiple-files.md).
-
-### With your own computer's logs
-
-1. Copy the logs and hash the copies **before** they go in. Copy first: live logs keep growing,
-   so a hash of the live file won't stay the same.
-
-   ```bash
-   mkdir -p ~/wd2l-logs
-   sudo cp /var/log/messages /var/log/secure /var/log/audit/audit.log ~/wd2l-logs/
-   sudo chown "$USER": ~/wd2l-logs/*
-   (cd ~/wd2l-logs && sha256sum messages secure audit.log | tee SHA256SUMS)
-   ```
-
-2. Send them through the lab:
-
-   ```bash
-   sudo lab/run-lab.sh --files ~/wd2l-logs/messages ~/wd2l-logs/secure ~/wd2l-logs/audit.log
-   ```
-
-   `--files` must be the last option. The lab sends 1,000 lines a second by default, so for big
-   files put `--eps 5000` before it.
-
-3. Hash the rebuilt copies **after**, against your own "before" hashes:
-
-   ```bash
-   (cd lab/out/rebuilt && sha256sum -c ~/wd2l-logs/SHA256SUMS)
-   ```
-
-   Every file should print `OK`. The lab's own table (`lab/out/hashes.txt`) shows the same
-   comparison.
-
-4. Clean up. `lab/out/` and `~/wd2l-logs/` now hold copies of your real logs:
-
-   ```bash
-   sudo rm -rf lab/out ~/wd2l-logs
-   ```
-
-> **Ubuntu/Debian:** the files are named differently. Use `/var/log/syslog` (instead of
-> `messages`) and `/var/log/auth.log` (instead of `secure`), and change the names in the
-> `sha256sum` and `--files` lines to match. `audit.log` only exists if auditd is installed
-> (`sudo apt install auditd`).
-
-Things to know:
-
-* **Don't commit your own logs.** They contain real usernames, hostnames and IP addresses.
-  `lab/out/` is already ignored by git; `~/wd2l-logs/` is outside the repo.
-* Any text log works, not just these three: rotated files like `messages-20261001` too. Two files
-  with the same name (from different folders) can't go in the same run.
-* A single line longer than 256 KB would arrive truncated, so the lab refuses such a file up
-  front instead of reporting a false mismatch.
-* Lines that aren't valid UTF-8 (rare, but some logs have them) are carried base64-encoded and
-  restored exactly.
+On Ubuntu/Debian use `/var/log/syslog` and `/var/log/auth.log` (`audit.log` needs auditd). Any
+text log works, rotated files too; two files with the same name can't go in one run. A line over
+256 KB is refused up front, and lines that aren't valid UTF-8 cross base64-encoded and are
+restored exactly.
 
 ## 9. Inject faults and see where the receiver places them
 
-The receiver decides which segment of the path is at fault: Enclave 1's input, the sender, the cable and tap, the capture, or the SIEM link. Each `--fault` run injects one fault, checks that the receiver names the right segment and rule, then checks that the report clears once the fault is over. A run ends with `PASS: fault reported where expected, then cleared`, and the usual verify must still print `PASS`.
+Each `--fault` run injects one fault, checks that the receiver names the right segment and rule
+([the rules](audit-and-health.md#10-where-is-the-fault-the-rules)), then that the report clears.
+It ends with `PASS: fault reported where expected, then cleared`, and the usual `PASS` too.
 
-| `--fault` | What the lab does | What the receiver should say |
+| `--fault` | What the lab does | The receiver should say |
 |---|---|---|
-| `aggregator-stop` | The stand-in aggregator pauses for 12 seconds mid-run. | `e1-input`, amber, rule 5 |
-| `sender-stop` | Half the logs, a clean sender stop, 10 seconds, sender start, the other half. | `e1-sender`, amber, rule 2 |
-| `sender-hang` | The sender is frozen (`kill -STOP`) for 10 seconds. | `e1-sender/boundary`, red, rule 3 |
-| `tap-down` | The tap's monitor port goes down for 10 seconds. | `boundary`, red, rule 1 |
-| `foreign-only` | The sender is frozen (`kill -STOP`) and other UDP traffic crosses the cable for 10 seconds. | `boundary`, red, rule 4 |
-| `wire-loss` | 20% of packets are lost on the cable for 10 seconds. | `boundary`, amber, rule 9 |
-| `receiver-slow` | A small capture buffer, and the receiver is frozen (`kill -STOP`) for 4 seconds at 5,000 events a second. | `e2-capture`, red, rule 8 |
-| `siem-down` | The stand-in SIEM is down for 12 seconds. | `e2-siem`, amber, rule 10 |
-| `clock` | The stand-in `chronyc` says "not synchronised" for 10 seconds. | a time alarm |
-
-Run one:
+| `aggregator-stop` | The stand-in aggregator pauses for 12 s | `e1-input`, amber, rule 5 |
+| `sender-stop` | Half the logs, a clean sender stop for 10 s, the other half | `e1-sender`, amber, rule 2 |
+| `sender-hang` | The sender frozen (`kill -STOP`) for 10 s | `e1-sender/boundary`, red, rule 3 |
+| `tap-down` | The tap's monitor port down for 10 s | `boundary`, red, rule 1 |
+| `foreign-only` | The sender frozen, other UDP traffic on the cable for 10 s | `boundary`, red, rule 4 |
+| `wire-loss` | 20% of packets lost for 10 s | `boundary`, amber, rule 9 |
+| `receiver-slow` | A small capture buffer, the receiver frozen 4 s at 5,000 events/s | `e2-capture`, red, rule 8 |
+| `siem-down` | The stand-in SIEM down for 12 s | `e2-siem`, amber, rule 10 |
+| `clock` | The stand-in `chronyc` says "not synchronised" for 10 s | a time alarm |
 
 ```bash
 sudo lab/run-lab.sh --fault tap-down
-```
-
-A fault run sends more events than the default (20,000) so that it outlasts the injection. It can't be combined with `--loss`, `--receiver-outage`, `--maintenance` or `--files`.
-
-`--chrony-udp` runs the same lab with both sides asking a chronyd stand-in over UDP, as the
-container images do (`--chrony-addr`); `--fault clock --chrony-udp` checks the clock alarm that
-way.
-
-To look at the answer, search the receiver's health file:
-
-```bash
 grep '"type": "fault"' lab/out/received/health.jsonl
 ```
 
-For how the answer appears on the dashboard, see section 12 of the [audit and health plan](audit-and-health-plan.md).
+A fault run sends 20,000 events and can't be combined with `--loss`, `--receiver-outage`,
+`--maintenance` or `--files`. `--chrony-udp` has both sides ask a chronyd stand-in over UDP, as
+the containers do (`--fault clock --chrony-udp` checks the clock alarm that way).
 
 ## 10. Run the container image through the lab
 
-The same runs, with `wd2l-sender` and `wd2l-receiver` running from the container image, as the
-Quadlet units run them: user 65532, no capabilities except `NET_RAW` for the receiver, a
-read-only image. It needs Podman.
+The same runs, with `wd2l-sender` and `wd2l-receiver` in the container image as the Quadlet units
+run them (user 65532, no capabilities but `NET_RAW` for the receiver, read-only). It needs Podman:
 
 ```bash
 python3 -m pip install --user build && git rev-parse HEAD > wd2l/BUILD && python3 -m build
 packaging/container/build.sh dist localhost/wd2l:dev
 podman save localhost/wd2l:dev | sudo podman load
 sudo lab/run-lab.sh --image localhost/wd2l:dev
-sudo lab/run-lab.sh --image localhost/wd2l:dev --files samples/logs/messages samples/logs/secure samples/logs/audit.log
 ```
 
-Both sides ask a chronyd stand-in over UDP (`--chrony-addr`), as the containers do. The run
-raises `net.core.rmem_max` for its duration, as
-[the receiver guide](deployment/receiver.md#kernel-receive-buffer) has production do.
-`--receiver-outage` works with `--image`. The fault runs and `--receiver-crash` don't: they
-freeze or kill the process, and with `--image` that would be the podman client.
+Both sides use `--chrony-addr`, and the run raises `net.core.rmem_max` as production does
+([receiver guide](deployment/receiver.md#kernel-receive-buffer)). `--receiver-outage` works with
+`--image`; the fault runs and `--receiver-crash` don't (they would freeze or kill the podman
+client, not wd2l).
 
 ## If something goes wrong
 
-* **"run as root"**: add `sudo`.
-* **"missing tcpdump"** (or `ip`, `tc`, `nft`): install the package from step 2.
-* **An nftables error mentioning "egress"**: the kernel is older than 5.16. See step 1.
+* **"run as root"**: add `sudo`. **"missing tcpdump"** (or `ip`, `tc`, `nft`): step 2.
+* **An nftables error mentioning "egress"**: the kernel is older than 5.16 (step 1).
 * **Leftover networks from an interrupted run**: `sudo lab/teardown.sh`, then run again.
-* **No files in `lab/out/pcap/` and "Permission denied" in `lab/out/tcpdump.log`**: SELinux (on by
-  default in the RHEL family) can stop tcpdump from writing into a home directory. Confirm with
-  `sudo ausearch -m avc -ts recent`. Put the output somewhere else:
-
-  ```bash
-  sudo env OUT=/var/tmp/wd2l-lab lab/run-lab.sh
-  ```
-
-  Or, on a throwaway lab VM only, set SELinux to permissive for the run (`sudo setenforce 0`, then
-  `sudo setenforce 1` afterward).
+* **No files in `lab/out/pcap/` and "Permission denied" in `lab/out/tcpdump.log`**: SELinux can
+  stop tcpdump writing into a home directory. Confirm with `sudo grep AVC /var/log/audit/audit.log`
+  (`ausearch -ts recent` can miss them), then put the output elsewhere:
+  `sudo env OUT=/var/tmp/wd2l-lab lab/run-lab.sh`.

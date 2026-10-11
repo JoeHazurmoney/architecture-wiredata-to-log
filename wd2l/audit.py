@@ -1,6 +1,6 @@
 """Audit records: one JSON object per line, hash-chained, in append-only files.
 
-Every record has the common fields of docs/audit-and-health-plan.md section 5, plus `n` (1, 2,
+Every record has the common fields of docs/audit-and-health.md section 3, plus `n` (1, 2,
 3, ... in its directory's chain), `prev_hash` and `hash`. `hash` is the SHA-256 of the record as
 canonical JSON (keys sorted, no spaces, UTF-8) without `hash`. The first record's `prev_hash` is
 64 zeros. Editing, removing or reordering a record breaks the chain.
@@ -199,7 +199,7 @@ def verify_dir(directory: str, upto: Optional[int] = None,
 
 class Summarizer:
     """Counts frequent events (bad input, truncation, send errors, gap fills...) so the owner
-    writes one audit record per event and key a minute instead of one per occurrence (§6)."""
+    writes one audit record per event and key a minute instead of one per occurrence (§4)."""
 
     def __init__(self, max_keys: int = 100):
         self.max_keys = max_keys
@@ -296,7 +296,7 @@ def _jsonable(v: Any) -> Any:
 
 
 class AuditLog:
-    """This process's audit trail: <directory>/audit-<UTC start>.jsonl, hash-chained (§10).
+    """This process's audit trail: <directory>/audit-<UTC start>.jsonl, hash-chained (§8).
 
     * One record is one write() and one fsync(). Files are only ever appended to. Past
       max_bytes the next record starts a new file and the chain carries on. Nothing is renamed

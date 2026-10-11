@@ -100,7 +100,7 @@ They stop it within the native units' times: 30 s for the sender and 60 s for th
 
 * **SELinux.** `/var/lib/wd2l` and `/var/log/wd2l` are mounted with `:z` (shared), because host
   tcpdump and the audit seal timer use them too. `/etc/wd2l` is mounted read-only.
-* **Still to confirm on RHEL 10** with SELinux enforcing (the release plan's checks, at the first
+* **Still to confirm on RHEL 10** with SELinux enforcing (the [release plan's checks](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md), at the first
   release candidate):
   * the user name resolves;
   * `:z` doesn't stop tcpdump writing the archive;

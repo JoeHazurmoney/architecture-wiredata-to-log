@@ -16,7 +16,7 @@ Every UDP payload is one frame:
     64     n    payload      this chunk's bytes
     64+n   4    crc32        CRC-32 of bytes 0 .. 64+n
 
-All integers are big-endian. See docs/wire-format.md.
+All integers are big-endian. See docs/interface-description.md.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ TYPE_DATA = 1
 TYPE_HEARTBEAT = 2
 
 # flags bit 0: the frame belongs to the sender's records stream, which carries its own audit and
-# health records (docs/audit-and-health-plan.md section 7). The other bits are reserved (0).
+# health records (docs/audit-and-health.md section 5). The other bits are reserved (0).
 FLAG_RECORDS = 0x0001
 
 HEADER = struct.Struct("!4sBBHQQHHI32s")

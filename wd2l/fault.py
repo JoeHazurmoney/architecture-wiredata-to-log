@@ -1,4 +1,4 @@
-"""Where is the fault? The receiver's decision rules (docs/audit-and-health-plan.md §12).
+"""Where is the fault? The receiver's decision rules (docs/audit-and-health.md §10).
 
 evaluate() takes one snapshot of signals and returns the first rule that matches: a status
 (ok, amber, red), the suspected segment, the rule number and a sentence for the operator. Every
@@ -125,7 +125,7 @@ def time_status(own: Optional[Dict[str, Any]], sender_hb: Dict[str, Any],
                 clock_offset_s: Optional[float], max_stratum: int = 3,
                 max_offset_ms: float = 100.0, max_skew_s: float = 0.05
                 ) -> Tuple[str, Optional[str]]:
-    """Time quality on both sides and the skew between them (§11). Shown apart from the transfer
+    """Time quality on both sides and the skew between them (§9). Shown apart from the transfer
     fault: bad time doesn't lose events, but it makes their timestamps wrong."""
     reasons = []
     if own is not None:

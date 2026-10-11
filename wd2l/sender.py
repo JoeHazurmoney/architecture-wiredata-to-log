@@ -46,7 +46,7 @@ OPAQUE_FIELD = "wd2l_opaque"
 OPAQUE_BYTES_FIELD = "wd2l_opaque_bytes"
 MAX_LINE = 16 * 1024 * 1024
 ERROR_LOG_EVERY = 10.0
-# Frequent events become one audit record per kind and key a minute (§6).
+# Frequent events become one audit record per kind and key a minute (§4).
 SUMMARY_OUTCOME = {"auth_failure": "failure", "input_rejected": "failure",
                    "send_failure": "failure", "truncated": "info", "opaque_content": "info"}
 SUMMARY_SEGMENT = {"auth_failure": "e1-input", "input_rejected": "e1-input"}
@@ -98,7 +98,7 @@ class Sender:
                                        if f not in self.extra_fields)
         self.stream_id = stream_id or new_stream_id()
         self.seq = 0
-        self.events_hash = SetHash()   # §9: this run's set hash over (seq, event SHA-256)
+        self.events_hash = SetHash()   # §7: this run's set hash over (seq, event SHA-256)
         self.next_reconcile = time.monotonic() + 3600
         self.started = time.time()
         self.counters = {"events_sent": 0, "datagrams_sent": 0, "sender_drops": 0,
@@ -122,7 +122,7 @@ class Sender:
         self.input_server: Optional["InputServer"] = None
         self.proc = hostinfo.ProcStats()
         self.stall_s = 0.0    # time spent waiting on pacing or a full send buffer
-        # The records stream (§7): this sender's own audit and health records, in-band, as a
+        # The records stream (§5): this sender's own audit and health records, in-band, as a
         # second stream with its own id, numbers and heartbeat, marked by flags bit 0.
         self.records = audit is not None and audit.forward
         self.rec_stream_id = new_stream_id()
@@ -336,7 +336,7 @@ class Sender:
             return self.seq
 
     def snapshot(self) -> Dict[str, Any]:
-        """Enclave 1's state for every heartbeat (§7): input, the sender process, the egress NIC,
+        """Enclave 1's state for every heartbeat (§5): input, the sender process, the egress NIC,
         time and the audit trail. Read outside the lock; values that can't be read are left out."""
         snap: Dict[str, Any] = {"stall_s": round(self.stall_s, 3)}
         srv = self.input_server
@@ -410,7 +410,7 @@ class Sender:
                              stream="%016x" % self.stream_id, **fields)
 
     def reconcile_record(self) -> None:
-        """§9: this side's numbers at the current cut, for the reconcile report."""
+        """§7: this side's numbers at the current cut, for the reconcile report."""
         if self.audit is None:
             return
         with self.lock:
@@ -436,7 +436,7 @@ class Sender:
             self.health_outbox.append(self.health_record())
 
     def health_record(self) -> Dict[str, Any]:
-        """The sender's per-minute health summary (§4): counters, the latest snapshot, where the
+        """The sender's per-minute health summary (§2): counters, the latest snapshot, where the
         audit chain stands, and time quality."""
         with self.lock:
             rec: Dict[str, Any] = dict(self.counters, stream="%016x" % self.stream_id,

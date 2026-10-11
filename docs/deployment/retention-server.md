@@ -8,8 +8,8 @@ jobs:
    reports a loss, the aggregator reads that time window back from this server and sends it
    through `wd2l-sender` again.
 2. **1-year home for wd2l's Enclave 1 audit files** (see [section 6](#6-wd2l-audit-files) and
-   [audit-and-health-plan.md](../audit-and-health-plan.md)). Confirm this home with the
-   security owner (open item 5, section 17 of the plan).
+   [audit-and-health.md](../audit-and-health.md)). Confirm this home with the
+   security owner ([open item 5](../accreditation-notes.md#open-items-for-the-security-and-system-owners)).
 
 It isn't on the transfer path. If it's down, logs still reach Enclave 2; only the Enclave 1 copy
 falls behind.
@@ -88,8 +88,8 @@ gets the same records in-band from the sender. Keep every line unchanged, so the
 verifies on the copy. wd2l starts a new file when one gets large and never renames them, so a file
 input that picks up new files by name pattern is enough.
 
-Keeping them here for 1 year is still to be confirmed by the security owner (audit plan, section
-17, item 5). Until then the official copy is the one on the log server.
+Keeping them here for 1 year is still to be confirmed by the security owner ([open item 5](../accreditation-notes.md#open-items-for-the-security-and-system-owners)
+in the accreditation notes). Until then the official copy is the one on the log server.
 
 To check a copy:
 
