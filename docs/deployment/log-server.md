@@ -70,19 +70,21 @@ ip neigh show dev ens224         # 10.255.255.2 lladdr 02:00:00:00:00:02 PERMANE
 
 ## 3. Firewall
 
-Load `/usr/share/wd2l/nftables-wd2l.nft` (copy it, then edit the interface name at the top). It:
+`wd2l-egress-nic` (step 2) also loads the egress firewall, from the settings in `egress.env`. It:
 
 * drops everything arriving on the egress NIC,
-* lets only processes running as `wd2l` send UDP from `10.255.255.1:5514` to `10.255.255.2:5514`,
+* lets only processes running as `wd2l` send UDP from `10.255.255.1:5514` to `10.255.255.2:5514`
+  (`PORT` in `egress.env`),
 * blocks ARP in and out on that NIC,
-* on kernel 5.16+, also drops any other frame at the NIC (LLDP, IPv6, ...). Delete that last table
-  if your kernel rejects it.
+* on kernel 5.16+, also drops any other frame at the NIC (LLDP, IPv6, ...). Without the egress
+  hook the unit's log says why, and the rest still loads.
 
 ```bash
-sudo install -d /etc/nftables.d && sudo cp /usr/share/wd2l/nftables-wd2l.nft /etc/nftables.d/
-# include it from /etc/sysconfig/nftables.conf
-sudo nft -f /etc/nftables.d/nftables-wd2l.nft
+sudo nft list table inet wd2l     # the rules, with their drop counters
 ```
+
+Don't load these tables from `nftables.service` as well: its stop and reload flush every table,
+firewalld's included.
 
 ## 4. Sender service
 
@@ -302,15 +304,13 @@ sudo usermod -aG wd2l-audit <aggregator service account>         # it copies the
 git rev-parse HEAD | sudo tee /opt/wd2l/wd2l/BUILD >/dev/null    # the build audit records name
 ```
 
-The units, the firewall template and the auditd rules, in place of sections 2 to 4:
+The units and the auditd rules, in place of sections 2 to 4:
 
 ```bash
 sudo cp deploy/log-server/wd2l-egress-nic.service deploy/log-server/wd2l-sender.service \
   deploy/common/wd2l-audit-seal.service deploy/common/wd2l-audit-seal.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now wd2l-egress-nic wd2l-sender wd2l-audit-seal.timer
-sudo cp deploy/log-server/nftables-wd2l.nft /etc/nftables.d/ 2>/dev/null || sudo cp deploy/log-server/nftables-wd2l.nft /etc/
-# include it from /etc/sysconfig/nftables.conf (RHEL) or /etc/nftables.conf (Debian/Ubuntu)
 sudo cp deploy/log-server/wd2l.rules /etc/audit/rules.d/ && sudo augenrules --load
 ```
 

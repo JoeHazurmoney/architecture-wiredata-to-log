@@ -45,8 +45,9 @@ Requires:       iproute
 
 %description sender
 The sender's systemd units (or a Quadlet example to run it as a container), the
-egress NIC script, its settings in /etc/wd2l, the nftables template and the
-auditd rules for the log server. See docs/deployment/log-server.md.
+egress NIC script (which also loads the egress firewall), its settings in
+/etc/wd2l, and the auditd rules for the log server. See
+docs/deployment/log-server.md.
 
 %package receiver
 Summary:        wd2l receiver for Enclave 2: units, capture NIC script, archive, SIEM examples
@@ -90,7 +91,6 @@ install -Dm0640 log-server/sender.env %{buildroot}%{_sysconfdir}/wd2l/sender.env
 install -Dm0640 log-server/egress.env.example %{buildroot}%{_sysconfdir}/wd2l/egress.env
 install -Dm0640 receiver/receiver.env %{buildroot}%{_sysconfdir}/wd2l/receiver.env
 install -Dm0640 receiver/capture.env %{buildroot}%{_sysconfdir}/wd2l/capture.env
-install -Dm0644 log-server/nftables-wd2l.nft %{buildroot}%{_datadir}/wd2l/nftables-wd2l.nft
 install -Dm0644 log-server/wd2l.rules %{buildroot}%{_datadir}/wd2l/audit/log-server.rules
 install -Dm0644 receiver/wd2l.rules %{buildroot}%{_datadir}/wd2l/audit/receiver.rules
 install -Dm0644 log-server/wd2l-quadlet.rules %{buildroot}%{_datadir}/wd2l/audit/log-server-quadlet.rules
@@ -177,7 +177,6 @@ exit 0
 %{_libexecdir}/wd2l/egress-nic.sh
 %config(noreplace) %attr(0640,root,wd2l) %{_sysconfdir}/wd2l/sender.env
 %config(noreplace) %attr(0640,root,wd2l) %{_sysconfdir}/wd2l/egress.env
-%{_datadir}/wd2l/nftables-wd2l.nft
 %{_datadir}/wd2l/audit/log-server.rules
 %{_datadir}/wd2l/audit/log-server-quadlet.rules
 %{_datadir}/wd2l/quadlet/wd2l-sender.container

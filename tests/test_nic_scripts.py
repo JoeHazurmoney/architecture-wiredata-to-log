@@ -80,3 +80,43 @@ def test_capture_nic_says_why_when_nft_refuses_the_egress_drop(tmp_path):
     assert "syntax error" in r.stderr
     assert "kernel has no netdev egress hook" not in r.stderr
     assert "nft -f -" not in [c["call"] for c in calls]
+
+
+EGRESS_ENV = ("IFACE=test0\nSRC_CIDR=10.9.9.1/30\nBH_IP=10.9.9.2\nBH_MAC=02:00:00:00:00:09\n"
+              "MTU=1500\nPORT=6514\n")
+
+
+def egress_env(tmp_path):
+    f = tmp_path / "egress.env"
+    f.write_text(EGRESS_ENV)
+    return {"WD2L_EGRESS_ENV": str(f)}
+
+
+def test_egress_nic_loads_its_firewall_from_egress_env(tmp_path):
+    r, calls = run_script(tmp_path, EGRESS, egress_env(tmp_path), {})
+    assert r.returncode == 0, r.stderr
+    loads = [c["stdin"] for c in calls if c["call"] == "nft -f -"]
+    assert len(loads) == 2                     # the inet and arp tables, then the netdev one
+    base, netdev = loads
+    assert base.splitlines()[:2] == ["table inet wd2l", "delete table inet wd2l"]
+    assert "table arp wd2l_arp\ndelete table arp wd2l_arp\n" in base
+    assert ('oifname "test0" meta skuid "wd2l" ip saddr 10.9.9.1 ip daddr 10.9.9.2 '
+            'udp sport 6514 udp dport 6514 accept') in base
+    assert 'iifname "test0" counter drop' in base
+    assert 'hook egress device "test0"' in netdev and "udp sport 6514 udp dport 6514 accept" in netdev
+    assert ("ip neigh replace 10.9.9.2 lladdr 02:00:00:00:00:09 nud permanent dev test0"
+            in [c["call"] for c in calls])
+
+
+def test_egress_nic_fails_when_the_firewall_doesnt_load(tmp_path):
+    r, _ = run_script(tmp_path, EGRESS, egress_env(tmp_path),
+                      {"nft -f -": [1, "", "Error: Could not process rule\n"]})
+    assert r.returncode != 0
+
+
+def test_egress_nic_without_an_egress_hook_still_loads_the_rest(tmp_path):
+    r, calls = run_script(tmp_path, EGRESS, egress_env(tmp_path),
+                          {"nft -c": [1, "", "Error: unknown hook egress\n"]})
+    assert r.returncode == 0, r.stderr
+    assert "unknown hook egress" in r.stderr
+    assert [c["call"] for c in calls].count("nft -f -") == 1
