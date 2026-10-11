@@ -10,7 +10,8 @@ EGRESS = os.path.join(REPO, "deploy", "log-server", "egress-nic.sh")
 WATCH = os.path.join(REPO, "deploy", "log-server", "egress-arp-watch.sh")
 
 # A stub command: records "name args" (and stdin for `-f -`), then answers from rules.json,
-# {"call prefix": [exit code, stdout, stderr]}; the first matching prefix wins, else exit 0.
+# {"call prefix": [exit code, stdout, stderr]} or [..., "only if stdin contains this"]; the first
+# matching rule wins, else exit 0.
 STUB = '''#!/usr/bin/env python3
 import json, os, sys
 d = os.environ["STUBS"]
@@ -20,8 +21,9 @@ with open(os.path.join(d, "calls.jsonl"), "a") as f:
     f.write(json.dumps({"call": call, "stdin": data}) + "\\n")
 with open(os.path.join(d, "rules.json")) as f:
     rules = json.load(f)
-for prefix, (code, out, err) in rules.items():
-    if call.startswith(prefix):
+for prefix, spec in rules.items():
+    code, out, err = spec[:3]
+    if call.startswith(prefix) and (len(spec) < 4 or spec[3] in data):
         sys.stdout.write(out)
         sys.stderr.write(err)
         sys.exit(code)
@@ -161,3 +163,37 @@ def test_arp_watch_leaves_a_present_entry_alone(tmp_path):
                             keep="1")
     assert r.returncode == 0, r.stderr
     assert replaces == [] and r.stdout == ""
+
+
+def test_capture_nic_keeps_going_when_the_kernel_refuses_the_egress_drop(tmp_path):
+    # `nft -c` may pass while the kernel has no egress hook (RHEL 9's 5.14): the load then fails.
+    r, calls = run_script(tmp_path, CAPTURE, capture_env(tmp_path),
+                          {"nft -f -": [1, "", "Error: Could not process rule: Not supported\n"]})
+    assert r.returncode == 0, r.stderr
+    assert "Not supported" in r.stderr
+
+
+def test_egress_nic_loads_the_firewall_before_the_link_comes_up(tmp_path):
+    r, calls = run_script(tmp_path, EGRESS, egress_env(tmp_path), {})
+    assert r.returncode == 0, r.stderr
+    names = [c["call"] for c in calls]
+    assert names.index("nft -f -") < names.index("ip link set test0 up")
+
+
+def test_egress_nic_stays_down_when_the_firewall_doesnt_load(tmp_path):
+    # Fail closed: an egress NIC without its firewall must not come up.
+    r, calls = run_script(tmp_path, EGRESS, egress_env(tmp_path),
+                          {"nft -f -": [1, "", "Error: Could not process rule\n"]})
+    assert r.returncode != 0
+    names = [c["call"] for c in calls]
+    assert "ip link set test0 up" not in names
+    assert "ip link set test0 down" in names
+    assert "stays down" in r.stderr and "Could not process rule" in r.stderr
+
+
+def test_egress_nic_comes_up_when_only_the_egress_hook_is_refused(tmp_path):
+    r, calls = run_script(tmp_path, EGRESS, egress_env(tmp_path),
+                          {"nft -f -": [1, "", "Error: Not supported\n", "table netdev wd2l_egress"]})
+    assert r.returncode == 0, r.stderr
+    assert "Not supported" in r.stderr
+    assert "ip link set test0 up" in [c["call"] for c in calls]

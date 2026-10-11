@@ -32,16 +32,15 @@ if command -v ethtool >/dev/null 2>&1; then
 fi
 ip link set "$IFACE" up
 
-# The egress drop (kernel 5.16+). Checked with the same text it loads, so a failure names nft's
-# reason. "table" then "delete table" makes a reload replace the table on every nft version.
+# The egress drop (kernel 5.16+). Checked, then loaded, with the same text, so a failure names
+# nft's reason; a kernel that refuses it doesn't stop the capture. "table" then "delete table"
+# makes a reload replace the table on every nft version.
 NOTX="table netdev wd2l_notx
 delete table netdev wd2l_notx
 table netdev wd2l_notx {
   chain out { type filter hook egress device \"$IFACE\" priority 0; policy drop; }
 }"
-if err=$(nft -c -f - <<<"$NOTX" 2>&1); then
-  nft -f - <<<"$NOTX"
-else
+if ! { err=$(nft -c -f - <<<"$NOTX" 2>&1) && err=$(nft -f - <<<"$NOTX" 2>&1); }; then
   echo "note: no egress drop on $IFACE (nft: ${err//$'\n'/ }); relying on no-IP/no-ARP + the missing TX strand" >&2
 fi
 

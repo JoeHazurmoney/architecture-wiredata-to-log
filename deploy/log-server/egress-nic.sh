@@ -8,8 +8,9 @@
 #   - IPv6 off on this NIC (no router solicitations / neighbor discovery on the tapped cable)
 #   - no LLDP from this host on this NIC
 #   - the egress firewall: only wd2l-sender's one flow leaves, nothing is accepted, no ARP.
-#     Loaded here, not by nftables.service, whose stop and reload flush every table (firewalld's
-#     too). Loading again replaces wd2l's tables and touches no other.
+#     Loaded here, before the link comes up, not by nftables.service, whose stop and reload
+#     flush every table (firewalld's too). Loading again replaces wd2l's tables and touches no
+#     other. If it can't load, the NIC stays down.
 #
 # Settings come from /etc/wd2l/egress.env (WD2L_EGRESS_ENV overrides the path, for tests).
 set -euo pipefail
@@ -36,17 +37,11 @@ ip link set "$IFACE" down
 ip addr flush dev "$IFACE"
 ip link set "$IFACE" mtu "$MTU"
 ip addr add "$SRC_CIDR" dev "$IFACE"
-ip link set "$IFACE" up
-ip neigh replace "$BH_IP" lladdr "$BH_MAC" nud permanent dev "$IFACE"
 
-# lldpd, if installed, must not talk on this port.
-if command -v lldpcli >/dev/null 2>&1; then
-  lldpcli configure ports "$IFACE" lldp status disabled || true
-fi
-
-# The egress firewall. "table" then "delete table" makes a reload replace wd2l's tables on every
-# nft version ("destroy" needs kernel 6.3).
-nft -f - <<EOF
+# The egress firewall, loaded before the link comes up so the NIC never carries anything
+# unfiltered. If it doesn't load, the NIC stays down: fail closed. "table" then "delete table"
+# makes a reload replace wd2l's tables on every nft version ("destroy" needs kernel 6.3).
+BASE=$(cat <<EOF
 table inet wd2l
 delete table inet wd2l
 table inet wd2l {
@@ -73,9 +68,15 @@ table arp wd2l_arp {
     }
 }
 EOF
+)
+if ! err=$(nft -f - <<<"$BASE" 2>&1); then
+  echo "egress-nic: the egress firewall didn't load, so $IFACE stays down (nft: ${err//$'\n'/ })" >&2
+  exit 1
+fi
 
 # Kernel 5.16+: also drop any other frame a daemon might put on the wire (LLDP, IPv6 RS, ...).
-# Checked with the same text it loads, so a failure names nft's reason.
+# Checked, then loaded, with the same text; if the kernel refuses it, the inet and arp tables
+# still stand, and nft's reason is printed.
 EGRESS="table netdev wd2l_egress
 delete table netdev wd2l_egress
 table netdev wd2l_egress {
@@ -84,10 +85,16 @@ table netdev wd2l_egress {
         ip saddr $SRC_IP ip daddr $BH_IP udp sport $PORT udp dport $PORT accept
     }
 }"
-if err=$(nft -c -f - <<<"$EGRESS" 2>&1); then
-  nft -f - <<<"$EGRESS"
-else
+if ! { err=$(nft -c -f - <<<"$EGRESS" 2>&1) && err=$(nft -f - <<<"$EGRESS" 2>&1); }; then
   echo "note: no netdev egress table on $IFACE (nft: ${err//$'\n'/ }); relying on the inet and arp tables" >&2
+fi
+
+ip link set "$IFACE" up
+ip neigh replace "$BH_IP" lladdr "$BH_MAC" nud permanent dev "$IFACE"
+
+# lldpd, if installed, must not talk on this port.
+if command -v lldpcli >/dev/null 2>&1; then
+  lldpcli configure ports "$IFACE" lldp status disabled || true
 fi
 
 ip -br addr show dev "$IFACE"
