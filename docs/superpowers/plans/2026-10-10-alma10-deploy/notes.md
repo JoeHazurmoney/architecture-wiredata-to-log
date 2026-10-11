@@ -83,6 +83,11 @@ after about 12 h: `last_seq` 1878, health ok, **no new AVCs overnight** (A6-1's 
 | R-3 | step 1 | works | Holding rsyslog = `systemctl stop rsyslog`; `ss` shows no connection on :10070. On a reboot rsyslog starts again at boot and still holds: the sender is disabled, so its disk-assisted queue fills until the sender is back | One line in the runbook for rsyslog | The hold/release is a per-aggregator hook (rsyslog: stop/start the service) |
 | R-4 | step 2 | doc-unclear | The `final:` line in JSON logs comes out escaped (`\"shutdown_unread_bytes\": 0`) and gets cut off on narrow terminals. `journalctl -o json` and a short JSON decode prints it readably | Have the sender also log the final counters as plain `key=value`, or give the decode one-liner | Parse `shutdown_unread_bytes` and fail the stop if it isn't 0 |
 | R-5 | steps 2–4 | works | `final: last_seq=1896`, `events_in` = `events_sent` = 1896, `shutdown_unread_bytes` 0. Splunk: `stream_end` for both streams, no `gap`. The receiver logged amber `e1-sender` rule 2 at stop, as documented. Spool 0, state files saved, `wd2l-sender` disabled for the reboot | — | These are the stop tag's checks |
+| R-6 | step 6, after the reboot | works | Everything came back on its own: all units active, nothing failed; the veth pair; the capture NIC `UP,PROMISC,NOARP`, no address, `wd2l_notx` loaded (fixed-script drop-in); the egress address, the `PERMANENT` ARP entry, `inet wd2l` (nft drop-in); NetworkManager leaves both NICs `unmanaged`; the pcap label `netutils_tmp_t` kept, a new pcap written; the receiver `loaded state for 6 streams`, no "not confirmed" warning, and it still knew the sender had stopped cleanly (amber rule 2, not red). **No AVCs since boot** | — | The start tag's checks |
+| R-7 | step 9 | doc-unclear | With rsyslog, the hold ends by itself at boot: rsyslog starts and retries every 5 s, so the drain begins the moment the sender listens, before step 8's "heartbeats arrive" check. I stopped rsyslog again before starting the sender to keep the order | Runbook: "if the aggregator came back at boot, hold it again before step 7" | Start tag: make sure the aggregator is held before the sender starts; release it only after the heartbeat check |
+| R-8 | step 6 | **bug (alert noise)** | A **time alarm at every boot**: the receiver started at 13:09:07, read chrony at 13:09:08 (not synced yet) → `time_status=alarm`; chrony picked a source at 13:09:11; next check 13:10:08 → `ok`. "WD2L - Time quality" would fire after every patch reboot | Order the units after `time-sync.target` (`Wants=`/`After=`) and enable `chrony-wait.service` (ships with chrony), or give chrony a grace period after boot before alarming | Enable `chrony-wait.service`; check `time_status=ok` before unmuting |
+| R-9 | step 10 | works | Run linked across the reboot: `boot 4 after stream 007c… (last seq 1896)`. No `gap`, `stream_lost`, `stream_missing` or `sender_boot_reset`. The held boot logs crossed: new run seq 1–1787 contiguous, first event 13:08:54 (kernel boot), longest backlog delay 1048 s. **Every journal entry crossed exactly once** (journal: 1836 entries to 13:27:28; stream at seq 1835 for the 13:27:27 line). Lines that repeat in the SIEM repeat in the kernel log too (e.g. "xHCI Host Controller" ×2, checked against `journalctl`). Audit index: stop, stop, start + `state_loaded`, start + `state_loaded`; no `state_reset` | — | The start tag's checks |
+| R-10 | step 9 | works (harmless) | rsyslog left its disk-queue files (`wd2l_fwd.00000003`, `.qi`) after the drain until its next restart, which removed them **without** re-sending anything | — | |
 
 ## Requirement from the user: start/stop/restart tags
 
@@ -116,9 +121,6 @@ comes from separate plays: sender hosts first for a stop, receiver hosts first f
 
 ## Not done yet
 
-* **Reboot test**, the start half: after the user reboots, follow planned-downtime.md steps 6–10
-  and check everything came back (veth unit ordering, the nft drop-in, NetworkManager, the SELinux
-  labels, rsyslog's held queue draining).
 * **Container mode (Quadlet)**: blocked on the Pi by A0-1 (no arm64 image) and A2-6.
 * **Re-send from Enclave 1** for the 110 events lost in the fault tests: optional demo of
   operations.md "Re-sending from Enclave 1" (no retention server here; the journal is the source).

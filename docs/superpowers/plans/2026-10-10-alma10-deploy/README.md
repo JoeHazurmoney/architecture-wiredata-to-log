@@ -60,15 +60,14 @@ was refused three ways (A1-7).
 ## To do, in order
 
 1. **Ansible roles for the sender and receiver (next).** See below.
-2. **Bug fixes in the package** (notes: A2-2, A2-3, A2-4, A2-5, A6-1, A6-6, A6-7, then A2-6 and
-   A0-1 for containers). Each one gets a test, aimed at 0.3.0 (or rc4).
+2. **Bug fixes in the package** (notes: A2-2, A2-3, A2-4, A2-5, A6-1, A6-6, A6-7, R-8, then
+   A2-6 and A0-1 for containers). Each one gets a test, aimed at 0.3.0 (or rc4).
    * These can go first, as step 0 of the Ansible session, so the roles carry no workarounds.
      Otherwise the roles carry the workarounds behind a version check. Ask the user.
 3. **Finish the deployment checks.**
-   * The reboot test: the clean-stop half was done on 2026-10-11 ([notes.md](notes.md#reboot-test-2026-10-11)).
-   * If the start half isn't recorded there, the Pi may still have `wd2l-sender` **disabled**, and
-     the three alerts **muted** in Splunk: "WD2L - Heartbeat stale", "WD2L - Receiver silent" and
-     "WD2L - Fault segment".
+   * The reboot test passed on 2026-10-11 ([notes.md](notes.md#reboot-test-2026-10-11)). The
+     Pi is back to normal: the sender is enabled, and all 11 alerts are on.
+   * One new bug from it: a time alarm at every boot (R-8).
    * Then container mode, once there is an arm64 image.
 4. **Docs rewrite** (the user's original goals, [plan.md](plan.md) Part C):
    * streamline the install;
