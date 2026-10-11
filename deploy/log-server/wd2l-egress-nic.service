@@ -2,6 +2,7 @@
 Description=wd2l: configure the one-way egress NIC (static ARP, no IPv6)
 After=network-pre.target
 Before=network.target wd2l-sender.service
+Wants=wd2l-egress-arp.service
 
 [Service]
 Type=oneshot

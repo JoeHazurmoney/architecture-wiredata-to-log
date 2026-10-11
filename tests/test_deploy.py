@@ -15,6 +15,8 @@ SENDER_ENV = os.path.join(REPO, "deploy", "log-server", "sender.env")
 RECEIVER_ENV = os.path.join(REPO, "deploy", "receiver", "receiver.env")
 CAPTURE_UNIT = os.path.join(REPO, "deploy", "receiver", "wd2l-capture.service")
 CAPTURE_ENV = os.path.join(REPO, "deploy", "receiver", "capture.env")
+EGRESS_NIC_UNIT = os.path.join(REPO, "deploy", "log-server", "wd2l-egress-nic.service")
+ARP_UNIT = os.path.join(REPO, "deploy", "log-server", "wd2l-egress-arp.service")
 
 # What the units passed before the options moved into env files (they must not change).
 SENDER_ARGS_BEFORE = [
@@ -187,3 +189,14 @@ def test_quadlet_unit_matches_the_native_one(side, name, var, native_path, stop,
     for k in ("After", "Requires", "Wants"):
         assert q["Unit"].get(k) == native.get(k), k
     assert "--umask=0027" in " ".join(c.get("PodmanArgs", []))
+
+
+def test_arp_watch_runs_whenever_the_egress_nic_does():
+    nic, arp = unit(EGRESS_NIC_UNIT), unit(ARP_UNIT)
+    assert "wd2l-egress-arp.service" in nic["Wants"][0].split()
+    assert arp["After"] == ["wd2l-egress-nic.service"] and arp["PartOf"] == ["wd2l-egress-nic.service"]
+    assert arp["ExecStart"] == ["/opt/wd2l/deploy/log-server/egress-arp-watch.sh"]
+    assert arp["Restart"] == ["always"] and arp["CapabilityBoundingSet"] == ["CAP_NET_ADMIN"]
+    assert "WantedBy" not in arp          # started by wd2l-egress-nic's Wants=, never enabled alone
+    with open(os.path.join(REPO, "deploy", "log-server", "wd2l.rules")) as f:
+        assert "-w /etc/systemd/system/wd2l-egress-arp.service -p wa -k wd2l-units" in f.read().splitlines()

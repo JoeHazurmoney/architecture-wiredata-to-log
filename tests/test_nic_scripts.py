@@ -120,3 +120,44 @@ def test_egress_nic_without_an_egress_hook_still_loads_the_rest(tmp_path):
     assert r.returncode == 0, r.stderr
     assert "unknown hook egress" in r.stderr
     assert [c["call"] for c in calls].count("nft -f -") == 1
+
+
+# `ip` for the watcher: neighbour state lives in a file; `ip -o monitor` flushes it (as a NIC
+# down/up does), prints one link event and exits, which ends the watcher's loop.
+WATCH_IP = '''#!/bin/sh
+echo "$*" >> "$STUBS/calls"
+case "$1 $2" in
+  "neigh show") cat "$STUBS/neigh" ;;
+  "neigh replace") echo "$3 dev $9 lladdr $5 PERMANENT" > "$STUBS/neigh" ;;
+  "-o monitor") [ -n "$KEEP" ] || : > "$STUBS/neigh"; echo "4: test0: <BROADCAST,UP,LOWER_UP> state UP" ;;
+esac
+'''
+
+
+def run_watch(tmp_path, neigh, keep=""):
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    ip = stubs / "ip"
+    ip.write_text(WATCH_IP)
+    ip.chmod(0o755)
+    (stubs / "neigh").write_text(neigh)
+    env = dict(os.environ, PATH="%s:%s" % (stubs, os.environ["PATH"]), STUBS=str(stubs), KEEP=keep,
+               **egress_env(tmp_path))
+    r = subprocess.run(["bash", WATCH], env=env, universal_newlines=True, timeout=20,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    calls = (stubs / "calls").read_text().splitlines()
+    return r, [c for c in calls if c.startswith("neigh replace")]
+
+
+def test_arp_watch_puts_the_entry_back_after_a_flush(tmp_path):
+    r, replaces = run_watch(tmp_path, neigh="")
+    assert r.returncode == 0, r.stderr
+    assert replaces == ["neigh replace 10.9.9.2 lladdr 02:00:00:00:00:09 nud permanent dev test0"] * 2
+    assert r.stdout.count("egress-arp: restored 10.9.9.2 lladdr 02:00:00:00:00:09 on test0") == 2
+
+
+def test_arp_watch_leaves_a_present_entry_alone(tmp_path):
+    r, replaces = run_watch(tmp_path, neigh="10.9.9.2 dev test0 lladdr 02:00:00:00:00:09 PERMANENT\n",
+                            keep="1")
+    assert r.returncode == 0, r.stderr
+    assert replaces == [] and r.stdout == ""

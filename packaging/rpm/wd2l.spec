@@ -82,11 +82,11 @@ echo rpm > $di/INSTALLER
 cd rpmified
 install -Dm0644 -t %{buildroot}%{_unitdir} \
     common/wd2l-audit-seal.service common/wd2l-audit-seal.timer \
-    log-server/wd2l-sender.service log-server/wd2l-egress-nic.service \
+    log-server/wd2l-sender.service log-server/wd2l-egress-nic.service log-server/wd2l-egress-arp.service \
     receiver/wd2l-receiver.service receiver/wd2l-capture.service receiver/wd2l-capture-nic.service \
     receiver/wd2l-pcap-prune.service receiver/wd2l-pcap-prune.timer
 install -Dm0755 -t %{buildroot}%{_libexecdir}/wd2l \
-    common/wd2l-audit-seal.sh log-server/egress-nic.sh receiver/capture-nic.sh
+    common/wd2l-audit-seal.sh log-server/egress-nic.sh log-server/egress-arp-watch.sh receiver/capture-nic.sh
 install -Dm0640 log-server/sender.env %{buildroot}%{_sysconfdir}/wd2l/sender.env
 install -Dm0640 log-server/egress.env.example %{buildroot}%{_sysconfdir}/wd2l/egress.env
 install -Dm0640 receiver/receiver.env %{buildroot}%{_sysconfdir}/wd2l/receiver.env
@@ -127,14 +127,14 @@ exit 0
 %systemd_postun wd2l-audit-seal.service wd2l-audit-seal.timer
 
 %post sender
-%systemd_post wd2l-sender.service wd2l-egress-nic.service
+%systemd_post wd2l-sender.service wd2l-egress-nic.service wd2l-egress-arp.service
 
 %preun sender
-%systemd_preun wd2l-sender.service wd2l-egress-nic.service
+%systemd_preun wd2l-sender.service wd2l-egress-nic.service wd2l-egress-arp.service
 
 %postun sender
 # Not restarted on upgrade: stop and start it as docs/planned-downtime.md says.
-%systemd_postun wd2l-sender.service wd2l-egress-nic.service
+%systemd_postun wd2l-sender.service wd2l-egress-nic.service wd2l-egress-arp.service
 
 %post receiver
 %tmpfiles_create wd2l-receiver.conf
@@ -174,7 +174,9 @@ exit 0
 %files sender
 %{_unitdir}/wd2l-sender.service
 %{_unitdir}/wd2l-egress-nic.service
+%{_unitdir}/wd2l-egress-arp.service
 %{_libexecdir}/wd2l/egress-nic.sh
+%{_libexecdir}/wd2l/egress-arp-watch.sh
 %config(noreplace) %attr(0640,root,wd2l) %{_sysconfdir}/wd2l/sender.env
 %config(noreplace) %attr(0640,root,wd2l) %{_sysconfdir}/wd2l/egress.env
 %{_datadir}/wd2l/audit/log-server.rules
@@ -182,6 +184,7 @@ exit 0
 %{_datadir}/wd2l/quadlet/wd2l-sender.container
 %dir %{_sysconfdir}/systemd/system/wd2l-sender.service.d
 %dir %{_sysconfdir}/systemd/system/wd2l-egress-nic.service.d
+%dir %{_sysconfdir}/systemd/system/wd2l-egress-arp.service.d
 
 %files receiver
 %{_unitdir}/wd2l-receiver.service

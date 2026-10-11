@@ -61,6 +61,9 @@ sudo systemctl enable --now wd2l-egress-nic
 turns IPv6 off on that NIC, and tells NetworkManager and lldpd to leave it alone. No gateway: the
 /30 route is all it needs.
 
+`wd2l-egress-arp`, started with it, puts the static ARP entry back if the NIC is taken down and
+up (or the driver resets it), which flushes even permanent entries. It logs each time it does.
+
 Check:
 
 ```bash
