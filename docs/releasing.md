@@ -256,8 +256,8 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
 
 ## After a release
 
-* **Weekly rescan.** [`image-rescan.yml`](../.github/workflows/image-rescan.yml) rescans every
-  released image with fresh vulnerability data, and opens an issue for a new fixable High or
+* **Weekly rescan.** [`image-rescan.yml`](../.github/workflows/image-rescan.yml) rescans the three
+  latest full releases (not pre-releases) with fresh vulnerability data, and opens an issue for a new fixable High or
   Critical. Then rebuild on a newer base, as a patch release.
 * **Dependabot** PRs move the base, tool and action pins. Merge them when the pipeline is green.
 * **Vulnerability exceptions** are in

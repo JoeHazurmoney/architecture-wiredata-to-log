@@ -48,7 +48,7 @@ sender runs, 0 bytes unread, 0 gaps, no replay, every event byte for byte.
   Searches, reports, and alerts → disable, and enable afterwards. Or over REST, once per alert
   (`disabled=0` afterwards):
   ```bash
-  curl -k -u admin https://<splunk>:8089/servicesNS/nobody/<app>/saved/searches/WD2L%20-%20Heartbeat%20stale -d disabled=1
+  curl --cacert <SIEM CA file> -u admin https://<splunk>:8089/servicesNS/nobody/<app>/saved/searches/WD2L%20-%20Heartbeat%20stale -d disabled=1
   ```
 * **Check the aggregator's queue is big enough** for the window: at 1,000 events/s and about 1 KB
   each, about 3.6 GB an hour. wd2l itself has no time limit.

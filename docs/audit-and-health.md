@@ -89,11 +89,12 @@ Every audit record, on both sides:
 | `state_loaded` / `state_reset` | both | State file read; or `reason` `missing` / `unreadable: …` (a receiver with an unreadable file records it and won't start; the sender starts over at boot 1) | Path, hash, streams |
 | `auth_failure` | sender | Bad or missing aggregator token | Client address |
 | `input_rejected`, `truncated`, `opaque_content`, `send_failure` | sender | Gzip or bad input; an event cut to fit; flagged blobs; UDP send errors | Count, reason, host and source (never content) |
-| `boundary_anomaly` | receiver | Once a minute, from counter growth: `other_packets` (including the wrong source port), `bad_frames`, `digest_mismatch`, `records_bad` | Count, reason |
+| `boundary_anomaly` | receiver | Once a minute, from counter growth, for example `other_packets` (including the wrong source port), `bad_frames`, `bad_events`, `digest_mismatch`, `event_too_big`, `reasm_inconsistent`, `records_bad` | Count, reason |
 | `gap` / `gap_filled` | receiver | Events declared lost; later recovered | Stream, `seq_first`, `seq_last`, count, reason |
 | `stream_start` / `stream_end` / `stream_lost` / `stream_missing` | receiver | A sender run seen, ended, vanished, never seen | Stream, boot |
-| `sender_boot_reset`, `stream_evicted` | receiver | The sender's boot counter went back; a stream dropped from tracking. Evidence about completeness | Stream, boot |
-| `output_failure` | receiver | Once a minute: `output_dropped`, `hec_rejected_events` | Count, reason |
+| `sender_boot_reset` | receiver | The sender's boot counter went back. Evidence about completeness | Stream, `boot`, `previous_boot` |
+| `stream_evicted` | receiver | A stream with open gaps dropped from tracking (too many streams). Evidence about completeness | Stream, `open_gap_events`, `gaps` |
+| `output_failure` | receiver | Once a minute, from counter growth, for example `output_dropped`, `hec_rejected_events`, the HEC queue and spool overflows and `hec_records_lost` (and the same for the audit HEC) | Count, reason |
 | `replay_run` | replay | `phase` `start` (the files) and `finish` (each file's SHA-256 and size, events filled, duplicates skipped, open gaps) | Actor |
 | `debug_toggled` | both | `SIGUSR1` | Who sent it, the new level |
 | `time_quality` | both | At start, and whenever the alarm state changes | `reason` `ok` or what is wrong |
@@ -192,7 +193,9 @@ frame's `digest`.
 **`reconcile` records.** The sender writes one hourly and at its stop (`cut`, `last_seq`,
 `events_in`, `events_sent`, `sender_hash`). The receiver writes one hourly for every stream seen
 in the last hour or not balanced, one when a stream ends and is resolved, and one whenever an
-ended stream's cut or balance changes (for example after a replay fills its gaps). It has the
+ended stream's cut or balance changes (for example after a replay fills its gaps); the end record
+is skipped when the last one already states the same cut and balance. A stream with open gaps is
+not retired (unless `stream_evicted`), so while it is unbalanced it keeps its hourly record. It has the
 sender's counters, `events_delivered`, `gaps_open`, `gaps_filled`, `last_seq`, both hashes and
 `balanced` (values agree at the cut and no gap at or below it is open). Each result is also a
 `type=reconcile` health record, and every summary has `reconcile_unbalanced`, because operators

@@ -9,7 +9,7 @@ jobs:
    through `wd2l-sender` again.
 2. **1-year home for wd2l's Enclave 1 audit files** (see [section 6](#6-wd2l-audit-files) and
    [audit-and-health.md](../audit-and-health.md)). Confirm this home with the
-   security owner (open item 5, section 17 of the plan).
+   security owner ([open item 5](../accreditation-notes.md#open-items-for-the-security-and-system-owners)).
 
 It isn't on the transfer path. If it's down, logs still reach Enclave 2; only the Enclave 1 copy
 falls behind.

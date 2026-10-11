@@ -133,21 +133,21 @@ offline: [docs/releasing.md](docs/releasing.md).
 
 The transfer above is what wd2l is for. Its releases go into enclaves, where a tampered or
 vulnerable package would be hard to notice and harder to recall, so the release process is built
-as a complete, working example of supply-chain controls. CI runs every one of them on every
-release, and whoever receives the files can check them again offline.
-[docs/releasing.md](docs/releasing.md) has the details and the commands.
+as a complete, working example of supply-chain controls. CI runs the build-time checks on every
+release, and whoever receives the files can check the signatures, checksums, provenance and SBOM
+again offline. [docs/releasing.md](docs/releasing.md) has the details and the commands.
 
 | Practice | What wd2l does | Why it matters |
 |---|---|---|
-| **Two vulnerability scanners, one gate** | Grype and Trivy scan the image. The build fails on any fixable High or Critical finding unless the security owner granted an exception, and exceptions expire within 90 days ([`vuln_gate.py`](packaging/container/vuln_gate.py)) | The scanners use different databases and matching, so each catches things the other misses. Expiring exceptions keep "accepted for now" from becoming "accepted forever" |
-| **Rescan after release** | Every released image is scanned again weekly with fresh data, and a new fixable finding opens an issue ([`image-rescan.yml`](.github/workflows/image-rescan.yml)) | Vulnerabilities are published after you ship. A clean scan on release day says nothing about next month |
+| **Two vulnerability scanners, one gate** | Grype and Trivy scan the image. The build fails on any fixable High or Critical finding not covered by an exception. Each exception names who approved it and an expiry date (at most 90 days, by policy), and an expired one fails the build ([`vuln_gate.py`](packaging/container/vuln_gate.py), [`vuln-exceptions.json`](packaging/container/vuln-exceptions.json)) | The scanners use different databases and matching, so each catches things the other misses. Expiring exceptions keep "accepted for now" from becoming "accepted forever" |
+| **Rescan after release** | The three latest full releases (not pre-releases) are scanned again weekly with fresh data, and a new fixable finding opens an issue ([`image-rescan.yml`](.github/workflows/image-rescan.yml)) | Vulnerabilities are published after you ship. A clean scan on release day says nothing about next month |
 | **SBOMs** | An SPDX and a CycloneDX bill of materials for the image, and a check that the image is the base image plus wd2l and nothing else ([`sbom_diff.py`](packaging/container/sbom_diff.py)) | When the next widely exploited library flaw lands, "are we affected?" is a lookup, not a rebuild. The diff shows nothing slipped in |
 | **A verified, minimal base** | FIPS Red Hat Hardened Images, pinned by digest. Red Hat's signature, provenance and SBOM are checked before use. No shell, no package manager, not root ([ADR-0004](docs/decisions/0004-container-base-image.md)) | You inherit your base image's supply chain, so check it instead of trusting a tag. Less in the image means less to patch and less for an attacker to use |
-| **Reproducible builds** | A second build from the same inputs must produce the same wheel and the same image ID | Anyone can rebuild from the tag and compare. A tampered build machine or a hidden input shows up as a difference |
+| **Reproducible builds** | The image is built a second time from the same inputs on a fresh runner and compared with the first. The comparison is report-only for now, and the person publishing a release checks it | When the same inputs always give the same bits, a rebuild can confirm that what was published is what the source produces; a difference points to a hidden input or a tampered build |
 | **Signatures** | `SHA256SUMS` and the image are signed with a key that verifies offline, and the image is also signed keyless through Sigstore ([ADR-0006](docs/decisions/0006-release-artifacts-and-signing.md)) | They prove the files came from this project's release process. The key works inside an enclave with no network |
 | **Build provenance (SLSA Build Level 3)** | GitHub attestations for every file and the image, made by a separate workflow the build steps can't reach ([ADR-0007](docs/decisions/0007-slsa-build-l3.md)) | They show which commit, which workflow and which kind of runner built each file, and a compromised build step can't forge them |
 | **Immutable releases** | Once a release is published, GitHub locks its tag and files | Nobody can swap a file after people have checked it |
-| **A guarded release path** | Rulesets on `main` and on version tags, a person's approval before anything is signed, actions pinned to commits, and Dependabot for the pins | No single compromised account, branch or dependency update can get something signed |
+| **A guarded release path** | Rulesets on `main` (a pull request with passing CI, no force-push) and on version tags (admins only), the owner's approval before anything is signed, actions pinned to commits, and Dependabot for the pins | A branch, a pull request or a dependency update can't get anything signed on its own: signing needs a version tag on `main` and the owner's approval. (A compromised owner account still could; a second approver would close that.) |
 
 Changing one byte of a downloaded RPM is enough to see it work: `sha256sum -c` reports it
 `FAILED`, `gh attestation verify` refuses it, and `rpm -K` reports `DIGESTS NOT OK`.
@@ -155,10 +155,11 @@ Changing one byte of a downloaded RPM is enough to see it work: `sha256sum -c` r
 ## Status
 
 Proof of concept. Verified in the namespace lab (the end of
-[architecture.md](docs/architecture.md)), and the signed release deployed on AlmaLinux 10 with
-SELinux enforcing, with rsyslog as the aggregator, Splunk as the SIEM and a virtual cable standing
-in for the tap and fiber. Not yet verified: the physical tap, switch and fiber, and a log
-retention server; the deployment guides list the checks for each.
+[architecture.md](docs/architecture.md)). The signed v0.3.0rc3 release was also deployed on one
+AlmaLinux 10 machine (a Raspberry Pi 5, SELinux enforcing), with rsyslog as the aggregator, Splunk
+as the SIEM and a virtual cable standing in for the tap and fiber; the problems it found are fixed
+in 0.3.0rc4. Not yet verified: the physical tap, switch and fiber, and a log retention server; the
+deployment guides list the checks for each.
 
 Audit records (aimed at common audit-control requirements, for example the NIST SP 800-53 AU
 family or SOC 2 CC7.2), end-to-end reconciliation and fault location are built and verified. The

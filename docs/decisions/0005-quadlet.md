@@ -108,7 +108,7 @@ flowchart LR
     confine it. systemd's options now confine Podman itself.
   * Both give the receiver one capability and the sender none. On a GitHub runner, a non-root
     container user with only `NET_RAW` captures, and without it is refused (Phase 0 check 1 of
-    the release plan).
+    the [release plan](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md)).
 * **Change control** (e.g. NIST CM-3, CM-14).
   * The unit names the image.
   * Podman runs only what is already loaded, and that was verified with `cosign.pub` before
@@ -129,7 +129,7 @@ flowchart LR
     `:z`, because host tcpdump and the audit seal timer use them too.
   * **Podman version.** It needs Podman 4.4 or later.
 * **Still to confirm** on RHEL 10 with SELinux enforcing, at the first release candidate (the
-  release plan's Phase 0 checks 2–4, moved to Task 6.5 because no VM was available yet):
+  [release plan's](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md) Phase 0 checks 2–4, moved to [Task 6.5](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-6-release.md) because no VM was available yet):
   * that `Exec=… $WD2L_*_ARGS` expands the env file's options;
   * that `:z` doesn't stop host tcpdump writing the archive;
   * that `User=wd2l` resolves with the passwd mount.

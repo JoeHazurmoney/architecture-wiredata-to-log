@@ -228,7 +228,9 @@ sudo -u wd2l python3 -m wd2l.receiver \
 sudo systemctl start wd2l-receiver
 ```
 
-In a container, see [containers.md](deployment/containers.md#replay-from-the-archive).
+On a manual install (code in `/opt/wd2l`), put `env PYTHONPATH=/opt/wd2l` after `sudo -u wd2l`, here
+and for `python3 -m wd2l.audit verify` above. In a container, see
+[containers.md](deployment/containers.md#replay-from-the-archive).
 `--audit-dir` records the replay (`replay_run`, naming you); it needs the audit token too (name the
 same file twice if the site uses one token).
 
