@@ -151,4 +151,4 @@ release.
 2. [ ] Review the first weeks of alerts and record the known benign sources.
 3. [ ] Optional: also flag executables (MZ and ELF headers) and other encodings (base32, base85).
 4. [ ] Once the audit module exists: an `opaque_content` audit record
-   ([audit plan](../audit-and-health-plan.md), section 6).
+   ([audit design](../audit-and-health.md), section 4).

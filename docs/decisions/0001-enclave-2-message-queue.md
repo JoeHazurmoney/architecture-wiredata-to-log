@@ -129,7 +129,7 @@ It duplicates the archive's role.
   Making it configurable is a one-option change. It doesn't need a cluster.
 * **"Delivered" would move to the queue.** Today the receiver's gap tracking ends at the SIEM.
   With a queue it ends at the queue. The planned reconciliation
-  ([audit plan](../audit-and-health-plan.md), section 9) would then prove "the queue has
+  ([audit design](../audit-and-health.md), section 7) would then prove "the queue has
   everything", not "the SIEM has everything".
 * **Standard library only.** A Kafka client inside the receiver breaks a property the
   accreditation notes rely on. Option B avoids that.

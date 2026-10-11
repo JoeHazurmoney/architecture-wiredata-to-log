@@ -276,7 +276,7 @@ To look at the answer, search the receiver's health file:
 grep '"type": "fault"' lab/out/received/health.jsonl
 ```
 
-For how the answer appears on the dashboard, see section 12 of the [audit and health plan](audit-and-health-plan.md).
+For how the answer appears on the dashboard, see [state-of-health.md](state-of-health.md); the rules are in [audit-and-health.md](audit-and-health.md#10-where-is-the-fault-the-rules).
 
 ## 10. Run the container image through the lab
 

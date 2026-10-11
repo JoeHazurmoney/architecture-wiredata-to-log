@@ -118,7 +118,7 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | `--state` | none | Restart count and previous stream, so the receiver can link runs and report a missed one. `sender.env` uses `/var/lib/wd2l/sender.json` |
 | `--drain-timeout` | `2` s | On shutdown, how long to keep reading input that is already arriving |
 | `--input-rcvbuf` | `262144` | TCP receive buffer for the aggregator connection. Bounds input that is acknowledged but not yet read |
-| `--audit-dir` | none | `sender.env` uses `/var/log/wd2l`. Hash-chained audit records, see [the audit plan](../audit-and-health-plan.md) and **Audit files** below |
+| `--audit-dir` | none | `sender.env` uses `/var/log/wd2l`. Hash-chained audit records, see [the audit design](../audit-and-health.md) and **Audit files** below |
 | `--audit-min-free-mb` | `256` | Free space the audit directory must keep. Below it, nothing more goes in the audit files: records are still forwarded, counted as missed, and `audit_ok` is false until there is space again |
 | `--egress-iface` | none | `sender.env` uses `ens224`. NIC carrier and transmit counters go into every heartbeat |
 | `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
@@ -133,7 +133,7 @@ the one before it, so a removed or changed record breaks the chain.
 **Disk space.** Put `/var/log/wd2l` on a filesystem of its own (a partition or logical volume),
 so audit files can never fill the disk that holds the sender's state file and the aggregator's
 data. If it must share one, size it for them all. The audit files stay under 2 GB a year
-([audit plan, section 15](../audit-and-health-plan.md#15-storage-estimate-storage-capacity-retention)).
+([audit design, section 12](../audit-and-health.md#12-storage)).
 The sender keeps `--audit-min-free-mb` free on that filesystem: below it, it writes nothing more
 to the audit files until there is space again, and keeps sending. The records still cross
 in-band.

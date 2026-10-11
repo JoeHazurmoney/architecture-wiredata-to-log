@@ -14,7 +14,7 @@ ExecStart=/usr/bin/python3 -m wd2l.sender $WD2L_SENDER_ARGS
 # Restart count + previous stream, so the receiver can link runs (see docs/wire-format.md).
 StateDirectory=wd2l
 StateDirectoryMode=0750
-# Audit records (docs/audit-and-health-plan.md section 10). The install step creates
+# Audit records (docs/audit-and-health.md section 8). The install step creates
 # /var/log/wd2l (owner wd2l, group wd2l-audit, mode 2750); wd2l-audit-seal.timer makes the files
 # append-only and keeps them a year.
 ReadWritePaths=/var/log/wd2l

@@ -39,7 +39,7 @@ STATE_VERSION = 2
 RX_TIME_FIELD = "wd2l_rx_time"
 HEX64 = re.compile(r"[0-9a-f]{64}")
 
-# Health records that are also audit events (§6), with their outcome. `gap` is audited too, but
+# Health records that are also audit events (§4), with their outcome. `gap` is audited too, but
 # summarised once a minute per stream and reason (SUMMARY_OUTCOME): chronic loss would otherwise
 # write one audit record per gap.
 AUDITED_HEALTH = {"stream_start": "info", "stream_end": "success",

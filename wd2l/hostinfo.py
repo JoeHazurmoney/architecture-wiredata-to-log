@@ -126,7 +126,7 @@ def parse_chronyc_tracking(text: str) -> Dict[str, Any]:
 
 def time_alarm(q: Dict[str, Any], max_stratum: int = 3,
                max_offset_ms: float = 100.0) -> Optional[str]:
-    """Why time quality is out of bounds (§11), or None when it is fine."""
+    """Why time quality is out of bounds (§9), or None when it is fine."""
     if q.get("synced") is None:
         return "unavailable"
     if not q["synced"]:

@@ -228,7 +228,7 @@ wd2l writes audit records on each host: starts and stops, who changed what, repl
 toggles, and the boundary and delivery failures the health counters show. Each record carries the
 hash of the one before it, so a changed, removed or reordered record breaks the chain. Records
 hold metadata, counts and hashes, never log content. The record types are in the
-[audit plan](audit-and-health-plan.md).
+[audit design](audit-and-health.md).
 
 **Where they are**
 

@@ -23,7 +23,7 @@ CapabilityBoundingSet=CAP_NET_RAW
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/var/lib/wd2l /var/log/wd2l
-# Audit records (docs/audit-and-health-plan.md section 10). The install step creates
+# Audit records (docs/audit-and-health.md section 8). The install step creates
 # /var/log/wd2l (owner wd2l, group wd2l-audit, mode 2750); wd2l-audit-seal.timer makes the files
 # append-only and keeps them a year.
 UMask=0027

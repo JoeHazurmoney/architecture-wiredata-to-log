@@ -1,7 +1,7 @@
 """Operational logs and signals.
 
 Operational logs go to stderr (journald) as text, or with --log-format json as one JSON object
-per line, tagged with the segment it is about (docs/audit-and-health-plan.md §4, §8). The message
+per line, tagged with the segment it is about (docs/audit-and-health.md §2, §6). The message
 texts are the same either way, so runbook checks such as `final: last_seq=` still match.
 
 SIGUSR1 switches between INFO and DEBUG without a restart. It is an audit event

@@ -1,5 +1,5 @@
 """wd2l-audit-report: reports from wd2l audit records, for assessors and audit reviews
-(docs/audit-and-health-plan.md §9).
+(docs/audit-and-health.md §7).
 
     wd2l-audit-report verify    --dir DIR | --export FILE...    check the hash chain
     wd2l-audit-report reconcile --dir DIR... | --export FILE...  reconciliation per day and stream

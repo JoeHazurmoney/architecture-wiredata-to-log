@@ -104,7 +104,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--max-event`, `--max-buffer` | 256 KB, 64 MB | Input caps |
 | `--hec-queue` | `100000` | Events held in memory for the SIEM. Overflow is reported as `reason=output_dropped` gaps (replay recovers them) |
 | `--stream-retention` | 7 days | How long finished sender runs with nothing open stay fully tracked. Keep it at least as long as the pcap archive |
-| `--audit-dir` | none | `receiver.env` uses `/var/log/wd2l`. Hash-chained audit records, see [the audit plan](../audit-and-health-plan.md) and **Audit files** below |
+| `--audit-dir` | none | `receiver.env` uses `/var/log/wd2l`. Hash-chained audit records, see [the audit design](../audit-and-health.md) and **Audit files** below |
 | `--audit-min-free-mb` | `256` | Free space the audit directory must keep. Below it, nothing more goes in the audit files: records are still forwarded, counted as missed, and `audit_ok` is false until there is space again |
 | `--hec-audit-token-file` | none | Token for the audit index. `receiver.env` uses `/etc/wd2l/hec-audit.token`. Required when `--audit-dir` and `--hec-url` are both given; if the site uses one token for both, name the `--hec-token-file` file again |
 | `--audit-index` | `wd2l_audit` | Index that receives audit records |
@@ -128,8 +128,8 @@ record breaks the chain.
 **Disk space.** Put `/var/log/wd2l` on a filesystem of its own (a partition or logical volume),
 so audit files can never fill the disk that holds the capture archive, the spool and the state
 file. If it must share one, size it for them all. The audit files stay under 2 GB a year, even
-with heavy loss, because gaps are summarised once a minute ([audit plan, section
-15](../audit-and-health-plan.md#15-storage-estimate-storage-capacity-retention)). The receiver
+with heavy loss, because gaps are summarised once a minute ([audit design, section
+12](../audit-and-health.md#12-storage)). The receiver
 keeps `--audit-min-free-mb` free on that filesystem: below it, it writes nothing more to the
 audit files until there is space again, and keeps transferring. Audit records waiting for the
 SIEM have their own spool, `<spool-dir>/audit` (`/var/lib/wd2l/spool/audit`), capped at 10 GiB

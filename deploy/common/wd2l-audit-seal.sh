@@ -3,7 +3,7 @@
 #  * makes every wd2l audit file append-only (chattr +a). The wd2l processes only ever append,
 #    and can't set the flag themselves (no CAP_LINUX_IMMUTABLE);
 #  * deletes files last written more than 366 days ago: each host keeps its own 1-year copy.
-# See docs/audit-and-health-plan.md section 10.
+# See docs/audit-and-health.md section 8.
 set -eu
 DIR="${WD2L_AUDIT_DIR:-/var/log/wd2l}"
 DAYS="${WD2L_AUDIT_KEEP_DAYS:-366}"

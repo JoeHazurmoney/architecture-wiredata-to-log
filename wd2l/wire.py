@@ -33,7 +33,7 @@ TYPE_DATA = 1
 TYPE_HEARTBEAT = 2
 
 # flags bit 0: the frame belongs to the sender's records stream, which carries its own audit and
-# health records (docs/audit-and-health-plan.md section 7). The other bits are reserved (0).
+# health records (docs/audit-and-health.md section 5). The other bits are reserved (0).
 FLAG_RECORDS = 0x0001
 
 HEADER = struct.Struct("!4sBBHQQHHI32s")

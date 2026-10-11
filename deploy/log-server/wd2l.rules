@@ -1,4 +1,4 @@
-## wd2l host audit rules, Enclave 1 log server (docs/audit-and-health-plan.md section 10).
+## wd2l host audit rules, Enclave 1 log server (docs/audit-and-health.md section 8).
 ## Copy to /etc/audit/rules.d/wd2l.rules, then: sudo augenrules --load
 ## Who changes wd2l's programs, settings and units:
 -w /opt/wd2l/ -p wa -k wd2l-code

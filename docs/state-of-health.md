@@ -5,7 +5,7 @@ Enclave 2, and if not, where along the path is it stopping? One dashboard in the
 answers that, along with whether the timestamps and both audit trails can be trusted. The
 receiver works out where a fault is itself and writes the answer into its health records, so any
 SIEM can draw it; this page says what to show and how to read it. Background is in the audit
-plan's [§12](audit-and-health-plan.md#12-the-where-is-the-fault-dashboard),
+design's [§10](audit-and-health.md#10-where-is-the-fault-the-rules),
 [operations.md](operations.md) and [planned-downtime.md](planned-downtime.md); the example
 dashboard for Splunk is `deploy/receiver/splunk/wd2l-health-dashboard.json`.
 
@@ -112,8 +112,8 @@ off green. The status tile names the first rule that matches.
 ## Reading it: scenarios
 
 Each scenario shows the pipeline (panel 3) as the receiver colors it, then what you see, what it
-means and what to do. The rules are the receiver's decision order, from the audit plan's
-[§12](audit-and-health-plan.md#12-the-where-is-the-fault-dashboard).
+means and what to do. The rules are the receiver's decision order, from the audit design's
+[§10](audit-and-health.md#10-where-is-the-fault-the-rules).
 
 | Scenario | Rule | Status tile |
 |---|---|---|
@@ -468,7 +468,7 @@ flowchart LR
 
 | You see | It means | Do | See also |
 |---|---|---|---|
-| Panel 7 red: `audit_ok` is false, or `audit_verify` is `failed`, on one side. The pipeline and the transfer status don't change. "WD2L - Audit trail" fires | `audit_ok` false: that side can't write its audit file, or its disk is below the free-space threshold. `audit_verify` failed: the self-check found the hash chain broken, so a record was changed, removed or reordered, or the file is damaged; or the check couldn't run (it could not start, or ran over 6 hours). Either way the transfer keeps going | For `audit_ok` false: free space and permissions on `/var/log/wd2l`, and the reason in the `audit_failure` record. For a failed self-check: look for "self-check could not start" or "timeout" in the service journal; if it is neither, the chain is broken. Run `wd2l-audit-report verify --dir /var/log/wd2l` on that host, compare it with the other copies (the log retention server for Enclave 1, the `wd2l_audit` index), tell the security owner and follow the incident process | [Audit plan §10](audit-and-health-plan.md#10-protecting-the-audit-trail-protection-storage-failure-response) |
+| Panel 7 red: `audit_ok` is false, or `audit_verify` is `failed`, on one side. The pipeline and the transfer status don't change. "WD2L - Audit trail" fires | `audit_ok` false: that side can't write its audit file, or its disk is below the free-space threshold. `audit_verify` failed: the self-check found the hash chain broken, so a record was changed, removed or reordered, or the file is damaged; or the check couldn't run (it could not start, or ran over 6 hours). Either way the transfer keeps going | For `audit_ok` false: free space and permissions on `/var/log/wd2l`, and the reason in the `audit_failure` record. For a failed self-check: look for "self-check could not start" or "timeout" in the service journal; if it is neither, the chain is broken. Run `wd2l-audit-report verify --dir /var/log/wd2l` on that host, compare it with the other copies (the log retention server for Enclave 1, the `wd2l_audit` index), tell the security owner and follow the incident process | [Audit plan §10](audit-and-health.md#8-protecting-the-audit-trail) |
 
 ### Receiver down
 

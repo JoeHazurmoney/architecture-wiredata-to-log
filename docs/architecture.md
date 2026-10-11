@@ -53,7 +53,7 @@ flowchart LR
 | Capture NIC | Enclave 2 receiver host | Receive only: no IP, no ARP, promiscuous, egress dropped. |
 | tcpdump | receiver host | Hourly pcap archive of everything that arrives (7 days by default). |
 | `wd2l-receiver` | receiver host | Rebuild events, verify them, track sequence numbers, report gaps, send to the SIEM. |
-| Audit records | both hosts, and Enclave 2's SIEM | Each host writes hash-chained records of who started, stopped or changed what, and of what crossed or failed. Enclave 1's records also cross in-band, so Enclave 2's SIEM holds both trails. The sender and receiver compare a hash of every event, so loss, change or misnumbering shows. See the [audit plan](audit-and-health-plan.md). |
+| Audit records | both hosts, and Enclave 2's SIEM | Each host writes hash-chained records of who started, stopped or changed what, and of what crossed or failed. Enclave 1's records also cross in-band, so Enclave 2's SIEM holds both trails. The sender and receiver compare a hash of every event, so loss, change or misnumbering shows. See the [audit design](audit-and-health.md). |
 | Fault location | `wd2l-receiver`, and the SIEM dashboard | The receiver decides where a fault is (one of six segments, by rule) from its own counters and the sender's heartbeat. The dashboard draws what the receiver decided. See [state-of-health.md](state-of-health.md). |
 | SIEM (e.g. Splunk) | Enclave 2 | Stores events with the original host, source, source type, index and time. |
 

@@ -87,7 +87,7 @@ for each, are recorded as Architecture Decision Records (ADRs) in
 | `wd2l/sender.py` | Enclave 1: JSON lines in from the log aggregator, framed UDP out, heartbeats |
 | `wd2l/receiver.py` | Enclave 2: live capture or pcap replay → rebuild → gap tracking → outputs |
 | `wd2l/wire.py` | Packet format shared by both sides ([docs/wire-format.md](docs/wire-format.md)) |
-| `wd2l/audit.py` | Both sides: hash-chained audit records in append-only files, and the self-check (`python3 -m wd2l.audit verify`) ([audit plan](docs/audit-and-health-plan.md)) |
+| `wd2l/audit.py` | Both sides: hash-chained audit records in append-only files, and the self-check (`python3 -m wd2l.audit verify`) ([audit design](docs/audit-and-health.md)) |
 | `wd2l/audit_report.py` | `wd2l-audit-report`: verify a copy of the audit files or a SIEM export, reconcile per day, list events |
 | `wd2l/hostinfo.py` | Time quality (chrony), process CPU and memory, NIC counters and the capture archive's state, for health records |
 | `wd2l/logsetup.py` | Operational logging (text or JSON lines) and `SIGUSR1` to toggle debug, with the signal sender named in the audit trail |
@@ -159,7 +159,7 @@ server). The deployment guides list the checks for each.
 
 Audit records (aimed at common audit-control requirements, for example the NIST SP 800-53 AU
 family or SOC 2 CC7.2), end-to-end reconciliation and fault location are built and verified in the
-lab. The design, as built, is in [docs/audit-and-health-plan.md](docs/audit-and-health-plan.md);
+lab. The design, as built, is in [docs/audit-and-health.md](docs/audit-and-health.md);
 how to read the dashboard is in [docs/state-of-health.md](docs/state-of-health.md).
 
 How several live log files are tracked and rebuilt from one stream:

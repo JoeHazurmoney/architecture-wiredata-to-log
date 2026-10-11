@@ -1,4 +1,4 @@
-"""End-to-end reconciliation (docs/audit-and-health-plan.md §9).
+"""End-to-end reconciliation (docs/audit-and-health.md §7).
 
 Each side keeps a set hash per data stream: the sum, modulo 2^256, of
 SHA-256(seq as 8 bytes big-endian || event SHA-256) over every event. A sum doesn't depend on
