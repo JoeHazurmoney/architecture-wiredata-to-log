@@ -70,6 +70,29 @@ log flow.
 | `receiver_restart` | Unresolved when the receiver last stopped: not received yet, or received but not confirmed by the SIEM before a crash | Replay the archive |
 | `output_dropped` | Received, but the receiver's output gave up (memory queue or spool disk full) | Fix the SIEM or disk, then replay the archive |
 
+## Alerts
+
+The Splunk examples are in `deploy/receiver/splunk/savedsearches.conf`. Every alert reads only the
+health index (`index=wd2l`), so their owners don't need the auditor role; only the daily review
+report reads `wd2l_audit`. The panels are those of [state-of-health.md](state-of-health.md#panels).
+
+| Alert | Fires when | Panel |
+|---|---|---|
+| "WD2L - Events lost in transfer" | The receiver declared a gap (`type=gap`) | 4, 11 |
+| "WD2L - Heartbeat stale" | No sender heartbeat for the heartbeat timeout, or a sender run went quiet without a clean end | 1, 3 |
+| "WD2L - Sender run missing or restart chain broken" | A whole sender run never reached Enclave 2, the sender's restart count went back, or a stream with open gaps was dropped from tracking | — ([health records](#health-records)) |
+| "WD2L - Receiver silent" | No health record from the receiver for 15 minutes | 2 |
+| "WD2L - Unexpected traffic or damage on the tap" | In the last 20 minutes: packets that aren't the log flow, corrupt frames, refused Enclave 1 records (`records_bad`), kernel drops, sender drops, truncation, unread input at a sender stop, SIEM rejections or dropped output | 15–19 |
+| "WD2L - Opaque content in imported logs" | Imported events carry a blob that can't be inspected (`wd2l_opaque`) | — (in the imported events) |
+| "WD2L - Fault segment" | The receiver's fault status moved away from `ok` (`type=fault`) | 1, 1b, 3, 13 |
+| "WD2L - Reconciliation not balanced" | A sender run with no open gaps hasn't balanced for an hour | 5, 12 |
+| "WD2L - Audit trail" | `audit_ok` false or `audit_verify` failed, on either side | 7 |
+| "WD2L - Time quality" | A clock unsynchronised, above stratum 3, more than 100 ms off or unreadable, or skew over 50 ms | 6, 10 |
+| "WD2L - Audit review (daily)" | A report, not an alert: each morning, the previous day's configuration changes, state resets, archive replays, debug toggles, audit failures, self-checks and time quality changes. Its owner needs the `wd2l_auditor` role | 20 |
+
+The sections below say what to do for the alerts that need more than the dashboard's
+[Reading it](state-of-health.md#reading-it) row.
+
 ## Alert: events lost (`type=gap`)
 
 1. **Check `reason`.** `receiver_restart` and `output_dropped` are recovered by **replay**
@@ -98,7 +121,7 @@ trouble is, not only that there is some.
    | table _time fault_status fault_segment fault_rule fault_detail previous_status
    ```
 2. **Find the rule in the scenario table** in
-   [state-of-health.md](state-of-health.md#reading-it-scenarios). Each row says what you see,
+   [state-of-health.md](state-of-health.md#reading-it). Each row says what you see,
    what it means and what to do. Rule 2 (amber, `e1-sender`) is planned downtime: the sender
    stopped cleanly.
 3. **Check the segment**, in the order the data flows:

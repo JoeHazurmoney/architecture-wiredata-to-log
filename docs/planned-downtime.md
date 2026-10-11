@@ -55,7 +55,7 @@ and every event byte for byte.
   stopped), "WD2L - Receiver silent" (fires if the receiver is down for more than 15 minutes)
   and "WD2L - Fault segment" (fires on any fault status that isn't `ok`). While the sender is
   stopped cleanly, the dashboard shows amber, `e1-sender`, rule 2, not red
-  ([state-of-health.md](state-of-health.md#planned-downtime-sender-stopped-cleanly-rule-2)).
+  ([state-of-health.md](state-of-health.md#reading-it)).
   In Splunk: Settings → Searches, reports, and alerts → disable, then re-enable afterwards.
 * **Check the aggregator's queue is big enough** for the window. At 1,000 events/s and about
   1 KB each, that's about 3.6 GB per hour. wd2l itself has no time limit on the window.
