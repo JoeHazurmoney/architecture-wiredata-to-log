@@ -1,3 +1,4 @@
+import errno
 import io
 import random
 import struct
@@ -94,3 +95,35 @@ def test_pcap_rejects_other_formats():
 def test_mac_bytes():
     assert packets.mac_bytes(DST_MAC) == b"\x02\x00\x00\x00\x00\x02"
     assert packets.mac_bytes(SRC_MAC)[-1] == 1
+
+
+class FakeSock:
+    def __init__(self, items):
+        self.items = list(items)
+
+    def recvfrom(self, n):
+        x = self.items.pop(0)
+        if isinstance(x, BaseException):
+            raise x
+        return x
+
+
+def live(items):
+    cap = packets.LiveCapture.__new__(packets.LiveCapture)     # no raw socket, no root
+    cap.sock, cap.timeout, cap.down_errors = FakeSock(items), 0.5, 0
+    return cap
+
+
+def test_live_capture_rides_out_the_interface_going_down(monkeypatch):
+    # `ip link set DEV down` makes the packet socket report ENETDOWN once; it delivers again
+    # once the NIC is up. The receiver crashed and restart-looped on it.
+    slept = []
+    monkeypatch.setattr(packets.time, "sleep", slept.append)
+    cap = live([OSError(errno.ENETDOWN, "Network is down"), (b"frame", ("cap0", 3, 0, 1, b""))])
+    assert cap.recv() is None and cap.down_errors == 1 and slept == [0.5]
+    assert cap.recv() == b"frame"
+
+
+def test_live_capture_still_raises_other_socket_errors():
+    with pytest.raises(OSError):
+        live([OSError(errno.EBADF, "Bad file descriptor")]).recv()
