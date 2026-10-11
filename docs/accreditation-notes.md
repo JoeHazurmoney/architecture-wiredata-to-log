@@ -111,11 +111,9 @@ visibility question. [ADR-0002](decisions/0002-opaque-content.md) has the full r
 | Malicious content inside log text (e.g. strings aimed at analyst tools, log injection) | Same as any log ingest. The SIEM stores it as data. Keep the Enclave 2 SIEM patched. Content filtering beyond the opaque-content flag is out of scope |
 | Data hidden inside log text (encrypted, compressed or encoded) | Long blobs are flagged (`wd2l_opaque`) and alerted on, but still cross. Data hidden in normal-looking text isn't detected. Enclave 1 controls on who can write logs, plus per-source volume monitoring |
 | Enclave 1 compromise injects fake events | Enclave 1 controls today. Optional HMAC (above) |
-| Loss is detected but not recovered | By design (requirement was detect and report). The operator replays the window from the log retention server |
 | Log retention server down, full or lost | Not on the transfer path, so the transfer continues. A window missing there can't be replayed later. Its own persistent queue in the aggregator; Enclave 1 monitoring and backups |
 | Misconfigured tap filter forwards other Enclave 1 traffic | Enclave 2 still only accepts the log flow and counts everything else (`other_packets` alert). The switch-port isolation means little else is on that cable to begin with |
 | Receiver host compromise | It has no path back to Enclave 1. Treat it like any other Enclave 2 server |
-| Parser bugs | Small code base, standard library only, fuzz tests. Runs unprivileged and sandboxed |
 
 ## If a listed cross-domain solution is required
 
