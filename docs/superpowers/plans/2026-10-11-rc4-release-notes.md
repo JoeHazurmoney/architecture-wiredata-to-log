@@ -15,14 +15,26 @@ Fixes found deploying rc3 on AlmaLinux 10 (Raspberry Pi 5, SELinux enforcing):
 * **The receiver keeps running while its capture NIC is down,** and reports it (rule 1).
 * **The native units ask chronyd over UDP,** as the containers do, so time checks no longer log
   an SELinux denial each time.
-* **The sender and receiver wait for the clock at boot** (`chrony-wait`), so a reboot no longer
-  raises a time alarm.
+* **The sender and receiver wait for the clock at start** (`chrony-wait`, at most about
+  3 minutes), so a reboot no longer raises a time alarm. `chrony-wait` starts chronyd if it isn't
+  running; during an NTP outage a restart waits that long too.
+
+The egress firewall now loads before the egress NIC comes up, and if it can't load, the NIC
+stays down. The receiver exits if its capture NIC disappears altogether (unplugged, driver
+reloaded), so systemd starts it again on the new device.
 
 ### Upgrading from rc3
 
-* `sender.env` and `receiver.env` keep your edits; add `--chrony-addr 127.0.0.1:323` from the
+The packages restart nothing. After `dnf upgrade`:
+
+* **Restart `wd2l-egress-nic` and `wd2l-capture-nic`**, in the order `docs/planned-downtime.md`
+  gives (restarting `wd2l-egress-nic` restarts the sender). Until then the old firewall stays
+  as it was and the ARP watcher doesn't run.
+* **If you changed the UDP port** (5514) in `sender.env` and in your copy of
+  `nftables-wd2l.nft`, set `PORT=` in `/etc/wd2l/egress.env`: the firewall is now built from it,
+  and with the wrong port it drops the sender's traffic.
+* If you loaded `nftables-wd2l.nft` through `nftables.service`, remove that include.
+* `sender.env` and `receiver.env` keep your edits: add `--chrony-addr 127.0.0.1:323` from the
   `.rpmnew` beside each.
-* If you loaded `nftables-wd2l.nft` through `nftables.service`, remove that include. Restart
-  `wd2l-egress-nic` as `docs/planned-downtime.md` says (it restarts the sender).
-* Remove any local workaround for the archive label (`semanage fcontext -d '/var/lib/wd2l/pcap(/.*)?'`);
-  the package's module takes over.
+* Remove any local workaround for the archive label
+  (`semanage fcontext -d '/var/lib/wd2l/pcap(/.*)?'`); the package's module takes over.
