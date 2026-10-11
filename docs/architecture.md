@@ -123,9 +123,8 @@ The sender and receiver ship as RPMs and as a FIPS container image on Red Hat Ha
   with `--extra-field`, which become indexed fields in the SIEM), the sender's send time
   (indexed field `wd2l_tx_time`), and, only on events with an opaque blob, `wd2l_opaque` and
   `wd2l_opaque_bytes`. Other aggregator fields are dropped.
-* **Sender → wire**: see [wire-format.md](wire-format.md), and
-  [interface-description.md](interface-description.md) for the full packet as the interface
-  control document needs it. 68 bytes of overhead per packet; 1,404 bytes of event per packet at
+* **Sender → wire**: see [interface-description.md](interface-description.md) for every byte.
+  68 bytes of overhead per packet; 1,404 bytes of event per packet at
   MTU 1500; 8,904 at MTU 9000.
 * **Big events**: capped at 256 KB (`--max-event`). Bigger events are cut to fit and flagged with
   indexed field `wd2l_truncated=<original size>`, the same idea as a SIEM's own line-length limit.

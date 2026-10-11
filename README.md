@@ -86,7 +86,7 @@ for each, are recorded as Architecture Decision Records (ADRs) in
 | `wd2l/` | Python package, standard library only (Python ≥ 3.9) |
 | `wd2l/sender.py` | Enclave 1: JSON lines in from the log aggregator, framed UDP out, heartbeats |
 | `wd2l/receiver.py` | Enclave 2: live capture or pcap replay → rebuild → gap tracking → outputs |
-| `wd2l/wire.py` | Packet format shared by both sides ([docs/wire-format.md](docs/wire-format.md)) |
+| `wd2l/wire.py` | Packet format shared by both sides ([docs/interface-description.md](docs/interface-description.md)) |
 | `wd2l/audit.py` | Both sides: hash-chained audit records in append-only files, and the self-check (`python3 -m wd2l.audit verify`) ([audit design](docs/audit-and-health.md)) |
 | `wd2l/audit_report.py` | `wd2l-audit-report`: verify a copy of the audit files or a SIEM export, reconcile per day, list events |
 | `wd2l/hostinfo.py` | Time quality (chrony), process CPU and memory, NIC counters and the capture archive's state, for health records |

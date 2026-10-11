@@ -16,7 +16,7 @@ Every UDP payload is one frame:
     64     n    payload      this chunk's bytes
     64+n   4    crc32        CRC-32 of bytes 0 .. 64+n
 
-All integers are big-endian. See docs/wire-format.md.
+All integers are big-endian. See docs/interface-description.md.
 """
 
 from __future__ import annotations

@@ -9,8 +9,7 @@ document (ICD). It covers every layer, from the fiber up to the JSON inside each
 
 The source of truth is the code: `wd2l/wire.py` (frame), `wd2l/sender.py` (what gets sent),
 `wd2l/receiver.py` and `wd2l/packets.py` (what is accepted). This page describes **WD2L version
-1** with the configuration in `deploy/`. [wire-format.md](wire-format.md) is the shorter
-developer reference and holds the receiver's sequencing rules.
+1** with the configuration in `deploy/`.
 
 ## 1. Summary
 
@@ -242,7 +241,7 @@ cumulative for this sender run unless noted.
 | `clients` | integer | connections | always | Aggregator connections to the sender |
 | `cpu_pct` | number | % | always | Sender process CPU over the last heartbeat interval |
 | `datagrams_sent` | integer | packets | always | Datagrams handed to the OS so far, not counting this one |
-| `events_hash` | string, 64 hex digits | | always (wd2l ≥ 0.2.0) | Set hash of this run's events 1 … `seq` (the heartbeat's `seq` is the cut): the sum modulo 2²⁵⁶ of SHA-256(`seq` as 8 bytes big-endian ‖ the event's SHA-256 `digest`). Enclave 2 compares it with its own value to prove it delivered exactly these events ([audit design §7](audit-and-health.md#7-reconciliation)). Never dropped from a trimmed heartbeat. |
+| `events_hash` | string, 64 hex digits | | always (wd2l ≥ 0.2.0) | Set hash of this run's events 1 … `seq` (the heartbeat's `seq` is the cut; all zeros before the first event): the sum modulo 2²⁵⁶ of SHA-256(`seq` as 8 bytes big-endian ‖ the event's SHA-256 `digest`). Enclave 2 compares it with its own value to prove it delivered exactly these events ([audit design §7](audit-and-health.md#7-reconciliation)). Never dropped from a trimmed heartbeat. |
 | `events_in` | integer | lines | always | Input lines that were events or were rejected |
 | `events_sent` | integer | events | always | Events numbered and sent |
 | `final` | `true` | | last heartbeat only | Clean shutdown. Always the last frame of a run |
@@ -287,13 +286,29 @@ There is no `boot` and there are no `prev_*` keys. Records streams aren't linked
 
 * A **stream** is one sender run. Its `stream_id` is drawn at random when the sender starts.
 * `seq` numbers the events in the order the sender received them, from 1. It is 64 bits and
-  restarts only with a new stream, so the pair (`stream_id`, `seq`) names one event.
+  restarts only with a new stream, so the pair (`stream_id`, `seq`) names one event. At 1,000
+  events/s it would last about 584 million years, so there is no wraparound.
 * Runs are chained by `boot`, `prev_stream` and `prev_last_seq`. Enclave 2 can therefore tell a
   lost tail of one run, or a whole run it never saw.
 * Each heartbeat's `events_hash` lets Enclave 2 reconcile the data stream end to end; the records
   stream doesn't carry one.
-* The receiver's rules for gaps, duplicates and links are in
-  [wire-format.md](wire-format.md#receiver-rules).
+
+**How the receiver uses the numbers**
+
+* A missing number becomes a gap `--gap-window` (2 s) after something newer (an event, or a
+  heartbeat's `seq`) shows it should exist. The heartbeat's `seq` is the last number sent, so
+  loss at the very end of a burst shows too.
+* A number already delivered is a duplicate and is dropped. A number inside a reported gap fills
+  it: that is how an archive replay works.
+* An event counts as delivered in the saved state only once the output made it durable (the SIEM
+  accepted it, it is in the on-disk spool, or it was fsync'd to a file). After a crash, events
+  handed over but not durable are reported as gaps (`reason=receiver_restart`), and a replay
+  fills them.
+* Run links: the previous run's last number is raised to `prev_last_seq`, so a lost tail becomes a
+  gap. A `prev_stream` never seen is reported as `stream_missing`, with its events
+  1 … `prev_last_seq` as a gap. A jump in `boot` of more than one reports the runs in between as
+  `stream_missing`; a lower `boot` is `sender_boot_reset`. A receiver with no state doesn't report
+  history from before it started.
 
 **Records stream**
 
@@ -492,7 +507,7 @@ collector the same top-level values (`index` can be filled in or overridden with
 |---|---|---|
 | `wd2l_stream` | string, 16 hex digits | `stream_id` |
 | `wd2l_seq` | integer | `seq` |
-| `wd2l_rx_time` | number, seconds since 1970-01-01 UTC, 3 decimals | Receiver's clock when the event arrived (for an archive replay: when it was captured) |
+| `wd2l_rx_time` | number, seconds since 1970-01-01 UTC, 3 decimals | Receiver's clock when the event arrived (for an archive replay: when it was captured). It replaces any `wd2l_rx_time` that came over the wire |
 
 Records-stream events go to the audit index (`wd2l_audit`, its own token) or the health index,
 never to the data index.

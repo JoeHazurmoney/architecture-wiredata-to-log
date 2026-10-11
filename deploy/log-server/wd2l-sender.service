@@ -11,7 +11,7 @@ Environment=PYTHONPATH=/opt/wd2l
 # Site options (addresses, NIC, token, paths): /etc/wd2l/sender.env.
 EnvironmentFile=/etc/wd2l/sender.env
 ExecStart=/usr/bin/python3 -m wd2l.sender $WD2L_SENDER_ARGS
-# Restart count + previous stream, so the receiver can link runs (see docs/wire-format.md).
+# Restart count + previous stream, so the receiver can link runs (see docs/interface-description.md, section 9).
 StateDirectory=wd2l
 StateDirectoryMode=0750
 # Audit records (docs/audit-and-health.md section 8). The install step creates
