@@ -15,7 +15,7 @@ the way. Start a new session here.
 
 ## State of the world
 
-**The Pi** (`ssh pi5`, user `taylorb`, passwordless sudo, 192.168.1.120): all of these are
+**The Pi** (`ssh pi5`, user `almalinux`, passwordless sudo, 192.168.1.120): all of these are
 active and healthy:
 
 * the three el10 RPMs, 0.3.0~rc3;
