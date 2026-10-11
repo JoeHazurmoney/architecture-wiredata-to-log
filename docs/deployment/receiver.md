@@ -119,7 +119,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--input-flat-after` | `300` s | No new events from the aggregator for this long is reported as flat input |
 | `--time-check-interval` | `60` s | Time between chrony reads |
 | `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
-| `--chrony-addr` | none | Ask chronyd over UDP (`HOST[:PORT]`, port 323) instead of running `chronyc`. The container unit uses `127.0.0.1:323`. chronyd's default configuration answers it; `cmdport 0` turns it off |
+| `--chrony-addr` | none | Ask chronyd over UDP (`HOST[:PORT]`, port 323) instead of running `chronyc`. The env file and the container unit use `127.0.0.1:323`: nothing to run, and no SELinux denial (chronyc can't enter its domain under `NoNewPrivileges`). chronyd's default configuration answers it; `cmdport 0` turns it off |
 | `--log-format` | text | `receiver.env` uses `json`: one JSON object per log line |
 | `--no-rx-time` | stamping on | Stop stamping each event's arrival time (`wd2l_rx_time`). Leave it on: it's how delays are measured ([operations.md](../operations.md#measuring-delays)) |
 
