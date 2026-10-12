@@ -1,11 +1,15 @@
 ; wd2l receiver: the capture archive's SELinux label. tcpdump, started by systemd
 ; (wd2l-capture.service), runs as netutils_t, which may write only netutils_tmp_t files; with the
-; default var_lib_t label every write is denied. This gives /var/lib/wd2l/pcap that label. It
-; adds only read access for containers (below). The receiver RPM loads it (semodule) and
-; relabels the directory.
+; default var_lib_t label every write is denied. This gives /var/lib/wd2l/pcap that label. The
+; rules below add only a directory search for tcpdump and read access for containers. The
+; receiver RPM loads it (semodule) and relabels the directory.
 (filecon "/var/lib/wd2l/pcap(/.*)?" any (system_u object_r netutils_tmp_t ((s0) (s0))))
+; /var/lib/wd2l itself is container_file_t (common/wd2l_container.cil): tcpdump passes through it
+; to pcap/ (search only). Without this, opening the archive file fails, and nothing is logged.
+(optional wd2l_pcap_parent_search
+  (allow netutils_t container_file_t (dir (getattr search))))
 ; Container mode: the receiver reads the archive (its age, and a replay) but never writes it.
-; In an optional block: a policy without container_t skips it.
+; Optional blocks: a policy without these types skips them.
 (optional wd2l_pcap_container_read
   (allow container_t netutils_tmp_t (dir (getattr open read search)))
   (allow container_t netutils_tmp_t (file (getattr open read))))

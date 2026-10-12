@@ -314,8 +314,12 @@ def cil_lines(path):
 def test_receiver_labels_the_capture_archive_for_tcpdump():
     # tcpdump started by systemd runs as netutils_t, which may only write netutils_tmp_t files.
     # In container mode the receiver (container_t) may read the archive, never write it.
+    # /var/lib/wd2l is container_file_t (common/wd2l_container.cil): without the search rule,
+    # tcpdump got a silent "Permission denied" opening its file (seen on the Pi, rc5).
     assert cil_lines("deploy/receiver/wd2l_pcap.cil") == [
         '(filecon "/var/lib/wd2l/pcap(/.*)?" any (system_u object_r netutils_tmp_t ((s0) (s0))))',
+        '(optional wd2l_pcap_parent_search',
+        '  (allow netutils_t container_file_t (dir (getattr search))))',
         '(optional wd2l_pcap_container_read',
         '  (allow container_t netutils_tmp_t (dir (getattr open read search)))',
         '  (allow container_t netutils_tmp_t (file (getattr open read))))']
