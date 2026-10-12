@@ -159,7 +159,8 @@ jobs:
         run: |
           # Podman's sigstoreSigned policy reads only cosign's older .sig format
           # (docs/deployment/containers.md). The flags are deprecated; if a cosign update drops
-          # them this step fails, and import-check would catch a missing signature.
+          # them this step fails, and verify-published and import-check would catch a missing
+          # signature.
           for c in ${{ steps.push.outputs.digest_amd64 }} ${{ steps.push.outputs.digest_arm64 }}; do
             packaging/ci/tool cosign sign --key env://COSIGN_PRIVATE_KEY \
               --new-bundle-format=false --use-signing-config=false --tlog-upload=false --yes "$IMAGE@$c"
@@ -197,6 +198,8 @@ jobs:
           for t in slsaprovenance1 "$ATT/base-image-record/v2"; do V verify-attestation --type "$t" "$IMG@$D" && echo "index $t: ok"; done
           for c in "$CA" "$CR"; do
             V verify "$IMG@$c" && echo "$c signature: ok"
+            # The older .sig that Podman's policy reads; with this flag cosign reads only that.
+            V verify --new-bundle-format=false "$IMG@$c" && echo "$c older-format signature: ok"
             for t in $CHILD; do V verify-attestation --type "$t" "$IMG@$c" && echo "$c $t: ok"; done
           done
           packaging/ci/tool cosign tree "$IMG@$D"

@@ -34,7 +34,7 @@ ReadOnly=true
 PodmanArgs=--umask=0027
 # On SIGTERM the sender drains its input, then sends the final heartbeat (planned-downtime.md).
 StopTimeout=30
-Exec=wd2l-sender $WD2L_SENDER_ARGS --chrony-addr 127.0.0.1:323
+Exec=wd2l-sender $WD2L_SENDER_ARGS
 
 [Service]
 EnvironmentFile=/etc/wd2l/sender.env

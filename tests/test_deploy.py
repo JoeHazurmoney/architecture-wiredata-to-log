@@ -194,7 +194,9 @@ def test_quadlet_unit_matches_the_native_one(side, name, var, native_path, stop,
     assert c["StopTimeout"] == [str(stop)] and native["TimeoutStopSec"] == [str(stop)]
     assert int(q["Service"]["TimeoutStopSec"][0]) > stop
     assert q["Service"]["EnvironmentFile"] == native["EnvironmentFile"]
-    assert shlex.split(c["Exec"][0]) == [name, "$" + var, "--chrony-addr", "127.0.0.1:323"]
+    # The env file gives --chrony-addr (test_env_files_hold_exactly_these_options); a second
+    # copy here only put it on the command line twice (R5-8).
+    assert shlex.split(c["Exec"][0]) == [name, "$" + var]
     for k in ("After", "Requires", "Wants"):
         assert q["Unit"].get(k) == native.get(k), k
     assert "--umask=0027" in " ".join(c.get("PodmanArgs", []))

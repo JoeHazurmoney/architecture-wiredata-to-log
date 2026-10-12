@@ -115,7 +115,8 @@ The units run the container:
   so audit records name `wd2l`);
 * with no capabilities, except `NET_RAW` for the receiver;
 * read-only, with no new privileges;
-* with `--chrony-addr 127.0.0.1:323` added to the options.
+* with the env file's options, as the native unit; its `--chrony-addr 127.0.0.1:323` matters here,
+  because the image has no `chronyc`.
 
 They stop it within the native units' times: 30 s for the sender and 60 s for the receiver.
 

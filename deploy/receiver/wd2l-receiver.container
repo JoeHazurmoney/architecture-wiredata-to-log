@@ -36,7 +36,7 @@ ReadOnly=true
 PodmanArgs=--umask=0027
 # Final health record, up to 15 s for the SIEM, then the state file.
 StopTimeout=60
-Exec=wd2l-receiver $WD2L_RECEIVER_ARGS --chrony-addr 127.0.0.1:323
+Exec=wd2l-receiver $WD2L_RECEIVER_ARGS
 
 [Service]
 EnvironmentFile=/etc/wd2l/receiver.env
