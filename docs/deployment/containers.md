@@ -99,10 +99,14 @@ start, and again after a `restorecon` or a full relabel. Each time, in a planned
 the start:
 
 ```bash
-sudo chattr -a /var/log/wd2l/audit-*.jsonl      # note it in the change record
-sudo systemctl start wd2l-receiver               # Podman relabels the directory
-sudo systemctl start wd2l-audit-seal.service     # the files are append-only again
+sudo sh -c 'chattr -a /var/log/wd2l/audit-*.jsonl'   # root expands the glob; note it in the change record
+sudo systemctl start wd2l-receiver                    # Podman relabels the directory
+sudo systemctl start wd2l-audit-seal.service          # the files are append-only again
 ```
+
+If the first start failed because a file was still append-only (the journal shows
+`PermissionError` on an `audit-*.jsonl`), unlock as above and start again: Podman relabels the
+files then.
 
 The units run the container:
 
@@ -124,13 +128,15 @@ They stop it within the native units' times: 30 s for the sender and 60 s for th
   `/etc/wd2l` is mounted read-only. Before the first start, `ls -dZ /var/lib/wd2l /var/lib/wd2l/pcap`
   shows `container_file_t` and `netutils_tmp_t`; if not (a host that ran an older Quadlet with
   `:z`, or files restored from a backup), relabel once: `sudo restorecon -RF /var/lib/wd2l`.
-* **Still to confirm on RHEL 10** with SELinux enforcing (the [release plan's checks](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md), at the first
-  release candidate):
-  * the user name resolves;
-  * the options from the env file reach wd2l;
-  * the first start over sealed audit files, with the steps above;
-
-  If one doesn't, this section will say what to use instead.
+* **Confirmed on AlmaLinux 10** (aarch64, SELinux enforcing, Podman 5.8, rc5), the checks the
+  [release plan](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md)
+  left open:
+  * the user name resolves (`podman top wd2l-receiver user huser`: `wd2l wd2l`);
+  * the options from the env file reach wd2l (`podman top wd2l-receiver args`);
+  * host tcpdump keeps writing the archive (`netutils_tmp_t`), and the receiver reads it
+    (`archive_age_s`) and replays it;
+  * the first start over sealed audit files, with the steps above, and later restarts;
+  * Podman's signature policy (see [Signature policy](#signature-policy-registry-pulls)).
 * **FIPS.** The image always uses OpenSSL's FIPS provider, and MD5 is refused. It is **validated
   only on a RHEL host installed in FIPS mode**; on other hosts it is FIPS-configured. The image
   has no CA bundle, so `receiver.env` must keep `--hec-ca`.

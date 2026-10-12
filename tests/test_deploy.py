@@ -261,3 +261,14 @@ def test_containers_md_gives_a_working_signature_policy():
         doc = f.read()
     assert '"type": "sigstoreSigned"' in doc and "use-sigstore-attachments: true" in doc
     assert "whether Podman's `sigstoreSigned` policy accepts" not in doc
+
+
+def test_containers_md_unlocks_the_audit_files_with_a_root_glob():
+    # /var/log/wd2l is 2750 root:wd2l-audit: an operator's shell can't expand the glob, so
+    # `sudo chattr -a /var/log/wd2l/audit-*.jsonl` unlocked nothing and the first start failed
+    # (found switching the Pi to Quadlet, rc5).
+    with open(os.path.join(REPO, "docs", "deployment", "containers.md"), encoding="utf-8") as f:
+        doc = f.read()
+    assert "sudo sh -c 'chattr -a /var/log/wd2l/audit-*.jsonl'" in doc
+    assert "sudo chattr -a /var/log/wd2l/audit-*.jsonl" not in doc
+    assert "Confirmed on AlmaLinux 10" in doc and "Still to confirm" not in doc
