@@ -100,11 +100,11 @@ They stop it within the native units' times: 30 s for the sender and 60 s for th
 
 * **SELinux.** `/var/lib/wd2l` is mounted without `:z`: Podman's relabel would also relabel the
   capture archive and stop host tcpdump writing it. The `wd2l` RPM labels the directory for
-  containers instead (`container_file_t`, needs container-selinux), and the receiver's module
-  lets containers read the archive, never write it. `/var/log/wd2l` keeps `:z` (the audit seal
-  timer uses it); `/etc/wd2l` is mounted read-only. If Podman (container-selinux) was installed
-  after the RPMs, relabel once before the first start: `sudo restorecon -RF /var/lib/wd2l`.
-  Then `ls -dZ /var/lib/wd2l /var/lib/wd2l/pcap` shows `container_file_t` and `netutils_tmp_t`.
+  containers instead (`container_file_t`), and the receiver's module lets containers read the
+  archive, never write it. `/var/log/wd2l` keeps `:z` (the audit seal timer uses it);
+  `/etc/wd2l` is mounted read-only. Before the first start, `ls -dZ /var/lib/wd2l /var/lib/wd2l/pcap`
+  shows `container_file_t` and `netutils_tmp_t`; if not (a host that ran an older Quadlet with
+  `:z`, or files restored from a backup), relabel once: `sudo restorecon -RF /var/lib/wd2l`.
 * **Still to confirm on RHEL 10** with SELinux enforcing (the [release plan's checks](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md), at the first
   release candidate):
   * the user name resolves;

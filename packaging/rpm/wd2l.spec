@@ -124,7 +124,7 @@ exit 0
 
 %post
 %tmpfiles_create wd2l.conf
-# Container mode's label for /var/lib/wd2l (common/wd2l_container.cil); off without container-selinux.
+# Container mode's label for /var/lib/wd2l (common/wd2l_container.cil).
 if [ -x /usr/sbin/semodule ]; then
     /usr/sbin/semodule -X 200 -i %{_datadir}/wd2l/selinux/wd2l_container.cil || \
         echo "wd2l: the container-mode SELinux label didn't load; see docs/deployment/containers.md" >&2

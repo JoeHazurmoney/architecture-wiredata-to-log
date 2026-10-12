@@ -1,8 +1,9 @@
 ; wd2l, container mode (Quadlet): the containers write /var/lib/wd2l (state.json, spool/) with
 ; this label, instead of Podman's :z, which would also relabel the receiver's capture archive
 ; (/var/lib/wd2l/pcap, netutils_tmp_t, receiver/wd2l_pcap.cil) and stop host tcpdump writing
-; it. The more specific pcap rule still wins. The block needs container-selinux
-; (container_file_t): on a host without it, it stays off and nothing changes. It adds no
+; it. The more specific pcap rule still wins. Native wd2l runs unconfined and is unaffected. In
+; an optional block, so a policy without container_file_t skips it instead of failing to load
+; (EL9's and EL10's targeted policy has it, with or without container-selinux). It adds no
 ; permission to any domain. The wd2l RPM loads it (semodule) and relabels the directory.
 (optional wd2l_container_files
   (filecon "/var/lib/wd2l(/.*)?" any (system_u object_r container_file_t ((s0) (s0)))))
