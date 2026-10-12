@@ -108,6 +108,8 @@ def test_attest_reads_the_checksums_the_release_lists():
     assert "push-to-registry: true" in att and "subject-name: ghcr.io/joehazurmoney/wd2l\n" in att
     assert "create-storage-record: false" in att
     assert "name: attestations" in att
+    for d in ("inputs.image-digest }}", "inputs.image-digest-amd64 }}", "inputs.image-digest-arm64 }}"):
+        assert "subject-digest: ${{ " + d in att, d
 
 
 def test_attestation_runs_only_for_a_tag():
@@ -115,6 +117,8 @@ def test_attestation_runs_only_for_a_tag():
     assert "if: ${{ startsWith(github.ref, 'refs/tags/v') }}" in att
     assert "uses: ./.github/workflows/attest.yml" in att
     assert "image-digest: ${{ needs.publish.outputs.digest }}" in att
+    assert "image-digest-amd64: ${{ needs.publish.outputs.digest_amd64 }}" in att
+    assert "image-digest-arm64: ${{ needs.publish.outputs.digest_arm64 }}" in att
     for p in ("id-token: write", "attestations: write", "packages: write"):
         assert p in att, p
 
@@ -136,7 +140,7 @@ def test_assets_are_made_once_without_secrets_or_a_token():
 def test_attest_signs_the_image_keylessly_and_checks_the_identity():
     att = jobs(read("attest.yml"))["attest"]
     assert "TOOL_ENV: ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN" in att
-    assert 'packaging/ci/tool cosign sign --yes "$IMAGE@$D"' in att
+    assert 'packaging/ci/tool cosign sign --yes --recursive "$IMAGE@$D"' in att
     assert ('--certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/'
             'attest.yml@$GITHUB_REF"') in att
     assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in att

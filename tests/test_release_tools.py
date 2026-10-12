@@ -229,3 +229,24 @@ def test_image_index_refuses_a_missing_platform_or_an_untested_image():
     assert any("amd64" in p and "tested" in p for p in image_index.check(index, digest, manifests, ids)[1])
     index, digest, manifests, ids = _index_case()
     assert any("index" in p for p in image_index.check(index, "sha256:" + "0" * 64, manifests, ids)[1])
+
+
+def test_release_assets_name_each_platform():
+    step = workflow("release.yml").split("- name: Assemble the assets", 1)[1].split("- name:", 1)[0]
+    for part in ('"assets/wd2l-$V-image-$a.spdx.json"', '"assets/wd2l-$V-image-$a.cdx.json"',
+                 '"assets/wd2l-$V-vuln-summary-$a.md"', '"image-release/wd2l-$V-image-"*-oci.tar'):
+        assert part in step, part
+    notes_step = workflow("release.yml").split("- name: Notes", 1)[1].split("- name:", 1)[0]
+    assert "--platform-digest amd64=${{ needs.publish.outputs.digest_amd64 }}" in notes_step
+
+
+def test_notes_skip_a_platform_without_a_digest(tmp_path, capsys):
+    # On a dry run publish is skipped, so release.yml passes "amd64=" and "arm64=".
+    sums = tmp_path / "SHA256SUMS"
+    sums.write_text(SUMS)
+    rec = tmp_path / "record.json"
+    rec.write_text(json.dumps(RECORD))
+    assert notes.main(["--sums", str(sums), "--base-record", str(rec), "--repo-url", "https://github.com/o/r",
+                       "--run-url", "u", "--commit", "e" * 40, "--image-digest", "",
+                       "--platform-digest", "amd64=", "--platform-digest", "arm64="]) == 0
+    assert "| linux/amd64 |" not in capsys.readouterr().out

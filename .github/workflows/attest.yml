@@ -11,7 +11,15 @@ on:
   workflow_call:
     inputs:
       image-digest:
-        description: the image publish.yml pushed (sha256:...)
+        description: the image index publish.yml pushed (sha256:...)
+        type: string
+        required: true
+      image-digest-amd64:
+        description: the index's linux/amd64 image (sha256:...)
+        type: string
+        required: true
+      image-digest-arm64:
+        description: the index's linux/arm64 image (sha256:...)
         type: string
         required: true
 defaults:
@@ -45,7 +53,7 @@ jobs:
           subject-checksums: assets/SHA256SUMS
       - name: Log in to ghcr.io (actions/attest uses Docker's login)
         run: echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-      - name: Provenance for the image, pushed next to it in ghcr
+      - name: Provenance for the image index, pushed next to it in ghcr
         id: image
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -54,25 +62,47 @@ jobs:
           push-to-registry: true
           # Storage records are for organization-owned repositories only.
           create-storage-record: false
-      - name: Keyless cosign signature on the image (Sigstore's public instance), checked at once
+      - name: Provenance for the linux/amd64 image
+        id: image-amd64
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/joehazurmoney/wd2l
+          subject-digest: ${{ inputs.image-digest-amd64 }}
+          push-to-registry: true
+          create-storage-record: false
+      - name: Provenance for the linux/arm64 image
+        id: image-arm64
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/joehazurmoney/wd2l
+          subject-digest: ${{ inputs.image-digest-arm64 }}
+          push-to-registry: true
+          create-storage-record: false
+      - name: Keyless cosign signatures on the index and each platform image (Sigstore's public instance), checked at once
         env:
           TOOL_ENV: ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN
           D: ${{ inputs.image-digest }}
+          DA: ${{ inputs.image-digest-amd64 }}
+          DR: ${{ inputs.image-digest-arm64 }}
         run: |
           echo "$TOKEN" | podman login ghcr.io -u "$ACTOR" --password-stdin
-          packaging/ci/tool cosign sign --yes "$IMAGE@$D"
-          packaging/ci/tool cosign verify "$IMAGE@$D" \
-            --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/attest.yml@$GITHUB_REF" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-github-workflow-repository "$GITHUB_REPOSITORY" > /dev/null
-          echo "keyless signature: ok"
+          packaging/ci/tool cosign sign --yes --recursive "$IMAGE@$D"
+          for d in "$D" "$DA" "$DR"; do
+            packaging/ci/tool cosign verify "$IMAGE@$d" \
+              --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/attest.yml@$GITHUB_REF" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-github-workflow-repository "$GITHUB_REPOSITORY" > /dev/null
+          done
+          echo "keyless signatures: ok"
       - name: The bundles, one per line, for offline verification
         env:
           FILES_BUNDLE: ${{ steps.files.outputs.bundle-path }}
           IMAGE_BUNDLE: ${{ steps.image.outputs.bundle-path }}
+          AMD_BUNDLE: ${{ steps.image-amd64.outputs.bundle-path }}
+          ARM_BUNDLE: ${{ steps.image-arm64.outputs.bundle-path }}
         run: |
           mkdir attestations
-          jq -c . "$FILES_BUNDLE" "$IMAGE_BUNDLE" > attestations/attestations.jsonl
+          jq -c . "$FILES_BUNDLE" "$IMAGE_BUNDLE" "$AMD_BUNDLE" "$ARM_BUNDLE" > attestations/attestations.jsonl
           wc -l attestations/attestations.jsonl
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
