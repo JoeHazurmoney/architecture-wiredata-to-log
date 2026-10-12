@@ -2,12 +2,14 @@
 Description=wd2l: keep the black hole's static ARP entry on the egress NIC
 After=wd2l-egress-nic.service
 PartOf=wd2l-egress-nic.service
+# Keep retrying a watcher that fails (default: give up after 5 starts in 10 s).
+StartLimitIntervalSec=0
 
 [Service]
 # Started by wd2l-egress-nic.service (Wants=); puts the entry back after a NIC down/up.
 ExecStart=/opt/wd2l/deploy/log-server/egress-arp-watch.sh
 Restart=always
-RestartSec=2
+RestartSec=5
 # Changes neighbour entries (CAP_NET_ADMIN), nothing else.
 CapabilityBoundingSet=CAP_NET_ADMIN
 NoNewPrivileges=yes

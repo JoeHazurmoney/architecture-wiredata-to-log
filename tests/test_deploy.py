@@ -206,6 +206,9 @@ def test_arp_watch_runs_whenever_the_egress_nic_does():
     assert arp["After"] == ["wd2l-egress-nic.service"] and arp["PartOf"] == ["wd2l-egress-nic.service"]
     assert arp["ExecStart"] == ["/opt/wd2l/deploy/log-server/egress-arp-watch.sh"]
     assert arp["Restart"] == ["always"] and arp["CapabilityBoundingSet"] == ["CAP_NET_ADMIN"]
+    # A watcher that keeps failing must keep retrying (systemd's default gives up after 5 starts
+    # in 10 s), and not spin.
+    assert arp["StartLimitIntervalSec"] == ["0"] and arp["RestartSec"] == ["5"]
     assert "WantedBy" not in arp          # started by wd2l-egress-nic's Wants=, never enabled alone
     with open(os.path.join(REPO, "deploy", "log-server", "wd2l.rules")) as f:
         assert "-w /etc/systemd/system/wd2l-egress-arp.service -p wa -k wd2l-units" in f.read().splitlines()
