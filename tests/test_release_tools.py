@@ -87,7 +87,9 @@ def test_signing_config_names_no_log_and_no_timestamp_service():
 
 notes = load_script("packaging/release/notes.py")
 SUMS = ("%s  wd2l-0.3.0-py3-none-any.whl\n%s  wd2l-0.3.0-1.el10.noarch.rpm\n"
-        "%s  wd2l-0.3.0-image-oci.tar\n" % ("a" * 64, "b" * 64, "c" * 64))
+        "%s  wd2l-0.3.0-image-amd64-oci.tar\n%s  wd2l-0.3.0-image-arm64-oci.tar\n"
+        % ("a" * 64, "b" * 64, "c" * 64, "f" * 64))
+PLATFORMS = {"amd64": "sha256:" + "8" * 64, "arm64": "sha256:" + "9" * 64}
 RECORD = {"images": [
     {"ref": "r/hi/python:3.12-fips-builder@sha256:" + "1" * 64, "stage": "build",
      "index_digest": "sha256:" + "1" * 64, "source_image": "r/hi/python:111-source"},
@@ -95,7 +97,7 @@ RECORD = {"images": [
      "index_digest": "sha256:" + "2" * 64, "source_image": "r/hi/python:222-source"}]}
 ARGS = dict(image="ghcr.io/joehazurmoney/wd2l", digest="sha256:" + "d" * 64, sums_text=SUMS,
             base_record=RECORD, repo_url="https://github.com/o/r",
-            run_url="https://github.com/o/r/actions/runs/7", commit="e" * 40)
+            run_url="https://github.com/o/r/actions/runs/7", commit="e" * 40, platforms=PLATFORMS)
 
 
 def test_notes_name_every_asset_the_image_and_its_bases():
@@ -103,7 +105,9 @@ def test_notes_name_every_asset_the_image_and_its_bases():
     for part in ("wd2l-0.3.0-py3-none-any.whl", "b" * 64, "ghcr.io/joehazurmoney/wd2l@sha256:" + "d" * 64,
                  "r/hi/python:3.12-fips@sha256:" + "2" * 64, "r/hi/python:222-source",
                  "cosign verify-blob --key cosign.pub --insecure-ignore-tlog --bundle SHA256SUMS.sigstore.json SHA256SUMS",
-                 "sha256sum -c SHA256SUMS", "--local-image wd2l-oci", "e" * 40,
+                 "sha256sum -c SHA256SUMS", "tar -xf wd2l-0.3.0-image-amd64-oci.tar",
+                 "--local-image wd2l-oci", "| linux/arm64 | `sha256:" + "9" * 64 + "` |",
+                 "wd2l-0.3.0-image-arm64-oci.tar", "e" * 40,
                  "https://github.com/o/r/blob/v0.3.0/docs/releasing.md"):
         assert part in text, part
     assert "Pre-release" not in text
@@ -165,6 +169,11 @@ def test_notes_show_how_to_verify_the_github_attestations():
     assert "gh attestation verify oci://ghcr.io/joehazurmoney/wd2l@sha256:%s %s --bundle-from-oci" % (
         "d" * 64, pin) in text
     assert "--bundle wd2l-0.4.0-attestations.jsonl --custom-trusted-root trusted_root.jsonl" in text
+
+
+def test_dry_run_notes_have_no_platform_table():
+    text = notes.notes(versions.names("0.4.0"), **dict(ARGS, digest="", platforms={}))
+    assert "| linux/amd64 |" not in text
 
 
 def test_dry_run_notes_have_no_image_attestation_line():

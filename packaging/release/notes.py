@@ -2,7 +2,8 @@
 """Release notes for the draft GitHub release (release.yml): what is in it, how to verify it
 offline, the exact image and the bases it stands on, and every asset with its SHA-256.
 
-    notes.py --image-digest sha256:... --sums SHA256SUMS --base-record base-image-record.json
+    notes.py --image-digest sha256:... [--platform-digest ARCH=sha256:...] --sums SHA256SUMS
+             --base-record base-image-record.json
              --repo-url URL --run-url URL --commit SHA > notes.md"""
 
 import argparse
@@ -18,7 +19,8 @@ IMAGE = "ghcr.io/joehazurmoney/wd2l"
 
 
 def notes(names: Dict[str, Any], image: str, digest: str, sums_text: str,
-          base_record: Dict[str, Any], repo_url: str, run_url: str, commit: str) -> str:
+          base_record: Dict[str, Any], repo_url: str, run_url: str, commit: str,
+          platforms: Dict[str, str]) -> str:
     v, tag = names["pep440"], names["tag"]
     doc = "%s/blob/%s/docs" % (repo_url, tag)
     out = []
@@ -30,9 +32,10 @@ def notes(names: Dict[str, Any], image: str, digest: str, sums_text: str,
             "log server ([guide](%s/deployment/log-server.md)), or `wd2l` plus `wd2l-receiver` on "
             "the receiver host ([guide](%s/deployment/receiver.md))." % (doc, doc),
             "* **Container** (FIPS, Red Hat Hardened Images): `%s:%s` "
-            "([guide](%s/deployment/containers.md)); `wd2l-%s-image-oci.tar` is the same image, "
-            "with its signature and attestations, for enclaves without a registry."
-            % (image, " / ".join(names["image_tags"]), doc, v),
+            "([guide](%s/deployment/containers.md)); `wd2l-%s-image-amd64-oci.tar` and "
+            "`wd2l-%s-image-arm64-oci.tar` are the same image, one per platform, "
+            "each with its signature and attestations, for enclaves without a registry."
+            % (image, " / ".join(names["image_tags"]), doc, v, v),
             "* Bringing a release into an enclave: [releasing.md](%s/releasing.md#bringing-a-release-into-an-enclave)."
             % doc, "",
             "## Verify (works offline)", "",
@@ -41,7 +44,7 @@ def notes(names: Dict[str, Any], image: str, digest: str, sums_text: str,
             "```bash",
             "cosign verify-blob --key cosign.pub --insecure-ignore-tlog --bundle SHA256SUMS.sigstore.json SHA256SUMS",
             "sha256sum -c SHA256SUMS",
-            "tar -xf wd2l-%s-image-oci.tar" % v,
+            "tar -xf wd2l-%s-image-amd64-oci.tar   # or -arm64-oci.tar on an arm64 host" % v,
             "cosign verify --key cosign.pub --insecure-ignore-tlog --local-image wd2l-oci",
             "```", ""]
     slug = repo_url.rstrip("/").split("github.com/", 1)[-1]
@@ -59,6 +62,10 @@ def notes(names: Dict[str, Any], image: str, digest: str, sums_text: str,
             "```", "",
             "## Image", ""]
     out.append("`%s@%s`" % (image, digest) if digest else "Image not published (dry run).")
+    if digest and platforms:
+        out += ["", "One index for both platforms; each platform's own image:", "",
+                "| Platform | Digest |", "|---|---|"]
+        out += ["| linux/%s | `%s` |" % (a, d) for a, d in sorted(platforms.items())]
     out += ["", "| Stage | Base image | Source (SRPMs) |", "|---|---|---|"]
     for b in base_record.get("images", []):
         out.append("| %s | `%s` | `%s` |" % (b.get("stage"), b.get("ref"), b.get("source_image")))
@@ -76,6 +83,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p = argparse.ArgumentParser(description="Release notes for the draft release.")
     p.add_argument("--image", default=IMAGE)
     p.add_argument("--image-digest", default="")
+    p.add_argument("--platform-digest", action="append", default=[], metavar="ARCH=DIGEST")
     p.add_argument("--sums", required=True)
     p.add_argument("--base-record", required=True)
     p.add_argument("--repo-url", required=True)
@@ -86,8 +94,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         sums = f.read()
     with open(a.base_record) as f:
         rec = json.load(f)
+    platforms = dict(x.split("=", 1) for x in a.platform_digest)
     sys.stdout.write(notes(versions.names(versions.read_version()), a.image, a.image_digest, sums,
-                           rec, a.repo_url, a.run_url, a.commit))
+                           rec, a.repo_url, a.run_url, a.commit, platforms))
     return 0
 
 
