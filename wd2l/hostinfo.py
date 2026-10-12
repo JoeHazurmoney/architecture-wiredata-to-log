@@ -261,6 +261,14 @@ def chrony_address(s: str) -> str:
     return s
 
 
+def stratum(s: str) -> int:
+    """argparse type for --max-stratum: 1 to 15 (16 means unsynchronised)."""
+    n = int(s)
+    if not 1 <= n <= 15:
+        raise ValueError(s)
+    return n
+
+
 class TimeQuality:
     """chrony's view of this host's clock, read at most every `every` seconds: by running
     chronyc (`cmd`), or by `query` (chrony_tracking, for --chrony-addr)."""
@@ -299,10 +307,11 @@ class TimeQuality:
 
 
 def time_quality(chronyc: str = "chronyc", chrony_addr: Optional[str] = None,
-                 every: float = 60.0) -> TimeQuality:
-    """The TimeQuality for --chronyc / --chrony-addr: chronyd over UDP when an address is
-    given (the containers have no chronyc), else the chronyc command."""
-    tq = TimeQuality(shlex.split(chronyc) + ["-c", "tracking"], every=every)
+                 every: float = 60.0, max_stratum: int = 3) -> TimeQuality:
+    """The TimeQuality for --chronyc / --chrony-addr / --max-stratum: chronyd over UDP when an
+    address is given (the containers have no chronyc), else the chronyc command."""
+    tq = TimeQuality(shlex.split(chronyc) + ["-c", "tracking"], every=every,
+                     max_stratum=max_stratum)
     if chrony_addr:
         hostport = chrony_hostport(chrony_addr)
         tq.query = lambda: chrony_tracking(hostport, tq.timeout)

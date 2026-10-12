@@ -364,7 +364,8 @@ class Receiver:
                  sample_interval: float = 5.0,
                  fault_interval: float = 0.0, fault_window: float = 60.0,
                  input_flat_after: float = 300.0, backlog_alarm_bytes: int = 1 << 20,
-                 archive_stale_after: float = 15.0, max_skew_s: float = 0.05):
+                 archive_stale_after: float = 15.0, max_skew_s: float = 0.05,
+                 max_stratum: int = 3):
         """`now` passed to handle_frame/tick drives every timer. Live capture passes a steady
         clock (immune to clock steps); pcap replay passes packet timestamps. `record_clock`,
         if given, supplies the wall-clock `time` written into health records, each event's
@@ -426,6 +427,7 @@ class Receiver:
         self.backlog_alarm_bytes = backlog_alarm_bytes
         self.archive_stale_after = archive_stale_after
         self.max_skew_s = max_skew_s
+        self.max_stratum = max_stratum
         self.faults = fault.FaultTracker(fault_window)
         self.last_fault: Optional[float] = None
         self.last_rc: Optional[float] = None
@@ -859,7 +861,8 @@ class Receiver:
                                 previous_status=prev.status, previous_segment=prev.segment,
                                 previous_rule=prev.rule)
         ts = fault.time_status(self.tq.read() if self.tq is not None else None, hb,
-                               self.last_clock_offset, max_skew_s=self.max_skew_s)
+                               self.last_clock_offset, max_stratum=self.max_stratum,
+                               max_skew_s=self.max_skew_s)
         if ts != ft.time:
             ft.time = ts
             self._health_record("time_status", now, time_status=ts[0], time_reason=ts[1])
@@ -1190,6 +1193,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--chrony-addr", type=hostinfo.chrony_address, metavar="HOST[:PORT]",
                    help="ask chronyd over UDP (its command port, 323) for time quality instead "
                         "of running --chronyc; the container units use 127.0.0.1:323")
+    p.add_argument("--max-stratum", type=hostinfo.stratum, default=3, metavar="N",
+                   help="time alarm when chrony's stratum is above N (1 is a server with its own "
+                        "reference clock, e.g. GPS); applied to the sender's reading too")
     p.add_argument("--capture-iface", help="NIC whose carrier and receive counters are reported "
                                            "(default: the --live interface)")
     p.add_argument("--pcap-dir", help="capture archive directory, to check tcpdump is writing it "
@@ -1274,7 +1280,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     logsetup.setup(a.log_format, a.verbose)
     settings = {k: v for k, v in sorted(vars(a).items())}
     cfg_sha = auditlog.sha256_hex(auditlog.canonical(settings))
-    tq = hostinfo.time_quality(a.chronyc, a.chrony_addr, every=a.time_check_interval)
+    tq = hostinfo.time_quality(a.chronyc, a.chrony_addr, every=a.time_check_interval,
+                               max_stratum=a.max_stratum)
     component = "replay" if a.pcap else "receiver"
     audit = None
     if a.audit_dir:
@@ -1301,7 +1308,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
               audit=audit, audit_output=audit_out,
               config_sha256=None if a.pcap else cfg_sha,
               fault_window=a.fault_window, input_flat_after=a.input_flat_after,
-              component=component, time_quality=tq)
+              component=component, time_quality=tq, max_stratum=a.max_stratum)
     try:
         if a.pcap:
             if audit:

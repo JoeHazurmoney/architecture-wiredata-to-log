@@ -323,3 +323,20 @@ def test_replay_does_not_evaluate_faults():
     r, out = rxf(fault_interval=0)
     r.tick(100)
     assert out.kinds("fault") == [] and "fault_status" not in r.emit_health(100)
+
+
+class PoolTQ:
+    def read(self):
+        return {"stratum": 5, "offset_ms": 0.2, "synced": True, "source": "pool"}
+
+
+@pytest.mark.parametrize("kw, status", [({}, "alarm"), ({"max_stratum": 5}, "ok")])
+def test_max_stratum_applies_to_both_sides(kw, status):
+    # The public NTP pool gave the Pi stratum 4-5 after a reboot: the default 3 suits GPS time.
+    r, out = rxf(time_quality=PoolTQ(), **kw)
+    feed(r, hbf(0, time_synced=True, time_stratum=5, time_offset_ms=0.2), 0)
+    r.tick(0)
+    rec = r.emit_health(1)
+    assert rec["time_status"] == status
+    if status == "alarm":
+        assert rec["time_reason"] == "receiver: stratum 5 > 3; sender: stratum 5 > 3"

@@ -752,6 +752,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--chrony-addr", type=hostinfo.chrony_address, metavar="HOST[:PORT]",
                    help="ask chronyd over UDP (its command port, 323) for time quality instead "
                         "of running --chronyc; the container units use 127.0.0.1:323")
+    p.add_argument("--max-stratum", type=hostinfo.stratum, default=3, metavar="N",
+                   help="time alarm when chrony's stratum is above N (1 is a server with its own "
+                        "reference clock, e.g. GPS)")
     p.add_argument("--log-format", choices=("text", "json"), default="text",
                    help="operational log lines: text, or one JSON object per line")
     return p
@@ -767,7 +770,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     logsetup.setup(a.log_format, a.verbose)
     settings = config_settings(a)
     cfg_sha = auditlog.sha256_hex(auditlog.canonical(settings))
-    tq = hostinfo.time_quality(a.chronyc, a.chrony_addr)
+    tq = hostinfo.time_quality(a.chronyc, a.chrony_addr, max_stratum=a.max_stratum)
     audit = None
     if a.audit_dir:
         try:
