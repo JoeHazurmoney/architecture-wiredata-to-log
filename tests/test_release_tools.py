@@ -144,9 +144,10 @@ def workflow(name):
 def test_asset_names_are_what_github_serves_before_sha256sums_lists_them():
     # GitHub turns "~" in an asset name into ".": a pre-release RPM (X.Y.Z~rcN) would be
     # downloaded under a name SHA256SUMS doesn't list (found on v0.3.0rc1).
-    step = workflow("release.yml").split("- name: Assemble the assets", 1)[1].split("- name:", 1)[0]
-    rename = step.index(r'mv -- "$f" "${f//\~/.}"')
-    assert rename < step.index("sha256sum -- *")
+    job = workflow("release.yml").split("- name: Assemble the assets", 1)[1].split("\n  attest:\n", 1)[0]
+    rename = job.index(r'mv -- "$f" "${f//\~/.}"')
+    # ...and the manifest lists the served names too: it's made between the two.
+    assert rename < job.index("manifest.py generate") < job.index("sha256sum -- *")
 
 
 def test_signing_jobs_use_the_release_environment():
@@ -267,3 +268,32 @@ def test_releasing_md_names_the_attestation_types_publish_uses():
         assert t in pub and "/attestations/" + t in doc, t
     assert "base-image-record/v1" not in doc
     assert "wd2l-<version>-vuln-summary-<arch>.md" in doc and "`vuln-<arch>`" in doc
+
+
+def example_manifest():
+    with open(os.path.join(REPO, "packaging", "release", "release-manifest.example.json")) as f:
+        return json.load(f)
+
+
+def test_notes_carry_the_summary_and_the_issues_from_the_manifest():
+    man = example_manifest()
+    man["changes"]["issues_resolved"][0]["title"] = "Spool <dropped> | full disk"
+    text = notes.notes(versions.names("1.1.0"), **dict(ARGS, man=man))
+    assert text.index("## What changed since 1.0.0") < text.index("## Issues resolved (1)") < text.index("## Install")
+    assert "Since v1.0.0. The full record" in text and "`wd2l-1.1.0-release-manifest.md`" in text
+    assert "| [#79](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/issues/79) | bug | " \
+           "Spool &lt;dropped&gt; \\| full disk |" in text
+
+
+def test_notes_mark_retroactive_issues_and_link_the_attestation_pages():
+    man = example_manifest()
+    man["changes"]["issues_resolved"][0]["retroactive"] = True
+    text = notes.notes(versions.names("1.1.0"), **dict(ARGS, man=man, attestation_urls={
+        "image index": "https://github.com/o/r/attestations/2", "release files": "", }))
+    assert "/issues/79) † | bug |" in text and "† Recorded after its work had merged." in text
+    assert "Attestation pages: [image index](https://github.com/o/r/attestations/2)." in text
+
+
+def test_notes_without_a_manifest_are_unchanged():
+    assert "## Issues resolved" not in notes.notes(versions.names("1.1.0"), **ARGS)
+    assert "Attestation pages" not in notes.notes(versions.names("1.1.0"), **ARGS)

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Release notes for the draft GitHub release (release.yml): what is in it, how to verify it
-offline, the exact image and the bases it stands on, and every asset with its SHA-256.
+"""Release notes for the draft GitHub release (release.yml): the release's summary and the
+issues it resolves (from the release manifest), what is in it, how to verify it offline, the
+exact image and the bases it stands on, and every asset with its SHA-256. Generated in full, so
+the person publishing pastes nothing.
 
-    notes.py --image-digest sha256:... [--platform-digest ARCH=sha256:...] --sums SHA256SUMS
+    notes.py [--manifest wd2l-<v>-release-manifest.json] [--attestation-url NAME=URL]
+             --image-digest sha256:... [--platform-digest ARCH=sha256:...] --sums SHA256SUMS
              --base-record base-image-record.json
              --repo-url URL --run-url URL --commit SHA > notes.md"""
 
@@ -10,24 +13,51 @@ import argparse
 import json
 import os
 import sys
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import versions  # noqa: E402  (a sibling script, not a package)
+import manifest as release_manifest  # noqa: E402  (sibling scripts, not packages)
+import versions  # noqa: E402
 
 IMAGE = "ghcr.io/joehazurmoney/wd2l"
 
 
+def resolved(man: Dict[str, Any], v: str) -> List[str]:
+    """The manifest's summary, then the issues it resolves, one table."""
+    out: List[str] = []
+    if man.get("summary"):
+        out += [man["summary"]["text"].strip(), ""]
+    ch = man["changes"]
+    issues = ch["issues_resolved"]
+    order = [c for c, _ in release_manifest.SECTIONS]
+    out += ["## Issues resolved (%d)" % len(issues), "",
+            "%s The full record, with the pull request that resolved each one, is "
+            "`wd2l-%s-release-manifest.md` (and `.json`, the authoritative copy)." % (
+                ("Since %s." % ch["since"]) if ch["since"] else "Since the first commit.", v), ""]
+    if issues:
+        out += ["| Issue | Category | Title |", "|---|---|---|"]
+        for i in sorted(issues, key=lambda i: (order.index(i["category"]), i["number"])):
+            out.append("| [#%d](%s)%s | %s | %s |" % (i["number"], i["url"], " †" if i["retroactive"] else "",
+                                                     i["category"], release_manifest.esc(i["title"])))
+        if any(i["retroactive"] for i in issues):
+            out += ["", "† Recorded after its work had merged."]
+        out.append("")
+    return out
+
+
 def notes(names: Dict[str, Any], image: str, digest: str, sums_text: str,
           base_record: Dict[str, Any], repo_url: str, run_url: str, commit: str,
-          platforms: Dict[str, str]) -> str:
+          platforms: Dict[str, str], man: Optional[Dict[str, Any]] = None,
+          attestation_urls: Optional[Dict[str, str]] = None) -> str:
     v, tag = names["pep440"], names["tag"]
     doc = "%s/blob/%s/docs" % (repo_url, tag)
     out = []
     if names["prerelease"]:
         out += ["> **Pre-release** for testing. Not for production.", ""]
-    out += ["wd2l %s, built from commit `%s` by [this workflow run](%s)." % (v, commit, run_url), "",
-            "## Install", "",
+    out += ["wd2l %s, built from commit `%s` by [this workflow run](%s)." % (v, commit, run_url), ""]
+    if man:
+        out += resolved(man, v)
+    out += ["## Install", "",
             "* **RPMs** for RHEL 9 (`el9`) and RHEL 10 (`el10`): `wd2l` plus `wd2l-sender` on the "
             "log server ([guide](%s/deployment/log-server.md)), or `wd2l` plus `wd2l-receiver` on "
             "the receiver host ([guide](%s/deployment/receiver.md))." % (doc, doc),
@@ -59,8 +89,11 @@ def notes(names: Dict[str, Any], image: str, digest: str, sums_text: str,
         out.append("gh attestation verify oci://%s@%s %s --bundle-from-oci" % (image, digest, pin))
     out += ["# offline: add --bundle wd2l-%s-attestations.jsonl --custom-trusted-root "
             "trusted_root.jsonl (docs/releasing.md)" % v,
-            "```", "",
-            "## Image", ""]
+            "```", ""]
+    pages = [(k, u) for k, u in sorted((attestation_urls or {}).items()) if u]
+    if pages:
+        out += ["Attestation pages: %s." % ", ".join("[%s](%s)" % (k, u) for k, u in pages), ""]
+    out += ["## Image", ""]
     out.append("`%s@%s`" % (image, digest) if digest else "Image not published (dry run).")
     if digest and platforms:
         out += ["", "One index for both platforms; each platform's own image:", "",
@@ -81,6 +114,8 @@ def notes(names: Dict[str, Any], image: str, digest: str, sums_text: str,
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     p = argparse.ArgumentParser(description="Release notes for the draft release.")
+    p.add_argument("--manifest", help="the release manifest (its summary and issues)")
+    p.add_argument("--attestation-url", action="append", default=[], metavar="NAME=URL")
     p.add_argument("--image", default=IMAGE)
     p.add_argument("--image-digest", default="")
     p.add_argument("--platform-digest", action="append", default=[], metavar="ARCH=DIGEST")
@@ -95,8 +130,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     with open(a.base_record) as f:
         rec = json.load(f)
     platforms = dict(x.split("=", 1) for x in a.platform_digest)
+    man = None
+    if a.manifest:
+        with open(a.manifest) as f:
+            man = json.load(f)
     sys.stdout.write(notes(versions.names(versions.read_version()), a.image, a.image_digest, sums,
-                           rec, a.repo_url, a.run_url, a.commit, platforms))
+                           rec, a.repo_url, a.run_url, a.commit, platforms, man,
+                           dict(x.split("=", 1) for x in a.attestation_url)))
     return 0
 
 

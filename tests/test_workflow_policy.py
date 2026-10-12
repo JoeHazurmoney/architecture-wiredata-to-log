@@ -185,3 +185,39 @@ def test_each_platform_tar_is_saved_before_the_older_format_signature():
 def test_extra_tags_point_at_the_index_only_after_it_is_checked():
     push = read("publish.yml").split("- id: push", 1)[1].split("- name:", 1)[0]
     assert push.index("image_index.py") < push.index("oras tag")
+
+
+def test_assets_makes_the_manifest_with_reads_only_before_sha256sums():
+    # docs/decisions/0008-release-manifest.md: the manifest is a release file, so SHA256SUMS
+    # (signed), the SLSA provenance and the release attestation all cover it.
+    a = jobs(read("release.yml"))["assets"]
+    perms = a.split("permissions:\n", 1)[1].split("    env:\n", 1)[0]
+    assert set(re.findall(r"^\s+([\w-]+): (\w+)$", perms, re.M)) == {
+        ("contents", "read"), ("issues", "read"), ("pull-requests", "read"), ("actions", "read")}
+    assert "GH_TOKEN: ${{ github.token }}" in a and "secrets." not in a
+    assert "fetch-depth: 0" in a
+    assert "--require-hashes -r packaging/release/requirements.txt" in a
+    order = [a.index(s) for s in ("manifest.py generate", "manifest.py validate", "manifest.py render",
+                                  "sha256sum -- * > SHA256SUMS")]
+    assert order == sorted(order)
+    assert '"${dry[@]}"' in a and "GITHUB_STEP_SUMMARY" in a
+
+
+def test_a_tag_without_its_summary_stops_before_anything_is_built():
+    v = jobs(read("release.yml"))["version"]
+    assert "docs/releases/$(python3 packaging/release/versions.py --get pep440).md" in v
+
+
+def test_the_tests_install_the_manifest_requirements():
+    # Otherwise the schema tests would skip silently in CI.
+    assert "python -m pip install --require-hashes -r packaging/release/requirements.txt" in \
+        jobs(read("tests.yml"))["pytest"]
+
+
+def test_notes_get_the_manifest_and_the_attestation_pages():
+    rel = jobs(read("release.yml"))["release"]
+    assert '--manifest "assets/wd2l-$V-release-manifest.json"' in rel
+    assert "needs.attest.outputs.files-url" in rel and "needs.attest.outputs.image-url" in rel
+    att = read("attest.yml")
+    assert "files-url: ${{ steps.files.outputs.attestation-url }}" in att
+    assert "image-url: ${{ steps.image.outputs.attestation-url }}" in att

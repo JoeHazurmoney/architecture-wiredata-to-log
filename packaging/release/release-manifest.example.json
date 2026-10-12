@@ -1,0 +1,80 @@
+{
+ "schema_version": 1,
+ "release": {"product": "wd2l", "version": "1.1.0", "tag": "v1.1.0", "prerelease": false, "dry_run": false},
+ "source": {
+  "repository": "https://github.com/JoeHazurmoney/architecture-wiredata-to-log",
+  "commit": "3e7b91c05fa2d84e6b17c3a9f0d52e8b4c6a1f73",
+  "commit_date": "2026-12-18T14:03:11Z",
+  "previous_release": {"tag": "v1.0.0", "commit": "a14f8e3b7c92d06e5f81b4a7c3e09d26f5b8a410"},
+  "previous_tag": {"tag": "v1.1.0rc1", "commit": "9f2c1ab4e8d7a3f501b6c9e2d84a7f3b1c0e5d69"}
+ },
+ "generated": {
+  "at": "2026-12-18T15:22:04Z",
+  "by": "packaging/release/manifest.py",
+  "run": {"id": "38884213", "attempt": 1,
+          "url": "https://github.com/JoeHazurmoney/architecture-wiredata-to-log/actions/runs/38884213",
+          "workflow_ref": "JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/release.yml@refs/tags/v1.1.0"}
+ },
+ "summary": {"file": "docs/releases/1.1.0.md",
+             "sha256": "5b1d1c0b6e1f3e8d2a7c9b4f0e6d3a2c1b9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d",
+             "text": "## What changed since 1.0.0\n\n* The receiver keeps its spool when the disk is full.\n"},
+ "changes": {
+  "since": "v1.0.0",
+  "pull_requests": [
+   {"number": 81, "title": "fix(receiver): keep the spool on a full disk",
+    "url": "https://github.com/JoeHazurmoney/architecture-wiredata-to-log/pull/81",
+    "merged_at": "2026-11-30T10:12:00Z", "commit": "c0ffee05fa2d84e6b17c3a9f0d52e8b4c6a1f701",
+    "type": "fix", "first_tag": "v1.1.0rc1", "closes": [79]},
+   {"number": 84, "title": "build(deps): bump hi/grype from 0.120 to 0.121 in /packaging/ci",
+    "url": "https://github.com/JoeHazurmoney/architecture-wiredata-to-log/pull/84",
+    "merged_at": "2026-12-15T09:00:00Z", "commit": "3e7b91c05fa2d84e6b17c3a9f0d52e8b4c6a1f73",
+    "type": "build", "first_tag": "v1.1.0", "closes": []}
+  ],
+  "direct_commits": [],
+  "issues_resolved": [
+   {"number": 79, "title": "The receiver drops its spool when the disk fills",
+    "url": "https://github.com/JoeHazurmoney/architecture-wiredata-to-log/issues/79",
+    "category": "bug", "labels": ["bug"], "retroactive": false, "resolved_by": [81],
+    "resolved_at": "2026-11-30T10:12:00Z", "first_tag": "v1.1.0rc1"}
+  ],
+  "pull_requests_without_issue": [84]
+ },
+ "known_issues": [
+  {"number": 88, "title": "The lab's --loss 1 run sometimes misses a reconcile record",
+   "url": "https://github.com/JoeHazurmoney/architecture-wiredata-to-log/issues/88", "labels": ["bug"]}
+ ],
+ "deliverables": [
+  {"name": "wd2l-1.1.0-1.el9.noarch.rpm", "kind": "rpm", "size": 151234,
+   "sha256": "e4a7b2c9d1f0a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b3"},
+  {"name": "wd2l-1.1.0-image-amd64-oci.tar", "kind": "oci-image", "size": 41234567,
+   "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"},
+  {"name": "wd2l-1.1.0-image-amd64.spdx.json", "kind": "sbom", "size": 912034,
+   "sha256": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}
+ ],
+ "image": {"name": "ghcr.io/joehazurmoney/wd2l", "tags": ["1.1.0", "1.1"],
+           "index_digest": "sha256:decdd94e0038de2c7899f7b960fdc9691da9c45d373bf332f8088a839c6da40b",
+           "platforms": {"amd64": "sha256:4dd7412746ab38ead59357f4c78b672ace1fd917a955ebac04fa66b655f03233",
+                         "arm64": "sha256:b7d160a3a4de99421220cfc87adb7e4b200b676539d632200c64d5512b1d2d75"}},
+ "base_images": [
+  {"stage": "runtime", "ref": "registry.access.redhat.com/hi/python:3.12-fips@sha256:26d5e70520b1bda08556041ea6a45034a7bb789c776e8054bcc06151de0c3067",
+   "index_digest": "sha256:26d5e70520b1bda08556041ea6a45034a7bb789c776e8054bcc06151de0c3067",
+   "platforms": {"amd64": "sha256:ab78f97443fd495dbd90272a53040696c633112f82456ac997bb971a5a321411"},
+   "release": "1791440965", "source_image": "registry.access.redhat.com/hi/python:1791440965-source"}
+ ],
+ "build_environment": {
+  "actions": [{"action": "actions/checkout", "commit": "3d3c42e5aac5ba805825da76410c181273ba90b1", "version": "v7.0.1"}],
+  "tool_images": [{"name": "cosign", "ref": "registry.access.redhat.com/hi/cosign:latest@sha256:9d892a27d5ecc4235ce101798ea6d9f5f46221eb7447e309793db1c2450e384e"}],
+  "runners": ["ubuntu-24.04", "ubuntu-24.04-arm"]
+ },
+ "changelog": null,
+ "approvals": [{"environment": "release", "user": "JoeHazurmoney", "state": "approved", "comment": ""}],
+ "verification": {
+  "public_key_sha256": "7d4a8b2c9e1f0a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b",
+  "signer_workflow": "JoeHazurmoney/architecture-wiredata-to-log/.github/workflows/attest.yml",
+  "sealed_by": ["SHA256SUMS", "SHA256SUMS.sigstore.json", "wd2l-1.1.0-attestations.jsonl"],
+  "attestations": [
+   {"predicate_type": "https://slsa.dev/provenance/v1", "signed_by": "attest.yml (GitHub, keyless)",
+    "covers": "every file in SHA256SUMS, the image index and each platform image"}
+  ]
+ }
+}

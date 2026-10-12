@@ -32,6 +32,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install pytest
+      # The release manifest's schema validator: its tests skip only where it's missing.
+      - run: python -m pip install --require-hashes -r packaging/release/requirements.txt
       - run: python -m pytest -q
       - name: Byte-compile everything (catches syntax the oldest Python can't read)
         run: python -m compileall -q wd2l lab tests packaging
