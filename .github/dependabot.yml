@@ -2,11 +2,18 @@ version: 2
 updates:
   # Base image digests (packaging/container/Containerfile) and CI tool digests
   # (packaging/ci/tools.Containerfile). Each PR runs the whole image pipeline.
+  # Titles follow the commit convention (docs/releasing.md): "build(deps): bump ...".
   - package-ecosystem: docker
     directories: ["/packaging/container", "/packaging/ci"]
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "build"
+      include: "scope"
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+    commit-message:
+      prefix: "build"
+      include: "scope"

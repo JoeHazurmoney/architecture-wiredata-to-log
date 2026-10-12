@@ -1,0 +1,20 @@
+name: pr-title
+# The commit convention's blocking check (docs/releasing.md, "Conventions"). A squash merge
+# lands the PR title as the commit subject on main (the repository's squash setting), so the
+# title must be a Conventional Commit. main's ruleset requires this check. tests.yml warns if
+# a title edited after this check lands anyway.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  pr-title:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The title is a Conventional Commit
+        env:
+          # The title is data: passed in the environment, never pasted into the script.
+          TITLE: ${{ github.event.pull_request.title }}
+        run: python3 packaging/ci/check_title.py "$TITLE"
