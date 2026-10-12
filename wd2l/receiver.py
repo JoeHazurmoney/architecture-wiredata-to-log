@@ -394,6 +394,7 @@ class Receiver:
         self.counters = {"frames": 0, "other_packets": 0, "bad_frames": 0, "bad_events": 0,
                          "events_delivered": 0, "duplicates": 0, "late_fills": 0,
                          "gap_events": 0, "heartbeats": 0, "kernel_drops": 0,
+                         "capture_down_errors": 0,
                          "uncommitted_at_start": 0, "output_dropped": 0,
                          "records_delivered": 0, "records_bad": 0}
         self.other_reasons: Dict[str, int] = {}
@@ -1248,6 +1249,14 @@ def steady_clock() -> Callable[[], float]:
     return lambda: wall0 + (time.monotonic() - mono0)
 
 
+def poll_capture(rx: "Receiver", cap: Any) -> None:
+    """Every 0.2 s of live capture: the kernel's drops since the last call, and how many reads
+    found the capture NIC down since the start (rule 1 locates the outage; this counts it)."""
+    _, drops = cap.kernel_stats()
+    rx.counters["kernel_drops"] += drops
+    rx.counters["capture_down_errors"] = cap.down_errors
+
+
 def _stop_counters(rx: "Receiver") -> Dict[str, int]:
     return {k: rx.counters[k] for k in ("events_delivered", "gap_events", "late_fills",
                                         "duplicates", "output_dropped")}
@@ -1343,8 +1352,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if frame is not None:
                 rx.handle_frame(frame, now)
             if now - last >= 0.2:
-                _, drops = cap.kernel_stats()
-                rx.counters["kernel_drops"] += drops
+                poll_capture(rx, cap)
                 rx.tick(now)
                 rx.flush()
                 last = now

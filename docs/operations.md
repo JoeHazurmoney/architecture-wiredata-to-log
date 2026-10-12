@@ -38,6 +38,7 @@ carry `records: true`. The `health` counters, cumulative since the receiver star
 | `clock_offset_s` | Receiver clock minus sender clock at the last heartbeat (plus under 1 ms of fiber delay) | within a few ms of 0 |
 | `other_packets`, `bad_frames`, `bad_events`, `digest_mismatch` (with `*_reasons`) | Traffic that isn't the log flow; corrupt or malformed input | 0 |
 | `kernel_drops` | Packets the kernel dropped before the receiver read them | 0 |
+| `capture_down_errors` | Reads that found the capture NIC down since the receiver started, about two a second while it is down (rule 1 says where) | 0 |
 | `reasm_expired`, `reasm_evicted`, `event_too_big` | Split events that never completed | 0 |
 | `sender_drops`, `sender_truncated`, `sender_bad_input`, `sender_unread_bytes`, `sender_opaque_events`, `sender_events_in` | From the sender's heartbeat | 0; truncated and opaque at your sources' usual level; `sender_events_in` grows with `events_delivered` |
 | `hec_*` (`events_sent`, `spool_files`, `spool_bytes`, `posts_failed`, `rejected_events`, `queue_overflow_events`) | SIEM delivery; `audit_hec_*` for the audit output | spool, rejected, overflow 0 |
