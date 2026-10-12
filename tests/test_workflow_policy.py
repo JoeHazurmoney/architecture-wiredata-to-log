@@ -12,7 +12,11 @@ from typing import Dict
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 WORKFLOWS = os.path.join(REPO, ".github", "workflows")
 RELEASE_PATH = ("tests.yml", "image.yml", "rpm.yml", "publish.yml", "release.yml", "attest.yml")
-GITHUB_HOSTED = ("ubuntu-24.04", "ubuntu-latest")
+GITHUB_HOSTED = ("ubuntu-24.04", "ubuntu-latest", "ubuntu-24.04-arm")
+# The arm64 runner only where the image is built or run natively for arm64.
+ARM_JOBS = {("image.yml", "build"), ("image.yml", "reproducible"), ("image.yml", "hardening"),
+            ("image.yml", "functional"), ("image.yml", "fips-tests")}
+BOTH_ARCHES = ARM_JOBS | {("image.yml", "vuln-scan"), ("image.yml", "sbom")}
 THIS_REPO_AND_A_TAG = ("if: ${{ github.repository == 'JoeHazurmoney/architecture-wiredata-to-log'"
                        " && startsWith(github.ref, 'refs/tags/v') }}")
 
@@ -62,10 +66,32 @@ def test_nothing_is_shared_between_runs_on_the_release_path():
         assert not re.search(r"^\s+run-id:", text, re.M), name    # another run's artifacts
 
 
+def runners(body: str):
+    """The runner labels a job can use: its runs-on, or each matrix entry's runner."""
+    label = re.search(r"^\s+runs-on:\s*(.+?)\s*$", body, re.M).group(1)
+    if "matrix.runner" in label:
+        return re.findall(r"runner:\s*([\w.-]+)", body)
+    return [label]
+
+
 def test_release_path_runs_on_github_hosted_runners():
     for name in RELEASE_PATH:
-        for label in re.findall(r"^\s+runs-on:\s*(.+?)\s*$", read(name), re.M):
-            assert label in GITHUB_HOSTED, (name, label)
+        for job, body in jobs(read(name)).items():
+            if "runs-on:" not in body:
+                continue                      # a call to a reusable workflow
+            for label in runners(body):
+                assert label in GITHUB_HOSTED, (name, job, label)
+                if label.endswith("-arm"):
+                    assert (name, job) in ARM_JOBS, (name, job)
+
+
+def test_every_image_check_runs_for_both_architectures():
+    for name, job in sorted(BOTH_ARCHES):
+        body = jobs(read(name))[job]
+        assert "arch: amd64" in body and "arch: arm64" in body, (name, job)
+        assert "fail-fast: false" in body, (name, job)
+    for name, job in sorted(ARM_JOBS):
+        assert "runner: ubuntu-24.04-arm" in jobs(read(name))[job], (name, job)
 
 
 def test_attest_yml_runs_only_for_this_repo_and_a_tag():
