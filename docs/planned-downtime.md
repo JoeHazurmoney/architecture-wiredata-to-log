@@ -132,6 +132,10 @@ below). A `heartbeat_stale` record is expected: the sender is still stopped. If 
 rebooted, an aggregator that starts at boot is no longer held: hold it again before step 7. Tell
 Enclave 1 the receiver is up.
 
+**Waiting for the clock.** The receiver and the sender start only once chrony has synced
+(`chrony-wait`, at most about 3 minutes). After a boot where chrony never synced (an NTP or GPS
+outage), each start waits that long, then starts anyway, and the time tile shows the alarm.
+
 **7. Enclave 1: check the egress NIC, then start the sender:**
 
 ```bash

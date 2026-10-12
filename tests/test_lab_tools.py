@@ -1,8 +1,11 @@
+import os
 import socket
 import threading
 import time
 
 from lab import fake_cribl
+
+REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
 
 def free_port():
@@ -51,3 +54,13 @@ def test_the_stand_in_aggregator_gives_up_after_its_wait():
     else:
         raise AssertionError("connected to nothing")
     assert time.monotonic() - start < 2
+
+
+def test_lab_names_its_packages_for_both_families():
+    # `tc` is its own package (iproute-tc) on RHEL; the hint named only Ubuntu's packages.
+    with open(os.path.join(REPO, "lab", "run-lab.sh"), encoding="utf-8") as f:
+        text = f.read()
+    assert "dnf install iproute iproute-tc nftables tcpdump" in text
+    assert "apt install iproute2 nftables tcpdump" in text
+    with open(os.path.join(REPO, "docs", "running-the-lab.md"), encoding="utf-8") as f:
+        assert "iproute iproute-tc nftables tcpdump" in f.read()

@@ -6,6 +6,8 @@
 Description=wd2l sender (container): log aggregator JSON lines in, one-way UDP frames out
 # Wait for the clock (chrony-wait, at most about 3 minutes), so the first time stamps and the
 # first time check aren't from an unsynced clock. The capture (tcpdump) doesn't wait.
+# If chrony never synced since boot (an NTP or GPS outage), every start waits that long again,
+# then starts anyway (Wants=, not Requires=): docs/planned-downtime.md.
 After=network-online.target wd2l-egress-nic.service time-sync.target
 Wants=network-online.target time-sync.target chrony-wait.service
 Requires=wd2l-egress-nic.service

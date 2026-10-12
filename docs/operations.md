@@ -233,7 +233,8 @@ On a manual install (code in `/opt/wd2l`), put `env PYTHONPATH=/opt/wd2l` after 
 and for `python3 -m wd2l.audit verify` above. In a container, see
 [containers.md](deployment/containers.md#replay-from-the-archive).
 `--audit-dir` records the replay (`replay_run`, naming you); it needs the audit token too (name the
-same file twice if the site uses one token).
+same file twice if the site uses one token). A start can wait up to about 3 minutes for the clock
+([waiting for the clock](planned-downtime.md#start)).
 
 The summary's `late_fills` is how many gap events it recovered, and `open_gap_events` what is still
 missing. tcpdump keeps capturing while the receiver is stopped, so the stop loses nothing: the
