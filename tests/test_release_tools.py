@@ -257,3 +257,13 @@ def test_releasing_md_brings_in_one_platform():
         doc = f.read()
     assert "tar -xf wd2l-<version>-image-<arch>-oci.tar" in doc
     assert "sudo skopeo copy oci:wd2l-oci containers-storage:ghcr.io/joehazurmoney/wd2l:<version>" in doc
+
+
+def test_releasing_md_names_the_attestation_types_publish_uses():
+    with open(os.path.join(REPO, "docs", "releasing.md"), encoding="utf-8") as f:
+        doc = f.read()
+    pub = workflow("publish.yml")
+    for t in ("base-image-record/v2", "vuln-scan/v1"):
+        assert t in pub and "/attestations/" + t in doc, t
+    assert "base-image-record/v1" not in doc
+    assert "wd2l-<version>-vuln-summary-<arch>.md" in doc and "`vuln-<arch>`" in doc

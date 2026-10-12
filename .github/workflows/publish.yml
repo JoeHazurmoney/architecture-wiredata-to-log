@@ -91,7 +91,6 @@ jobs:
           set -- ${{ steps.v.outputs.image_tags }}
           podman manifest push --all --format oci --digestfile digest.txt localhost/wd2l:release "docker://$IMAGE:$1"
           D=$(cat digest.txt); shift
-          for t in "$@"; do packaging/ci/tool oras tag --registry-config /auth/config.json "$IMAGE@$D" "$t"; done
           skopeo inspect --raw "docker://$IMAGE@$D" > index.json
           for a in amd64 arm64; do
             c=$(jq -r --arg a $a '.manifests[] | select(.platform.architecture == $a) | .digest' index.json)
@@ -101,6 +100,8 @@ jobs:
             --manifest amd64=manifest-amd64.json --manifest arm64=manifest-arm64.json \
             --build-info amd64=build-info-amd64/build-info.json --build-info arm64=build-info-arm64/build-info.json \
             --github-output "$GITHUB_OUTPUT"
+          # The other tags only once the index holds exactly the tested images.
+          for t in "$@"; do packaging/ci/tool oras tag --registry-config /auth/config.json "$IMAGE@$D" "$t"; done
           echo "digest=$D" >> "$GITHUB_OUTPUT"
       - name: Mirror the base images, their records and the runtime base's sources
         run: |
@@ -129,11 +130,6 @@ jobs:
             --mirror "$BASE_MIRROR" --started "$(jq -rs 'map(.started) | min' build-info-*/build-info.json)" > provenance.json
           S() { packaging/ci/tool cosign "$@" --key env://COSIGN_PRIVATE_KEY \
                   --signing-config /work/packaging/release/signing-config.json --yes; }
-          # Podman's sigstoreSigned policy reads only cosign's older .sig format: sign each platform
-          # image that way too (docs/deployment/containers.md). The flags are deprecated; if a
-          # cosign update drops them this step fails, and import-check would catch a missing one.
-          L() { packaging/ci/tool cosign sign --key env://COSIGN_PRIVATE_KEY \
-                  --new-bundle-format=false --use-signing-config=false --tlog-upload=false --yes "$@"; }
           S sign --recursive "$IMAGE@$D"
           for d in "$D" "$CA" "$CR"; do
             S attest --type slsaprovenance1 --predicate /work/provenance.json "$IMAGE@$d"
@@ -143,16 +139,30 @@ jobs:
             c=$CA; [ "$a" = arm64 ] && c=$CR
             S attest --type spdxjson --predicate "/work/sbom-$a/wd2l.spdx.json" "$IMAGE@$c"
             S attest --type "$ATT/vuln-scan/v1" --predicate "/work/vuln-$a/vuln-predicate.json" "$IMAGE@$c"
-            L "$IMAGE@$c"
           done
       - name: Save each platform's image with its signatures and attestations, for offline enclaves
         run: |
           # One tar per platform: cosign save keeps a platform image's signatures, not an index's.
+          # Saved before the older-format signature below: cosign save would list that .sig as a
+          # second image, and `skopeo copy oci:wd2l-oci` then stops ("more than one image").
           for a in amd64 arm64; do
             c=${{ steps.push.outputs.digest_amd64 }}; [ "$a" = arm64 ] && c=${{ steps.push.outputs.digest_arm64 }}
             mkdir -p "save-$a"
             packaging/ci/tool cosign save --dir "/work/save-$a/wd2l-oci" "$IMAGE@$c"
             tar -C "save-$a" -cf "wd2l-${{ steps.v.outputs.pep440 }}-image-$a-oci.tar" wd2l-oci
+          done
+      - name: Older-format signature on each platform image, for Podman's signature policy
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          TOOL_ENV: COSIGN_PRIVATE_KEY COSIGN_PASSWORD
+        run: |
+          # Podman's sigstoreSigned policy reads only cosign's older .sig format
+          # (docs/deployment/containers.md). The flags are deprecated; if a cosign update drops
+          # them this step fails, and import-check would catch a missing signature.
+          for c in ${{ steps.push.outputs.digest_amd64 }} ${{ steps.push.outputs.digest_arm64 }}; do
+            packaging/ci/tool cosign sign --key env://COSIGN_PRIVATE_KEY \
+              --new-bundle-format=false --use-signing-config=false --tlog-upload=false --yes "$IMAGE@$c"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

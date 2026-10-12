@@ -164,3 +164,15 @@ def test_import_check_runs_the_offline_import_and_the_podman_policy_on_both_plat
     imp = jobs(read("publish.yml"))["import-check"]
     assert "skopeo copy -q oci:wd2l-oci" in imp and 'type: "sigstoreSigned"' in imp
     assert "--remove-signatures" in imp
+
+
+def test_each_platform_tar_is_saved_before_the_older_format_signature():
+    # cosign save lists an older-format .sig as a second image in the layout, and then
+    # `skopeo copy oci:wd2l-oci` stops with "more than one image in oci" (final review, S9).
+    pub = jobs(read("publish.yml"))["publish"]
+    assert pub.index("cosign save --dir") < pub.index("--new-bundle-format=false")
+
+
+def test_extra_tags_point_at_the_index_only_after_it_is_checked():
+    push = read("publish.yml").split("- id: push", 1)[1].split("- name:", 1)[0]
+    assert push.index("image_index.py") < push.index("oras tag")

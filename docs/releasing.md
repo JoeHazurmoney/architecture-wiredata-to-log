@@ -247,9 +247,10 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
   the SARIF files after each push to `main`).
 * **A run's Summary tab.** The vulnerability gate's verdict, then every finding with the reason
   it did or didn't block (for example "passed: no fix yet"). A release carries the same table
-  as `wd2l-<version>-vuln-summary.md`.
-* **A run's artifacts.** `vuln` holds Grype's and Trivy's full JSON and SARIF; `sbom` the SBOMs;
-  `base-evidence` the base images' checks. GitHub deletes artifacts after the retention period.
+  for each platform as `wd2l-<version>-vuln-summary-<arch>.md`.
+* **A run's artifacts.** `vuln-<arch>` holds Grype's and Trivy's full JSON and SARIF; `sbom-<arch>`
+  the SBOMs; `base-evidence` the base images' checks. GitHub deletes artifacts after the
+  retention period.
 * **GitHub's attestations page:**
   `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations` lists every
   attestation `attest.yml` made, with its subjects.
@@ -257,7 +258,7 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
   record:
 
   ```bash
-  I=ghcr.io/joehazurmoney/wd2l@sha256:<digest from the release notes>
+  I=ghcr.io/joehazurmoney/wd2l@sha256:<your platform's digest from the release notes>
   cosign tree "$I"
   cosign verify-attestation --key cosign.pub --insecure-ignore-tlog --type slsaprovenance1 "$I" \
     | jq -r .payload | base64 -d | jq .predicate
@@ -265,7 +266,9 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
 
   The other `--type` values are `spdxjson`,
   `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations/vuln-scan/v1` and
-  `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations/base-image-record/v1`.
+  `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations/base-image-record/v2`.
+  The SBOM and the scan summary are on each platform's image; the provenance and the base record
+  are on those and on the index.
 
 ## After a release
 
