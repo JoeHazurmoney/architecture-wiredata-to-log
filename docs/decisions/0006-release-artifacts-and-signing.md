@@ -136,6 +136,10 @@ Rejected.
     commit, and it is signed.
   * cosign 3 prefers signing configs; a later version may change these flags again. The [release
     plan's Phase 0 check 7](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md) is the test to rerun after a cosign upgrade.
+* **Update (0.3.0rc5):** the image is one index for linux/amd64 and linux/arm64. The index and
+  each platform image are signed; each platform image is also signed in cosign's older `.sig`
+  format, which Podman's signature policy reads. `cosign save` keeps a platform image's
+  signatures but not an index's, so the offline tar is one per platform.
 * **Revisit** when the repository goes public:
   * add GitHub artifact attestations (`actions/attest-build-provenance`) and keyless signatures
     **alongside** the key, and keep the key for offline enclaves;

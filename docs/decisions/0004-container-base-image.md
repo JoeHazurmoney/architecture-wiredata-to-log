@@ -221,6 +221,9 @@ they change with every rebuild and every new disclosure.
   * Tags float, so we pin digests, take Dependabot's updates and rescan weekly. (The `3.12-fips`
     index changed between 2026-10-07 and 2026-10-08.)
   * The packages are Fedora-derived, not RHEL errata.
+* **Update (0.3.0rc5):** wd2l is built for linux/amd64 and linux/arm64. Both platforms of each
+  pinned base index are verified and recorded (base-image record v2: each platform's config and
+  SBOM, the same release on both).
 * **Revisit** when any of these happens:
   1. Red Hat changes the Hardened Images terms, or drops the FIPS variant.
   2. A policy requires RHEL-built packages inside the image (move to option B).

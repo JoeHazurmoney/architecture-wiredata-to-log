@@ -254,3 +254,10 @@ def test_containers_md_relabels_after_podman_and_never_mounts_var_lib_with_z():
         doc = f.read()
     assert "/var/lib/wd2l:/var/lib/wd2l:z" not in doc
     assert "sudo restorecon -RF /var/lib/wd2l" in doc
+
+
+def test_containers_md_gives_a_working_signature_policy():
+    with open(os.path.join(REPO, "docs", "deployment", "containers.md"), encoding="utf-8") as f:
+        doc = f.read()
+    assert '"type": "sigstoreSigned"' in doc and "use-sigstore-attachments: true" in doc
+    assert "whether Podman's `sigstoreSigned` policy accepts" not in doc

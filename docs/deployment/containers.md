@@ -29,8 +29,8 @@ Use the container or the native unit on a host, never both. Both read the same o
 
 ## Bring the image in (offline)
 
-Verify the release and load the image as [releasing.md](../releasing.md#bringing-a-release-into-an-enclave)
-says. Then check that the loaded image is the one the release notes name:
+Verify the release and load your platform's image as [releasing.md](../releasing.md#bringing-a-release-into-an-enclave)
+says. Then check that the loaded image is your platform's image in the release notes:
 
 ```bash
 sudo podman image inspect --format '{{.Digest}}' ghcr.io/joehazurmoney/wd2l:<version>
@@ -48,17 +48,36 @@ sudo podman pull ghcr.io/joehazurmoney/wd2l@$D
 sudo podman tag ghcr.io/joehazurmoney/wd2l@$D ghcr.io/joehazurmoney/wd2l:<version>
 ```
 
-Podman's own signature policy (`sigstoreSigned` in `/etc/containers/policy.json`) isn't used
-here yet. The release's signatures are cosign 3 Sigstore bundles, stored as OCI referrers, and
-it isn't confirmed yet that Podman reads them (see the list under
-[User, SELinux and FIPS](#user-selinux-and-fips)).
+## Signature policy (registry pulls)
+
+A host that pulls from a registry can have Podman check the signature itself, on every pull.
+Put `cosign.pub` (from a trusted channel) at `/etc/pki/wd2l/cosign.pub`. Then
+`/etc/containers/registries.d/wd2l.yaml`:
+
+```yaml
+docker:
+  ghcr.io/joehazurmoney:
+    use-sigstore-attachments: true
+```
+
+and in `/etc/containers/policy.json`, under `transports.docker`:
+
+```json
+"ghcr.io/joehazurmoney/wd2l": [{"type": "sigstoreSigned", "keyPath": "/etc/pki/wd2l/cosign.pub",
+                                "signedIdentity": {"type": "matchRepository"}}]
+```
+
+Podman reads only cosign's older signature format, so every release also signs each platform
+image that way. Pulling by the index digest checks your platform's image. The release workflow
+checks this policy on both platforms (`import-check`); it was also checked on AlmaLinux 10
+(Podman 5.8).
 
 ## Install the unit
 
 ```bash
 sudo systemctl disable --now wd2l-receiver.service 2>/dev/null   # the native unit, if it was on
 sudo cp /usr/share/wd2l/quadlet/wd2l-receiver.container /etc/containers/systemd/
-# strict change control: name the release's digest instead of the tag
+# strict change control: name your platform's digest from the release notes instead of the tag
 sudo sed -i 's|^Image=.*|Image=ghcr.io/joehazurmoney/wd2l@sha256:<digest from the release notes>|' \
   /etc/containers/systemd/wd2l-receiver.container
 # auditd: who changes the Quadlet unit. A file of its own, because the watch needs Podman's
@@ -110,7 +129,6 @@ They stop it within the native units' times: 30 s for the sender and 60 s for th
   * the user name resolves;
   * the options from the env file reach wd2l;
   * the first start over sealed audit files, with the steps above;
-  * whether Podman's `sigstoreSigned` policy accepts the release's signatures.
 
   If one doesn't, this section will say what to use instead.
 * **FIPS.** The image always uses OpenSSL's FIPS provider, and MD5 is refused. It is **validated

@@ -81,6 +81,8 @@ Stays as the offline base, but it tops out at about L2: our workflow signs its o
     `--certificate-github-workflow-repository` for cosign).
 * **The claim's limits:** L3 holds as long as `attest.yml` is the only OIDC holder and changes
   only through `main`'s rules. Both are enforced (the policy test, the rulesets).
+* **Update (0.3.0rc5):** the GitHub attestations and keyless signatures cover the image index
+  and both platform images (linux/amd64, linux/arm64), each built on a GitHub-hosted runner.
 
 ## Action items
 

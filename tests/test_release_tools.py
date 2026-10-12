@@ -250,3 +250,10 @@ def test_notes_skip_a_platform_without_a_digest(tmp_path, capsys):
                        "--run-url", "u", "--commit", "e" * 40, "--image-digest", "",
                        "--platform-digest", "amd64=", "--platform-digest", "arm64="]) == 0
     assert "| linux/amd64 |" not in capsys.readouterr().out
+
+
+def test_releasing_md_brings_in_one_platform():
+    with open(os.path.join(REPO, "docs", "releasing.md"), encoding="utf-8") as f:
+        doc = f.read()
+    assert "tar -xf wd2l-<version>-image-<arch>-oci.tar" in doc
+    assert "sudo skopeo copy oci:wd2l-oci containers-storage:ghcr.io/joehazurmoney/wd2l:<version>" in doc
