@@ -1,6 +1,7 @@
 name: publish
-# Pushes, signs and attests the image that image.yml built in the same run, mirrors its base
-# images with their records and sources, and verifies it all as a consumer would, offline too
+# Pushes, signs and attests the image that image.yml built in the same run (one index for
+# linux/amd64 and linux/arm64), mirrors its base images with their records and sources, and
+# verifies it all as a consumer would, offline too, on both platforms
 # (docs/decisions/0006-release-artifacts-and-signing.md). Called by release.yml after image.yml;
 # never on push or PR, so they never hold package-write permission.
 on:
@@ -10,6 +11,10 @@ on:
     outputs:
       digest:
         value: ${{ jobs.publish.outputs.digest }}
+      digest_amd64:
+        value: ${{ jobs.publish.outputs.digest_amd64 }}
+      digest_arm64:
+        value: ${{ jobs.publish.outputs.digest_arm64 }}
 defaults:
   run:
     shell: bash
@@ -25,27 +30,78 @@ jobs:
       packages: write
     outputs:
       digest: ${{ steps.push.outputs.digest }}
+      digest_amd64: ${{ steps.push.outputs.digest_amd64 }}
+      digest_arm64: ${{ steps.push.outputs.digest_arm64 }}
     env:
       IMAGE: ghcr.io/joehazurmoney/wd2l
       BASE_MIRROR: ghcr.io/joehazurmoney/wd2l-base/python
       ATT: https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # One download per artifact, by name: the image archives and evidence of each platform.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: "{dist,image,build-info,base-evidence,sbom,vuln}"
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-evidence
+          path: base-evidence
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-amd64
+          path: image-amd64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-arm64
+          path: image-arm64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-info-amd64
+          path: build-info-amd64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-info-arm64
+          path: build-info-arm64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom-amd64
+          path: sbom-amd64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom-arm64
+          path: sbom-arm64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vuln-amd64
+          path: vuln-amd64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vuln-arm64
+          path: vuln-arm64
       - id: v
         run: python3 packaging/release/versions.py --github-output "$GITHUB_OUTPUT"
       - name: Log in to ghcr.io
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
       - id: push
-        name: Push, with each tag
+        name: Push one index for both platforms, with each tag, and check it holds the tested images
         run: |
-          IMG=$(podman load -q -i image/image.oci.tar | awk '{print $NF}')
-          for t in ${{ steps.v.outputs.image_tags }}; do
-            podman push -q --digestfile digest.txt "$IMG" "docker://$IMAGE:$t"
+          podman manifest create localhost/wd2l:release
+          for a in amd64 arm64; do podman manifest add localhost/wd2l:release "oci-archive:image-$a/image.oci.tar"; done
+          set -- ${{ steps.v.outputs.image_tags }}
+          podman manifest push --all --format oci --digestfile digest.txt localhost/wd2l:release "docker://$IMAGE:$1"
+          D=$(cat digest.txt); shift
+          for t in "$@"; do packaging/ci/tool oras tag --registry-config /auth/config.json "$IMAGE@$D" "$t"; done
+          skopeo inspect --raw "docker://$IMAGE@$D" > index.json
+          for a in amd64 arm64; do
+            c=$(jq -r --arg a $a '.manifests[] | select(.platform.architecture == $a) | .digest' index.json)
+            skopeo inspect --raw "docker://$IMAGE@$c" > "manifest-$a.json"
           done
-          echo "digest=$(cat digest.txt)" >> "$GITHUB_OUTPUT"
+          python3 packaging/release/image_index.py --index index.json --digest "$D" \
+            --manifest amd64=manifest-amd64.json --manifest arm64=manifest-arm64.json \
+            --build-info amd64=build-info-amd64/build-info.json --build-info arm64=build-info-arm64/build-info.json \
+            --github-output "$GITHUB_OUTPUT"
+          echo "digest=$D" >> "$GITHUB_OUTPUT"
       - name: Mirror the base images, their records and the runtime base's sources
         run: |
           O() { packaging/ci/tool oras copy --from-registry-config /auth/config.json --to-registry-config /auth/config.json "$@"; }
@@ -54,39 +110,55 @@ jobs:
             name=$(jq -r ".[$i].name" $f); tag=$(jq -r ".[$i].tag" $f); digest=$(jq -r ".[$i].digest" $f)
             quay="quay.io/hummingbird/${name#registry.access.redhat.com/hi/}"
             O -r "$name@$digest" "$BASE_MIRROR:$tag-${digest:7:12}"
-            amd=$(jq -r '.manifests[] | select(.platform.architecture == "amd64") | .digest' "base-evidence/index-$i.json")
-            for d in "$digest" "$amd"; do for s in att sbom sig; do
+            children=$(jq -r '.manifests[] | select(.platform.os == "linux" and (.platform.architecture == "amd64" or .platform.architecture == "arm64")) | .digest' "base-evidence/index-$i.json")
+            for d in "$digest" $children; do for s in att sbom sig; do
               O "$quay:sha256-${d#sha256:}.$s" "$BASE_MIRROR:sha256-${d#sha256:}.$s"
             done; done
           done
           name=$(jq -r ".[$last].name" $f)
-          rel=$(jq -r '.config.Labels.release' "base-evidence/config-$last.json")
+          rel=$(jq -r '.config.Labels.release' "base-evidence/config-$last-amd64.json")
           O "$name:$rel-source" "$BASE_MIRROR:$rel-source"
-      - name: Sign and attest (our key, no public log)
+      - name: Sign and attest the index and each platform image (our key, no public log)
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           TOOL_ENV: COSIGN_PRIVATE_KEY COSIGN_PASSWORD
         run: |
-          D=${{ steps.push.outputs.digest }}
+          D=${{ steps.push.outputs.digest }}; CA=${{ steps.push.outputs.digest_amd64 }}; CR=${{ steps.push.outputs.digest_arm64 }}
           python3 packaging/release/provenance.py --wheel dist/*.whl --froms base-evidence/froms.json \
-            --mirror "$BASE_MIRROR" --started "$(jq -r .started build-info/build-info.json)" > provenance.json
+            --mirror "$BASE_MIRROR" --started "$(jq -rs 'map(.started) | min' build-info-*/build-info.json)" > provenance.json
           S() { packaging/ci/tool cosign "$@" --key env://COSIGN_PRIVATE_KEY \
                   --signing-config /work/packaging/release/signing-config.json --yes; }
-          S sign "$IMAGE@$D"
-          S attest --type slsaprovenance1 --predicate /work/provenance.json "$IMAGE@$D"
-          S attest --type spdxjson --predicate /work/sbom/wd2l.spdx.json "$IMAGE@$D"
-          S attest --type "$ATT/vuln-scan/v1" --predicate /work/vuln/vuln-predicate.json "$IMAGE@$D"
-          S attest --type "$ATT/base-image-record/v1" --predicate /work/base-evidence/base-image-record.json "$IMAGE@$D"
-      - name: Save the image with its signature and attestations, for offline enclaves
+          # Podman's sigstoreSigned policy reads only cosign's older .sig format: sign each platform
+          # image that way too (docs/deployment/containers.md). The flags are deprecated; if a
+          # cosign update drops them this step fails, and import-check would catch a missing one.
+          L() { packaging/ci/tool cosign sign --key env://COSIGN_PRIVATE_KEY \
+                  --new-bundle-format=false --use-signing-config=false --tlog-upload=false --yes "$@"; }
+          S sign --recursive "$IMAGE@$D"
+          for d in "$D" "$CA" "$CR"; do
+            S attest --type slsaprovenance1 --predicate /work/provenance.json "$IMAGE@$d"
+            S attest --type "$ATT/base-image-record/v2" --predicate /work/base-evidence/base-image-record.json "$IMAGE@$d"
+          done
+          for a in amd64 arm64; do
+            c=$CA; [ "$a" = arm64 ] && c=$CR
+            S attest --type spdxjson --predicate "/work/sbom-$a/wd2l.spdx.json" "$IMAGE@$c"
+            S attest --type "$ATT/vuln-scan/v1" --predicate "/work/vuln-$a/vuln-predicate.json" "$IMAGE@$c"
+            L "$IMAGE@$c"
+          done
+      - name: Save each platform's image with its signatures and attestations, for offline enclaves
         run: |
-          packaging/ci/tool cosign save --dir /work/wd2l-oci "$IMAGE@${{ steps.push.outputs.digest }}"
-          tar -cf "wd2l-${{ steps.v.outputs.pep440 }}-image-oci.tar" wd2l-oci
+          # One tar per platform: cosign save keeps a platform image's signatures, not an index's.
+          for a in amd64 arm64; do
+            c=${{ steps.push.outputs.digest_amd64 }}; [ "$a" = arm64 ] && c=${{ steps.push.outputs.digest_arm64 }}
+            mkdir -p "save-$a"
+            packaging/ci/tool cosign save --dir "/work/save-$a/wd2l-oci" "$IMAGE@$c"
+            tar -C "save-$a" -cf "wd2l-${{ steps.v.outputs.pep440 }}-image-$a-oci.tar" wd2l-oci
+          done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: image-release
           path: |
-            wd2l-*-image-oci.tar
+            wd2l-*-image-*-oci.tar
             provenance.json
 
   verify-published:
@@ -96,7 +168,10 @@ jobs:
       contents: read
       packages: read
     env:
-      I: ghcr.io/joehazurmoney/wd2l@${{ needs.publish.outputs.digest }}
+      IMG: ghcr.io/joehazurmoney/wd2l
+      D: ${{ needs.publish.outputs.digest }}
+      CA: ${{ needs.publish.outputs.digest_amd64 }}
+      CR: ${{ needs.publish.outputs.digest_arm64 }}
       ATT: https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -104,14 +179,62 @@ jobs:
         with:
           name: image-release
       - run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
-      - name: Verify as a consumer would, online and then with no network
+      - name: Verify as a consumer would, online and then with no network, both platforms
         run: |
           V() { packaging/ci/tool cosign "$@" --key /work/cosign.pub --insecure-ignore-tlog > /dev/null; }
-          TYPES="slsaprovenance1 spdxjson $ATT/vuln-scan/v1 $ATT/base-image-record/v1"
-          V verify "$I" && echo "signature: ok"
-          for t in $TYPES; do V verify-attestation --type "$t" "$I" && echo "attestation $t: ok"; done
-          packaging/ci/tool cosign tree "$I"
-          tar -xf wd2l-*-image-oci.tar
+          CHILD="slsaprovenance1 spdxjson $ATT/vuln-scan/v1 $ATT/base-image-record/v2"
+          V verify "$IMG@$D" && echo "index signature: ok"
+          for t in slsaprovenance1 "$ATT/base-image-record/v2"; do V verify-attestation --type "$t" "$IMG@$D" && echo "index $t: ok"; done
+          for c in "$CA" "$CR"; do
+            V verify "$IMG@$c" && echo "$c signature: ok"
+            for t in $CHILD; do V verify-attestation --type "$t" "$IMG@$c" && echo "$c $t: ok"; done
+          done
+          packaging/ci/tool cosign tree "$IMG@$D"
           export TOOL_NETWORK=none
-          V verify --local-image /work/wd2l-oci && echo "offline signature: ok"
-          for t in $TYPES; do V verify-attestation --type "$t" --local-image /work/wd2l-oci && echo "offline $t: ok"; done
+          for a in amd64 arm64; do
+            mkdir -p "off-$a" && tar -xf wd2l-*-image-$a-oci.tar -C "off-$a"
+            V verify --local-image "/work/off-$a/wd2l-oci" && echo "$a offline signature: ok"
+            for t in $CHILD; do V verify-attestation --type "$t" --local-image "/work/off-$a/wd2l-oci" && echo "$a offline $t: ok"; done
+          done
+
+  import-check:
+    # What a host does with the release: import its platform's tar offline, and pull from the
+    # registry under Podman's signature policy (docs/deployment/containers.md).
+    needs: [publish]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, runner: ubuntu-24.04, uname: x86_64}
+          - {arch: arm64, runner: ubuntu-24.04-arm, uname: aarch64}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMG: ghcr.io/joehazurmoney/wd2l
+      D: ${{ needs.publish.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-release
+      - name: Offline import picks this host's platform
+        run: |
+          [ "$(uname -m)" = "${{ matrix.uname }}" ]
+          tar -xf wd2l-*-image-${{ matrix.arch }}-oci.tar
+          sudo skopeo copy -q oci:wd2l-oci "containers-storage:$IMG:import-check"
+          got=$(sudo podman image inspect --format '{{.Architecture}}' "$IMG:import-check")
+          [ "$got" = "${{ matrix.arch }}" ] || { echo "imported $got" >&2; exit 1; }
+          for c in wd2l-sender wd2l-receiver wd2l-audit-report; do
+            sudo podman run --rm --pull=never "$IMG:import-check" "$c" --help > /dev/null
+          done
+      - name: Podman's signature policy accepts the published image
+        run: |
+          mkdir -p regd
+          printf 'docker:\n  ghcr.io/joehazurmoney:\n    use-sigstore-attachments: true\n' > regd/ghcr.yaml
+          jq -n --arg k "$PWD/cosign.pub" '{default: [{type: "reject"}],
+            transports: {docker: {"ghcr.io/joehazurmoney/wd2l": [{type: "sigstoreSigned", keyPath: $k,
+              signedIdentity: {type: "matchRepository"}}]}, oci: {"": [{type: "insecureAcceptAnything"}]}}}' > policy.json
+          skopeo copy -q --remove-signatures --policy policy.json --registries.d regd "docker://$IMG@$D" oci:policy-check
+          echo "policy: accepted ($(uname -m))"

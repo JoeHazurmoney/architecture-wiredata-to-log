@@ -15,7 +15,7 @@ RELEASE_PATH = ("tests.yml", "image.yml", "rpm.yml", "publish.yml", "release.yml
 GITHUB_HOSTED = ("ubuntu-24.04", "ubuntu-latest", "ubuntu-24.04-arm")
 # The arm64 runner only where the image is built or run natively for arm64.
 ARM_JOBS = {("image.yml", "build"), ("image.yml", "reproducible"), ("image.yml", "hardening"),
-            ("image.yml", "functional"), ("image.yml", "fips-tests")}
+            ("image.yml", "functional"), ("image.yml", "fips-tests"), ("publish.yml", "import-check")}
 BOTH_ARCHES = ARM_JOBS | {("image.yml", "vuln-scan"), ("image.yml", "sbom")}
 THIS_REPO_AND_A_TAG = ("if: ${{ github.repository == 'JoeHazurmoney/architecture-wiredata-to-log'"
                        " && startsWith(github.ref, 'refs/tags/v') }}")
@@ -144,3 +144,19 @@ def test_attest_signs_the_image_keylessly_and_checks_the_identity():
     assert '--certificate-github-workflow-repository "$GITHUB_REPOSITORY"' in att
     # keyless means Sigstore's public log: never the no-log signing config used with the key
     assert "signing-config" not in att
+
+
+def test_publish_signs_the_index_and_each_platform_image():
+    pub = jobs(read("publish.yml"))["publish"]
+    assert 'S sign --recursive "$IMAGE@$D"' in pub
+    # Podman's sigstoreSigned policy reads only cosign's older .sig format (rc5 spike S6).
+    assert "--new-bundle-format=false --use-signing-config=false --tlog-upload=false" in pub
+    assert "image_index.py" in pub and "base-image-record/v2" in pub
+    for out in ("digest_amd64:", "digest_arm64:"):
+        assert out in pub
+
+
+def test_import_check_runs_the_offline_import_and_the_podman_policy_on_both_platforms():
+    imp = jobs(read("publish.yml"))["import-check"]
+    assert "skopeo copy -q oci:wd2l-oci" in imp and 'type: "sigstoreSigned"' in imp
+    assert "--remove-signatures" in imp
