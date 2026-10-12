@@ -17,3 +17,15 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
+  # The release manifest's schema validator (packaging/release/requirements.txt, hash-pinned).
+  - package-ecosystem: pip
+    directory: "/packaging/release"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    ignore:
+      # 2.22 needs Python 3.10; wd2l supports 3.9 (pyproject.toml), and the tests run on it.
+      - dependency-name: fastjsonschema
+        versions: [">=2.22"]

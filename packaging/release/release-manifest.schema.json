@@ -1,0 +1,303 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/main/packaging/release/release-manifest.schema.json",
+  "title": "wd2l release manifest",
+  "description": "What one wd2l release is: its source, the changes and issues it resolves, every file delivered, the image, how it was built, and how to verify it (docs/decisions/0008-release-manifest.md). The JSON is authoritative; the markdown view is generated from it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "release", "source", "generated", "summary", "changes", "known_issues",
+               "deliverables", "image", "base_images", "build_environment", "changelog", "approvals",
+               "verification"],
+  "definitions": {
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "tag": {"type": "string", "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+((a|b|rc)[0-9]+)?$"},
+    "time": {"type": "string", "format": "date-time"},
+    "url": {"type": "string", "pattern": "^https://"},
+    "tagRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tag", "commit"],
+      "properties": {"tag": {"$ref": "#/definitions/tag"}, "commit": {"$ref": "#/definitions/commit"}}
+    },
+    "category": {"enum": ["enhancement", "bug", "security", "documentation", "dependencies", "release", "other"]},
+    "platforms": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"amd64": {"$ref": "#/definitions/digest"}, "arm64": {"$ref": "#/definitions/digest"}}
+    }
+  },
+  "properties": {
+    "schema_version": {"const": 1},
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product", "version", "tag", "prerelease", "dry_run"],
+      "properties": {
+        "product": {"const": "wd2l"},
+        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+((a|b|rc)[0-9]+)?$"},
+        "tag": {"$ref": "#/definitions/tag"},
+        "prerelease": {"type": "boolean"},
+        "dry_run": {"type": "boolean", "description": "true: built without a version tag; nothing was published or signed"}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "commit_date", "previous_release", "previous_tag"],
+      "properties": {
+        "repository": {"$ref": "#/definitions/url"},
+        "commit": {"$ref": "#/definitions/commit"},
+        "commit_date": {"$ref": "#/definitions/time"},
+        "previous_release": {"description": "the previous final (not pre-) release reachable from this commit", "oneOf": [{"type": "null"}, {"$ref": "#/definitions/tagRef"}]},
+        "previous_tag": {"description": "the previous version tag of any kind", "oneOf": [{"type": "null"}, {"$ref": "#/definitions/tagRef"}]}
+      }
+    },
+    "generated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "by", "run"],
+      "properties": {
+        "at": {"$ref": "#/definitions/time"},
+        "by": {"type": "string"},
+        "run": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "attempt", "url", "workflow_ref"],
+              "properties": {
+                "id": {"type": "string", "pattern": "^[0-9]+$"},
+                "attempt": {"type": "integer", "minimum": 1},
+                "url": {"$ref": "#/definitions/url"},
+                "workflow_ref": {"type": "string"}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "summary": {
+      "description": "the release's own summary, from docs/releases/<version>.md; null only on a dry run",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "sha256", "text"],
+          "properties": {"file": {"type": "string"}, "sha256": {"$ref": "#/definitions/sha256"}, "text": {"type": "string", "minLength": 1}}
+        }
+      ]
+    },
+    "changes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["since", "pull_requests", "direct_commits", "issues_resolved", "pull_requests_without_issue"],
+      "properties": {
+        "since": {"description": "previous_release's tag, or null: every change since the first commit", "oneOf": [{"type": "null"}, {"$ref": "#/definitions/tag"}]},
+        "pull_requests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["number", "title", "url", "merged_at", "commit", "type", "first_tag", "closes"],
+            "properties": {
+              "number": {"type": "integer", "minimum": 1},
+              "title": {"type": "string"},
+              "url": {"$ref": "#/definitions/url"},
+              "merged_at": {"$ref": "#/definitions/time"},
+              "commit": {"$ref": "#/definitions/commit"},
+              "type": {"description": "the title's Conventional Commit type; null for titles from before the convention", "oneOf": [{"type": "null"}, {"type": "string"}]},
+              "first_tag": {"description": "the earliest version tag containing it; null if none yet", "oneOf": [{"type": "null"}, {"$ref": "#/definitions/tag"}]},
+              "closes": {"type": "array", "items": {"type": "integer", "minimum": 1}, "uniqueItems": true}
+            }
+          }
+        },
+        "direct_commits": {
+          "description": "commits on the main line that came from no pull request",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["commit", "subject", "first_tag"],
+            "properties": {
+              "commit": {"$ref": "#/definitions/commit"},
+              "subject": {"type": "string"},
+              "first_tag": {"oneOf": [{"type": "null"}, {"$ref": "#/definitions/tag"}]}
+            }
+          }
+        },
+        "issues_resolved": {
+          "description": "issues closed as completed by the pull requests above",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["number", "title", "url", "category", "labels", "retroactive", "resolved_by", "resolved_at", "first_tag"],
+            "properties": {
+              "number": {"type": "integer", "minimum": 1},
+              "title": {"type": "string"},
+              "url": {"$ref": "#/definitions/url"},
+              "category": {"$ref": "#/definitions/category"},
+              "labels": {"type": "array", "items": {"type": "string"}},
+              "retroactive": {"type": "boolean", "description": "recorded after its work had merged; dated by the pull request's merge"},
+              "resolved_by": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "uniqueItems": true},
+              "resolved_at": {"$ref": "#/definitions/time"},
+              "first_tag": {"oneOf": [{"type": "null"}, {"$ref": "#/definitions/tag"}]}
+            }
+          }
+        },
+        "pull_requests_without_issue": {"type": "array", "items": {"type": "integer", "minimum": 1}, "uniqueItems": true}
+      }
+    },
+    "known_issues": {
+      "description": "open bugs when the manifest was made",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["number", "title", "url", "labels"],
+        "properties": {
+          "number": {"type": "integer", "minimum": 1},
+          "title": {"type": "string"},
+          "url": {"$ref": "#/definitions/url"},
+          "labels": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "deliverables": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "kind", "size", "sha256"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[^/\\\\]+$"},
+          "kind": {"enum": ["rpm", "wheel", "sdist", "oci-image", "sbom", "vulnerability-summary", "provenance",
+                            "base-image-record", "public-key", "source-bundle", "changelog",
+                            "verification-script", "other"]},
+          "size": {"type": "integer", "minimum": 0},
+          "sha256": {"$ref": "#/definitions/sha256"}
+        }
+      }
+    },
+    "image": {
+      "description": "null on a dry run: nothing was pushed",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "tags", "index_digest", "platforms"],
+          "properties": {
+            "name": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "index_digest": {"$ref": "#/definitions/digest"},
+            "platforms": {"$ref": "#/definitions/platforms"}
+          }
+        }
+      ]
+    },
+    "base_images": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stage", "ref", "index_digest", "platforms", "release", "source_image"],
+        "properties": {
+          "stage": {"type": ["string", "null"]},
+          "ref": {"type": "string"},
+          "index_digest": {"$ref": "#/definitions/digest"},
+          "platforms": {"$ref": "#/definitions/platforms"},
+          "release": {"type": ["string", "null"]},
+          "source_image": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "build_environment": {
+      "description": "what built it, as pinned at the commit",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actions", "tool_images", "runners"],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["action", "commit", "version"],
+            "properties": {"action": {"type": "string"}, "commit": {"$ref": "#/definitions/commit"}, "version": {"type": "string"}}
+          }
+        },
+        "tool_images": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "ref"],
+            "properties": {"name": {"type": "string"}, "ref": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}}
+          }
+        },
+        "runners": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "changelog": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "sha256", "tool", "config_sha256"],
+          "properties": {
+            "file": {"type": "string"},
+            "sha256": {"$ref": "#/definitions/sha256"},
+            "tool": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "version", "image"],
+              "properties": {"name": {"type": "string"}, "version": {"type": "string"}, "image": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}}
+            },
+            "config_sha256": {"$ref": "#/definitions/sha256"}
+          }
+        }
+      ]
+    },
+    "approvals": {
+      "description": "approval gates passed before the manifest was made; the release gate approves signing it",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["environment", "user", "state", "comment"],
+        "properties": {
+          "environment": {"type": "string"},
+          "user": {"type": "string"},
+          "state": {"type": "string"},
+          "comment": {"type": "string"}
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["public_key_sha256", "signer_workflow", "sealed_by", "attestations"],
+      "properties": {
+        "public_key_sha256": {"$ref": "#/definitions/sha256"},
+        "signer_workflow": {"type": "string"},
+        "sealed_by": {"description": "release files made after this manifest, which cover it", "type": "array", "items": {"type": "string"}},
+        "attestations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["predicate_type", "signed_by", "covers"],
+            "properties": {"predicate_type": {"type": "string"}, "signed_by": {"type": "string"}, "covers": {"type": "string"}}
+          }
+        }
+      }
+    }
+  }
+}

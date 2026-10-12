@@ -21,7 +21,7 @@ flowchart LR
   tests --> publish["publish.yml<br/>push, mirror the bases, sign, attest,<br/>verify-published"]
   image --> publish
   rpm --> publish
-  publish --> assets["assets<br/>the files, SHA256SUMS"]
+  publish --> assets["assets<br/>the files, the release manifest,<br/>SHA256SUMS"]
   assets --> attest["attest.yml<br/>GitHub provenance,<br/>keyless image signature"]
   attest --> release["release<br/>signature, attestations, notes"]
   release --> draft["draft release"]
@@ -70,14 +70,30 @@ proves:
   saved copies as a consumer would, the second time with no network.
 * **import-check**: on each platform's own runner, imports that platform's tar offline and
   pulls the image from the registry under Podman's signature policy.
-* **assets**: every release file and `SHA256SUMS` over them, made once for the two jobs
-  below.
+* **assets**: every release file, then the **release manifest**
+  ([`manifest.py`](../packaging/release/manifest.py),
+  [ADR-0008](decisions/0008-release-manifest.md)), then `SHA256SUMS` over them all, made once for
+  the two jobs below.
+  * **What the manifest lists:**
+    * the commit;
+    * every pull request since the previous final release, and the issues it resolves;
+    * known open bugs;
+    * every file with its SHA-256;
+    * the image and its bases;
+    * the pinned actions and tool images;
+    * the approvals so far.
+  * **How it's checked:** against [its schema](../packaging/release/release-manifest.schema.json),
+    and an invalid one fails the run. `wd2l-<version>-release-manifest.json` is the
+    authoritative copy; `.md` is the readable view (the customer's version description), shown
+    in the run's summary for whoever approves the `release` gate.
+  * **Permissions:** the job has no secrets, and only reads git and the forge's API.
 * **attest** ([`attest.yml`](../.github/workflows/attest.yml), tags only): GitHub build
   provenance (SLSA Build Level 3) for every file, the image index and each platform image, and
   keyless signatures on all three. It is the only workflow that gets an OIDC token, so the build steps can't reach
   what signs the provenance ([ADR-0007](decisions/0007-slsa-build-l3.md)).
 * **release**: `SHA256SUMS` signed with our key; the notes
-  ([`notes.py`](../packaging/release/notes.py)); the draft release, with
+  ([`notes.py`](../packaging/release/notes.py)), generated in full: the summary and the issues
+  resolved from the manifest, then how to install and verify; the draft release, with
   `wd2l-<version>-attestations.jsonl`, the GitHub attestations for offline checks.
 
 **Dry runs.** `release.yml` also runs from `workflow_dispatch` (once it is on `main`) and from
@@ -116,7 +132,10 @@ work had merged. It's linked from that PR's description and dated by the PR's me
 ## Cutting a release
 
 1. Set `__version__` in `wd2l/__init__.py`, and the `Image=` tag in both `.container` files
-   (`tests/test_deploy.py` keeps them equal).
+   (`tests/test_deploy.py` keeps them equal). Write the release's summary in
+   `docs/releases/<version>.md`: what changed, and how to upgrade. It heads the notes and the
+   manifest. A tag without it stops in the first job, and the version bump's PR fails its tests
+   first.
 2. Merge to `main` through a PR, with CI green.
 3. Tag `main` and push the tag:
 
@@ -136,8 +155,7 @@ work had merged. It's linked from that PR's description and dated by the PR's me
    * the assets list, and the notes;
    * the `vuln-scan` gate summary, the `hardening` result and the `reproducible` result in the
      run.
-7. Add a short "What changed" section at the top of the notes if they lack one, then
-   **Publish release**.
+7. **Publish release**. The notes are complete as generated, so there's nothing to paste.
 8. Check that what was published is the draft: `gh release view vX.Y.Z --json assets,author`
    shows every file, and github-actions as the author.
 

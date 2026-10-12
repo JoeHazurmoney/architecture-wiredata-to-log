@@ -38,6 +38,9 @@ jobs:
             # Only a commit already merged to main is released (docs/releasing.md).
             git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
               || { echo "tag $TAG is not on main: release from main only" >&2; exit 1; }
+            # The manifest needs the release's summary; refuse now, not after publish.
+            S="docs/releases/$(python3 packaging/release/versions.py --get pep440).md"
+            [ -s "$S" ] || { echo "$S is missing: a release needs its summary" >&2; exit 1; }
           fi
 
   tests:
@@ -70,8 +73,10 @@ jobs:
       packages: write
 
   assets:
-    # The release files and SHA256SUMS, made once, for attest and release. No secrets and no
-    # OIDC token here. publish is skipped on a dry run; on a tag it must have succeeded.
+    # The release files, the release manifest and SHA256SUMS, made once, for attest and release.
+    # No secrets and no OIDC token here: only reads, of git and the forge's API (issues, pull
+    # requests, this run's approvals). publish is skipped on a dry run; on a tag it must have
+    # succeeded.
     if: >-
       ${{ !cancelled() && needs.tests.result == 'success' && needs.image.result == 'success'
       && needs.rpm.result == 'success'
@@ -79,10 +84,20 @@ jobs:
           || (needs.publish.result == 'skipped' && !startsWith(github.ref, 'refs/tags/v'))) }}
     needs: [version, tests, image, rpm, publish]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      actions: read
     env:
       V: ${{ needs.version.outputs.pep440 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # every commit and tag: the manifest's history
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: "{dist,rpms-el9,rpms-el10,sbom-amd64,sbom-arm64,base-evidence,vuln-amd64,vuln-arm64,image-release}"
@@ -110,7 +125,27 @@ jobs:
           # files that way first, so SHA256SUMS lists what a download gets. Only pre-release
           # RPMs have one (X.Y.Z~rcN); the package inside keeps its version.
           for f in assets/*~*; do if [ -e "$f" ]; then mv -- "$f" "${f//\~/.}"; fi; done
-          (cd assets && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+      - name: The release manifest, checked against its schema (docs/decisions/0008-release-manifest.md)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+          DIGEST_AMD64: ${{ needs.publish.outputs.digest_amd64 }}
+          DIGEST_ARM64: ${{ needs.publish.outputs.digest_arm64 }}
+        run: |
+          python -m pip install -q --require-hashes -r packaging/release/requirements.txt
+          dry=(); [ "$REAL" = true ] || dry=(--dry-run)
+          # Made outside assets/, which it lists, then moved in before SHA256SUMS.
+          python packaging/release/manifest.py generate --assets assets \
+            --base-record assets/base-image-record.json --image-digest "$DIGEST" \
+            --platform-digest "amd64=$DIGEST_AMD64" --platform-digest "arm64=$DIGEST_ARM64" \
+            "${dry[@]}" > "wd2l-$V-release-manifest.json"
+          python packaging/release/manifest.py validate "wd2l-$V-release-manifest.json"
+          python packaging/release/manifest.py render "wd2l-$V-release-manifest.json" > "wd2l-$V-release-manifest.md"
+          mv "wd2l-$V-release-manifest.json" "wd2l-$V-release-manifest.md" assets/
+          # The person approving the release gate reads what they're about to sign.
+          cat "assets/wd2l-$V-release-manifest.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: SHA256SUMS over every file, the manifest included
+        run: (cd assets && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: assets
@@ -173,9 +208,14 @@ jobs:
       - name: Attach the GitHub attestations (one bundle per line)
         if: ${{ needs.attest.result == 'success' }}
         run: cp attestations/attestations.jsonl "assets/wd2l-$V-attestations.jsonl"
-      - name: Notes
+      - name: Notes (the release's summary and the issues it resolves come from the manifest)
+        env:
+          FILES_URL: ${{ needs.attest.outputs.files-url }}
+          IMAGE_URL: ${{ needs.attest.outputs.image-url }}
         run: |
-          python3 packaging/release/notes.py --image-digest "${{ needs.publish.outputs.digest }}" \
+          python3 packaging/release/notes.py --manifest "assets/wd2l-$V-release-manifest.json" \
+            --attestation-url "release files=$FILES_URL" --attestation-url "image index=$IMAGE_URL" \
+            --image-digest "${{ needs.publish.outputs.digest }}" \
             --platform-digest amd64=${{ needs.publish.outputs.digest_amd64 }} \
             --platform-digest arm64=${{ needs.publish.outputs.digest_arm64 }} \
             --sums assets/SHA256SUMS --base-record assets/base-image-record.json \

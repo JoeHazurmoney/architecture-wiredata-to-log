@@ -22,6 +22,13 @@ on:
         description: the index's linux/arm64 image (sha256:...)
         type: string
         required: true
+    outputs:
+      files-url:
+        description: the attestation page for the release files (linked from the notes)
+        value: ${{ jobs.attest.outputs.files-url }}
+      image-url:
+        description: the attestation page for the image index
+        value: ${{ jobs.attest.outputs.image-url }}
 defaults:
   run:
     shell: bash
@@ -36,6 +43,9 @@ jobs:
       id-token: write
       attestations: write
       packages: write
+    outputs:
+      files-url: ${{ steps.files.outputs.attestation-url }}
+      image-url: ${{ steps.image.outputs.attestation-url }}
     env:
       IMAGE: ghcr.io/joehazurmoney/wd2l
       TOKEN: ${{ secrets.GITHUB_TOKEN }}
