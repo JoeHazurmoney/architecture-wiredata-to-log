@@ -11,4 +11,4 @@ FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:5858f9ace07316e3b12caab62
 FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:27e14f4987d7abe56664d7e1b1dddcd0226d4ca593da5726f0f65697a17d0fee AS ubi10
 # A real chronyd for packaging/ci/chrony-smoke.sh (UBI has no chrony). From quay.io, the same
 # image as registry.fedoraproject.org, which Dependabot can't read.
-FROM quay.io/fedora/fedora:42@sha256:e78cd1a688cd079c23864f289a89a49a3f4ad66d817864e325e1d058310ee95c AS fedora
+FROM quay.io/fedora/fedora:44@sha256:1ff9eb02e4e2d7fb1175becac7139b2960c4fdcccedce81c86ec25b98ef3124d AS fedora
