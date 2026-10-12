@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 
@@ -183,3 +184,39 @@ def test_releasing_md_pins_the_signer_workflow_and_the_tag():
     assert ("--certificate-identity https://github.com/JoeHazurmoney/architecture-wiredata-to-log"
             "/.github/workflows/attest.yml@refs/tags/v<version>") in doc
     assert "--certificate-github-workflow-repository JoeHazurmoney/architecture-wiredata-to-log" in doc
+
+
+image_index = load_script("packaging/release/image_index.py")
+
+
+def _index_case(drop=None, wrong_config=None):
+    manifests, ids, entries = {}, {}, []
+    for arch in ("amd64", "arm64"):
+        ids[arch] = hashlib.sha256(arch.encode()).hexdigest()
+        cfg = "sha256:" + ("0" * 64 if arch == wrong_config else ids[arch])
+        m = json.dumps({"mediaType": "application/vnd.oci.image.manifest.v1+json",
+                        "config": {"digest": cfg}}).encode()
+        manifests[arch] = m
+        if arch != drop:
+            entries.append({"mediaType": "application/vnd.oci.image.manifest.v1+json",
+                            "digest": "sha256:" + hashlib.sha256(m).hexdigest(),
+                            "platform": {"os": "linux", "architecture": arch}})
+    index = json.dumps({"mediaType": "application/vnd.oci.image.index.v1+json",
+                        "manifests": entries}).encode()
+    return index, "sha256:" + hashlib.sha256(index).hexdigest(), manifests, ids
+
+
+def test_image_index_names_each_platform_digest():
+    index, digest, manifests, ids = _index_case()
+    got, probs = image_index.check(index, digest, manifests, ids)
+    assert probs == [] and set(got) == {"amd64", "arm64"}
+    assert got["arm64"] == "sha256:" + hashlib.sha256(manifests["arm64"]).hexdigest()
+
+
+def test_image_index_refuses_a_missing_platform_or_an_untested_image():
+    index, digest, manifests, ids = _index_case(drop="arm64")
+    assert any("linux/arm64" in p for p in image_index.check(index, digest, manifests, ids)[1])
+    index, digest, manifests, ids = _index_case(wrong_config="amd64")
+    assert any("amd64" in p and "tested" in p for p in image_index.check(index, digest, manifests, ids)[1])
+    index, digest, manifests, ids = _index_case()
+    assert any("index" in p for p in image_index.check(index, "sha256:" + "0" * 64, manifests, ids)[1])
