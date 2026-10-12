@@ -65,6 +65,13 @@ def by_check(results):
     return {check: (status, detail) for status, check, detail in results}
 
 
+@pytest.fixture(autouse=True)
+def outside_any_repository(tmp_path, monkeypatch):
+    # A customer runs it in a directory of release files, not in a git checkout: `git bundle
+    # verify` refuses to run outside a repository (found on a dry run's files, offline).
+    monkeypatch.chdir(tmp_path)
+
+
 def test_a_good_release_passes_every_check(tmp_path):
     d = release_dir(tmp_path)
     r = by_check(vr.verify(str(d), "cosign.pub", cosign=fake_cosign(tmp_path)))

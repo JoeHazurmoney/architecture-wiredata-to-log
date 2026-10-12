@@ -108,12 +108,17 @@ def check_source(d: str, man: Dict, git: str) -> Result:
         return ("FAIL", "source", "expected one wd2l-*-source.bundle, found %d" % len(bundles))
     if not shutil.which(git):
         return ("FAIL", "source", "%s not found" % git)
-    code, out = run([git, "bundle", "verify", bundles[0]])
-    if code:
-        return ("FAIL", "source", "git bundle verify: %s" % out)
+    bundle = os.path.abspath(bundles[0])
     ref = "HEAD" if man["release"]["dry_run"] else "refs/tags/%s" % man["release"]["tag"]
     with tempfile.TemporaryDirectory() as tmp:
-        code, out = run([git, "clone", "-q", "--no-checkout", bundles[0], os.path.join(tmp, "src")])
+        # `git bundle verify` needs a repository to run in, and this runs among release files,
+        # not in a checkout: an empty one will do.
+        empty = os.path.join(tmp, "empty")
+        run([git, "init", "-q", empty])
+        code, out = run([git, "bundle", "verify", bundle], cwd=empty)
+        if code:
+            return ("FAIL", "source", "git bundle verify: %s" % out)
+        code, out = run([git, "clone", "-q", "--no-checkout", bundle, os.path.join(tmp, "src")])
         if code:
             return ("FAIL", "source", "git clone: %s" % out)
         p = subprocess.run([git, "rev-parse", "--verify", "-q", ref + "^{commit}"],

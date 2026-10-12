@@ -128,9 +128,10 @@ jobs:
       - name: The changelog, the source bundle and verify-release, to retrieve the release offline
         run: |
           # git-cliff (cliff.toml): the changes since the previous final release, or all of
-          # history when there's none.
+          # history when there's none. On a tag the release's own tag is at HEAD; a dry run's
+          # commits come out as "Unreleased".
           prev=$(python packaging/release/manifest.py previous-release)
-          packaging/ci/tool git-cliff --config /work/cliff.toml --repository /work --tag "v$V" \
+          packaging/ci/tool git-cliff --config /work/cliff.toml --repository /work \
             ${prev:+"$prev..HEAD"} --output "/work/assets/wd2l-$V-changelog.md"
           # The source with its full history and every version tag.
           mapfile -t tags < <(git tag --merged HEAD --list 'v*')
