@@ -218,7 +218,7 @@ def run_git(cwd, *args, date="2026-10-12T12:00:00Z"):
 def make_repo(tmp_path, version="1.0.0rc1", final_tag=True, summary=True):
     r = tmp_path / "repo"
     for rel in [os.path.join(".github", "workflows", w) for w in m.RELEASE_PATH] + \
-               [os.path.join("packaging", "ci", "tools.Containerfile"), "cosign.pub"]:
+               [os.path.join("packaging", "ci", "tools.Containerfile"), "cosign.pub", "cliff.toml"]:
         (r / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(os.path.join(REPO, rel), r / rel)
     (r / "wd2l").mkdir()
@@ -356,3 +356,33 @@ def test_every_version_has_its_release_summary():
     # publish has run. So the version bump's PR fails here first.
     v = load_script("packaging/release/versions.py").read_version()
     assert os.path.exists(os.path.join(REPO, "docs", "releases", "%s.md" % v)), v
+
+
+def test_the_changelog_record_names_git_cliffs_pinned_image_and_the_config(tmp_path):
+    f = tmp_path / "wd2l-1.0.0-changelog.md"
+    f.write_text("# Changelog\n")
+    rec = m.changelog_record(str(f), REPO)
+    assert rec["file"] == "wd2l-1.0.0-changelog.md" and rec["tool"]["name"] == "git-cliff"
+    assert rec["tool"]["image"].startswith("docker.io/orhunp/git-cliff:" + rec["tool"]["version"] + "@sha256:")
+    assert len(rec["config_sha256"]) == 64
+
+
+@needs_git
+def test_a_manifest_with_a_changelog_is_valid_and_lists_it(tmp_path):
+    pytest.importorskip("fastjsonschema")
+    r = make_repo(tmp_path)
+    a = gen_args(tmp_path)
+    (tmp_path / "assets" / "wd2l-1.0.0rc1-changelog.md").write_text("# Changelog\n")
+    a.changelog = str(tmp_path / "assets" / "wd2l-1.0.0rc1-changelog.md")
+    doc = m.generate(a, RUN_ENV, forge_for_repo(), repo=str(r))
+    assert m.validate(doc) is None
+    assert doc["changelog"]["file"] == "wd2l-1.0.0rc1-changelog.md"
+    assert {"changelog"} <= {d["kind"] for d in doc["deliverables"]}
+    assert "The changelog, grouped by commit type, is `wd2l-1.0.0rc1-changelog.md`." in m.render(doc)
+
+
+@needs_git
+def test_previous_release_is_the_last_final_tag_before_this_one(tmp_path):
+    r = make_repo(tmp_path)
+    assert m.previous_release("v1.0.0rc1", cwd=str(r)) == "v0.3.0"
+    assert m.previous_release("v1.0.0rc1", cwd=str(make_repo(tmp_path / "b", final_tag=False))) is None

@@ -70,7 +70,9 @@ proves:
   saved copies as a consumer would, the second time with no network.
 * **import-check**: on each platform's own runner, imports that platform's tar offline and
   pulls the image from the registry under Podman's signature policy.
-* **assets**: every release file, then the **release manifest**
+* **assets**: every release file; the changelog (git-cliff, [`cliff.toml`](../cliff.toml)), a
+  full-history `git bundle` of the source, and `verify-release`
+  ([`verify_release.py`](../packaging/release/verify_release.py)); then the **release manifest**
   ([`manifest.py`](../packaging/release/manifest.py),
   [ADR-0008](decisions/0008-release-manifest.md)), then `SHA256SUMS` over them all, made once for
   the two jobs below.
@@ -87,6 +89,9 @@ proves:
     authoritative copy; `.md` is the readable view (the customer's version description), shown
     in the run's summary for whoever approves the `release` gate.
   * **Permissions:** the job has no secrets, and only reads git and the forge's API.
+  * **A self-check:** last, the job runs the `verify-release` it ships against its own files,
+    the way a customer would. The signature check is skipped there, because signing comes
+    later.
 * **attest** ([`attest.yml`](../.github/workflows/attest.yml), tags only): GitHub build
   provenance (SLSA Build Level 3) for every file, the image index and each platform image, and
   keyless signatures on all three. It is the only workflow that gets an OIDC token, so the build steps can't reach
@@ -122,7 +127,9 @@ Three layers enforce the title:
   title edited after the check passed.
 
 All three use one script, [`check_title.py`](../packaging/ci/check_title.py). Dependabot's
-titles follow it too (`build(deps): bump …`).
+titles follow it too (`build(deps): bump …`). The changelog in each release groups the
+commits by these types ([`cliff.toml`](../cliff.toml)). Commits from before the convention are
+grouped by pattern instead.
 
 **Issues** carry one category label, which groups them in the release manifest
 ([ADR-0008](decisions/0008-release-manifest.md)): `enhancement`, `bug`, `security`,
@@ -244,6 +251,28 @@ cosign verify --key cosign.pub --insecure-ignore-tlog --local-image wd2l-oci
 cosign verify-attestation --key cosign.pub --insecure-ignore-tlog --type slsaprovenance1 --local-image wd2l-oci | jq -r .payload | base64 -d | jq .predicate.buildDefinition.resolvedDependencies
 sudo skopeo copy oci:wd2l-oci containers-storage:ghcr.io/joehazurmoney/wd2l:<version>
 sudo dnf install ./wd2l-<version>-1.el10.noarch.rpm ./wd2l-receiver-<version>-1.el10.noarch.rpm
+```
+
+**Or in one step**, with the script every release ships (Python 3, standard library only, plus
+`cosign` and `git`):
+
+```bash
+python3 wd2l-<version>-verify-release.py --key cosign.pub --image-tar wd2l-<version>-image-<arch>-oci.tar
+```
+
+It checks five things and prints one line for each, exiting 0 only if none fail:
+* the signature on `SHA256SUMS`;
+* every checksum;
+* that the release manifest agrees with both;
+* that the source bundle's tag is the manifest's commit;
+* the image tar's signature.
+
+**The source, with its full history,** comes from the bundle, so it can be retrieved without
+the forge (e.g. GitHub, GitLab) that built it. The changelog is regenerated from it with
+`cliff.toml`:
+
+```bash
+git clone wd2l-<version>-source.bundle wd2l && git -C wd2l checkout v<version>
 ```
 
 **What they prove:**

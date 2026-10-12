@@ -73,17 +73,27 @@ def git(*args: str, cwd: str = REPO) -> str:
                           text=True).stdout
 
 
+def earlier_tags(current_tag: str, cwd: str = REPO) -> List[str]:
+    """The version tags reachable from HEAD, other than this release's own."""
+    return [t for t in git("tag", "--merged", "HEAD", "--list", "v*", cwd=cwd).split()
+            if tag_key(t) and t != current_tag]
+
+
+def previous_release(current_tag: str, cwd: str = REPO) -> Optional[str]:
+    """The previous final (not pre-) release: where the changes start."""
+    return max((t for t in earlier_tags(current_tag, cwd) if is_final(t)), key=tag_key, default=None)
+
+
 def git_facts(current_tag: str, cwd: str = REPO) -> Dict[str, Any]:
     """HEAD, the previous release and tag, and each main-line commit since the previous final
     release (oldest first), with the earliest version tag that contains it."""
     head = git("rev-parse", "HEAD", cwd=cwd).strip()
-    merged = [t for t in git("tag", "--merged", "HEAD", "--list", "v*", cwd=cwd).split()
-              if tag_key(t) and t != current_tag]
+    merged = earlier_tags(current_tag, cwd)
     def ref(tag: Optional[str]) -> Optional[Dict[str, str]]:
         if not tag:
             return None
         return {"tag": tag, "commit": git("rev-list", "-n1", tag, cwd=cwd).strip()}
-    prev_release = max((t for t in merged if is_final(t)), key=tag_key, default=None)
+    prev_release = previous_release(current_tag, cwd)
     prev_tag = max(merged, key=tag_key, default=None)
     rng = ["%s..HEAD" % prev_release] if prev_release else ["HEAD"]
     log = git("log", "--first-parent", "--reverse", "--format=%H%x1f%s%x1f%b%x1e", *rng, cwd=cwd)
@@ -299,6 +309,16 @@ def base_images(record: Dict[str, Any]) -> List[Dict[str, Any]]:
              "source_image": b.get("source_image")} for b in record.get("images", [])]
 
 
+def changelog_record(path: str, repo: str = REPO) -> Dict[str, Any]:
+    """The changelog file, and what made it: git-cliff's pinned image and cliff.toml."""
+    with open(os.path.join(repo, "packaging", "ci", "tools.Containerfile"), encoding="utf-8") as f:
+        refs = {n: r for r, n in re.findall(r"^FROM\s+(\S+)\s+AS\s+(\S+)\s*$", f.read(), re.M | re.I)}
+    ref = refs["git-cliff"]
+    return {"file": os.path.basename(path), "sha256": sha256_file(path),
+            "tool": {"name": "git-cliff", "version": ref.split("@", 1)[0].rsplit(":", 1)[1], "image": ref},
+            "config_sha256": sha256_file(os.path.join(repo, "cliff.toml"))}
+
+
 def summary(version: str, repo: str = REPO) -> Optional[Dict[str, str]]:
     rel = "docs/releases/%s.md" % version
     path = os.path.join(repo, rel)
@@ -348,7 +368,7 @@ def generate(a: argparse.Namespace, env: Dict[str, str], forge: Any, repo: str =
                    "platforms": platforms} if a.image_digest else None),
         "base_images": base_images(record),
         "build_environment": build_environment(repo),
-        "changelog": None,
+        "changelog": changelog_record(a.changelog, repo) if getattr(a, "changelog", None) else None,
         "approvals": forge.approvals(run["id"]) if run and not a.dry_run else [],
         "verification": {
             "public_key_sha256": key_sha,
@@ -534,6 +554,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     g.add_argument("--image-digest", default="")
     g.add_argument("--platform-digest", action="append", default=[], metavar="ARCH=DIGEST")
     g.add_argument("--dry-run", action="store_true", help="no version tag: nothing published")
+    g.add_argument("--changelog", help="the changelog git-cliff made (one of the --assets files)")
+    sub.add_parser("previous-release", help="print the previous final release's tag, if any")
     val = sub.add_parser("validate", help="check a manifest against the schema")
     val.add_argument("manifest")
     ren = sub.add_parser("render", help="the markdown view (on stdout)")
@@ -547,6 +569,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                        env.get("GITHUB_GRAPHQL_URL", "https://api.github.com/graphql"))
         json.dump(generate(a, env, forge), sys.stdout, indent=1, sort_keys=False)
         sys.stdout.write("\n")
+        return 0
+    if a.cmd == "previous-release":
+        prev = previous_release(versions.names(versions.read_version())["tag"])
+        if prev:
+            print(prev)
         return 0
     with open(a.manifest) as f:
         doc = json.load(f)
