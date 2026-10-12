@@ -8,7 +8,8 @@
 #                                   '-> tap0 ======TX only======>   cap0 (no IP, arp off, egress dropped)
 #                                                                   tcpdump archive + wd2l-receiver
 #
-# Needs: root, iproute2, nftables (kernel >= 5.16 for the netdev egress hook), tcpdump, python3.
+# Needs: root, ip and tc (iproute + iproute-tc on RHEL, iproute2 on Ubuntu), nftables (kernel >= 5.16
+# for the netdev egress hook), tcpdump, python3.
 #
 # Usage: sudo lab/run-lab.sh [--events N] [--eps N] [--loss PCT] [--receiver-outage]
 #                            [--receiver-crash] [--maintenance] [--keep] [--interleave]
@@ -93,7 +94,7 @@ if [ -n "$FAULT" ]; then
 fi
 [ "$(id -u)" = 0 ] || { echo "run as root (needs network namespaces)" >&2; exit 1; }
 for c in ip tc nft tcpdump python3; do
-  command -v "$c" >/dev/null || { echo "missing $c (apt install iproute2 nftables tcpdump)" >&2; exit 1; }
+  command -v "$c" >/dev/null || { echo "missing $c (RHEL family: dnf install iproute iproute-tc nftables tcpdump; Ubuntu: apt install iproute2 nftables tcpdump)" >&2; exit 1; }
 done
 [ -z "$IMAGE" ] || command -v podman >/dev/null || { echo "missing podman" >&2; exit 1; }
 

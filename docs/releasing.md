@@ -28,7 +28,9 @@ flowchart LR
   draft --> person["a person publishes it"]
 ```
 
-One wheel, built once, is in every package (`wd2l/BUILD` names the commit). What each job
+One wheel, built once, is in every package (`wd2l/BUILD` names the commit). The image is built
+for linux/amd64 and linux/arm64, each natively on its own GitHub-hosted runner, and every image
+check below runs for both. What each job
 proves:
 
 * **tests** ([`tests.yml`](../.github/workflows/tests.yml)): the unit tests pass on Python 3.9
@@ -37,7 +39,7 @@ proves:
   a FIPS variant, pinned by digest
   ([`check_containerfile.py`](../packaging/container/check_containerfile.py)).
 * **base-verify**: each base image carries Red Hat's signature, SLSA provenance from Red Hat's
-  build pipeline, and an SBOM, all for the pinned digest. The result is
+  build pipeline, and an SBOM for each platform, all for the pinned digest. The result is
   `base-image-record.json` ([`base_record.py`](../packaging/container/base_record.py), keys in
   [`packaging/container/keys/`](../packaging/container/keys/README.md)).
 * **build**: the wheel and the image ([`build.sh`](../packaging/container/build.sh)).
@@ -55,18 +57,24 @@ proves:
 * **rpm** ([`rpm.yml`](../.github/workflows/rpm.yml)): the RPMs build on UBI 9 and UBI 10
   ([`build-rpms.sh`](../packaging/rpm/build-rpms.sh)), and install cleanly on a fresh system,
   over a manual install, and as an upgrade ([`install-test.sh`](../packaging/rpm/install-test.sh)).
-* **publish** ([`publish.yml`](../.github/workflows/publish.yml), tags only): pushes the image by
-  digest; copies its base images, with their signatures, SBOMs, provenance and sources, to
-  `ghcr.io/joehazurmoney/wd2l-base/python`; signs the image; attaches the SBOM, our SLSA
-  provenance ([`provenance.py`](../packaging/release/provenance.py)), the scan results and the
-  base record; and saves it all as `wd2l-<version>-image-oci.tar`.
-* **verify-published**: checks the pushed image and the saved copy as a consumer would, the
+* **publish** ([`publish.yml`](../.github/workflows/publish.yml), tags only): pushes one image
+  index for both platforms, and checks it holds exactly the two images that were tested
+  ([`image_index.py`](../packaging/release/image_index.py)); copies the base images, with their
+  signatures, SBOMs, provenance and sources, to `ghcr.io/joehazurmoney/wd2l-base/python`; signs
+  the index and each platform image, each platform image also in cosign's older `.sig` format,
+  which Podman's signature policy reads; attaches our SLSA provenance
+  ([`provenance.py`](../packaging/release/provenance.py)) and the base record to all three, and
+  each platform's SBOM and scan results to its own image; and saves each platform's image, with
+  its signatures and attestations, as `wd2l-<version>-image-<arch>-oci.tar`.
+* **verify-published**: checks the pushed images and the saved copies as a consumer would, the
   second time with no network.
+* **import-check**: on each platform's own runner, imports that platform's tar offline and
+  pulls the image from the registry under Podman's signature policy.
 * **assets**: every release file and `SHA256SUMS` over them, made once for the two jobs
   below.
 * **attest** ([`attest.yml`](../.github/workflows/attest.yml), tags only): GitHub build
-  provenance (SLSA Build Level 3) for every file and the image, and a keyless signature on
-  the image. It is the only workflow that gets an OIDC token, so the build steps can't reach
+  provenance (SLSA Build Level 3) for every file, the image index and each platform image, and
+  keyless signatures on all three. It is the only workflow that gets an OIDC token, so the build steps can't reach
   what signs the provenance ([ADR-0007](decisions/0007-slsa-build-l3.md)).
 * **release**: `SHA256SUMS` signed with our key; the notes
   ([`notes.py`](../packaging/release/notes.py)); the draft release, with
@@ -160,7 +168,7 @@ names as served.
 ```bash
 cosign verify-blob --key cosign.pub --insecure-ignore-tlog --bundle SHA256SUMS.sigstore.json SHA256SUMS
 sha256sum -c SHA256SUMS
-tar -xf wd2l-<version>-image-oci.tar
+tar -xf wd2l-<version>-image-<arch>-oci.tar
 cosign verify --key cosign.pub --insecure-ignore-tlog --local-image wd2l-oci
 cosign verify-attestation --key cosign.pub --insecure-ignore-tlog --type slsaprovenance1 --local-image wd2l-oci | jq -r .payload | base64 -d | jq .predicate.buildDefinition.resolvedDependencies
 sudo skopeo copy oci:wd2l-oci containers-storage:ghcr.io/joehazurmoney/wd2l:<version>
@@ -172,6 +180,10 @@ sudo dnf install ./wd2l-<version>-1.el10.noarch.rpm ./wd2l-receiver-<version>-1.
 * `verify-blob` and `sha256sum -c`: every file is the one the workflow built and signed.
 * `verify`: the image is signed with our key.
 * `verify-attestation`: the provenance names the commit and the exact Red Hat base images.
+
+`<arch>` is `amd64` or `arm64` (`uname -m` says `x86_64` or `aarch64`). Each platform's tar
+holds that platform's image with its signatures and attestations, and `skopeo copy` imports it;
+the index signature is for hosts that pull from a registry.
 
 `--insecure-ignore-tlog` is expected: signatures made with our key don't go to a public
 transparency log (`packaging/release/signing-config.json` names none), so there is no log entry
@@ -213,12 +225,13 @@ done < SHA256SUMS
 
 Online, drop `--bundle` and `--custom-trusted-root`. For the image in ghcr, use
 `gh attestation verify oci://ghcr.io/joehazurmoney/wd2l@sha256:<digest> --bundle-from-oci` with the
-same `--repo`, `--signer-workflow` and `--source-ref`.
+same `--repo`, `--signer-workflow` and `--source-ref`; `<digest>` can be the index or either platform's
+image (the release notes list all three).
 
 **The keyless signature on the image.** This is for cosign, and for admission controllers that
-read Sigstore bundles and trust Sigstore's public instance. Podman's own policy is still open
-([containers.md](deployment/containers.md)). Pin the repository as well as the identity: any
-repository can call a public reusable workflow.
+read Sigstore bundles and trust Sigstore's public instance. Podman's own policy checks our key's
+signature instead ([containers.md](deployment/containers.md#signature-policy-registry-pulls)).
+Pin the repository as well as the identity: any repository can call a public reusable workflow.
 
 ```bash
 cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
@@ -234,9 +247,10 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
   the SARIF files after each push to `main`).
 * **A run's Summary tab.** The vulnerability gate's verdict, then every finding with the reason
   it did or didn't block (for example "passed: no fix yet"). A release carries the same table
-  as `wd2l-<version>-vuln-summary.md`.
-* **A run's artifacts.** `vuln` holds Grype's and Trivy's full JSON and SARIF; `sbom` the SBOMs;
-  `base-evidence` the base images' checks. GitHub deletes artifacts after the retention period.
+  for each platform as `wd2l-<version>-vuln-summary-<arch>.md`.
+* **A run's artifacts.** `vuln-<arch>` holds Grype's and Trivy's full JSON and SARIF; `sbom-<arch>`
+  the SBOMs; `base-evidence` the base images' checks. GitHub deletes artifacts after the
+  retention period.
 * **GitHub's attestations page:**
   `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations` lists every
   attestation `attest.yml` made, with its subjects.
@@ -244,7 +258,7 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
   record:
 
   ```bash
-  I=ghcr.io/joehazurmoney/wd2l@sha256:<digest from the release notes>
+  I=ghcr.io/joehazurmoney/wd2l@sha256:<your platform's digest from the release notes>
   cosign tree "$I"
   cosign verify-attestation --key cosign.pub --insecure-ignore-tlog --type slsaprovenance1 "$I" \
     | jq -r .payload | base64 -d | jq .predicate
@@ -252,7 +266,9 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
 
   The other `--type` values are `spdxjson`,
   `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations/vuln-scan/v1` and
-  `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations/base-image-record/v1`.
+  `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations/base-image-record/v2`.
+  The SBOM and the scan summary are on each platform's image; the provenance and the base record
+  are on those and on the index.
 
 ## After a release
 

@@ -367,3 +367,16 @@ def test_both_parsers_take_chrony_addr():
     for p, base in ((sender.build_parser(), []), (receiver.build_parser(), ["--pcap", "x"])):
         with pytest.raises(SystemExit):
             p.parse_args(base + ["--chrony-addr", "host:notaport"])
+
+
+def test_max_stratum_option_and_threshold():
+    from wd2l import receiver, sender
+    assert sender.build_parser().parse_args([]).max_stratum == 3
+    assert receiver.build_parser().parse_args(["--pcap", "x", "--max-stratum", "5"]).max_stratum == 5
+    for bad in ("0", "16", "x"):
+        with pytest.raises(SystemExit):
+            sender.build_parser().parse_args(["--max-stratum", bad])
+    q = {"synced": True, "stratum": 5, "offset_ms": 0.1}
+    tq = hostinfo.time_quality("chronyc", None, max_stratum=5)
+    assert tq.max_stratum == 5 and tq.alarm(q) is None
+    assert hostinfo.time_quality("chronyc", None).alarm(q) == "stratum 5 > 3"

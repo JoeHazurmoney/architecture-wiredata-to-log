@@ -6,6 +6,8 @@
 Description=wd2l receiver (container): rebuild logs from the tapped stream and send them to the SIEM
 # Wait for the clock (chrony-wait, at most about 3 minutes), so the first time stamps and the
 # first time check aren't from an unsynced clock. The capture (tcpdump) doesn't wait.
+# If chrony never synced since boot (an NTP or GPS outage), every start waits that long again,
+# then starts anyway (Wants=, not Requires=): docs/planned-downtime.md.
 After=wd2l-capture-nic.service network-online.target time-sync.target
 Requires=wd2l-capture-nic.service
 Wants=network-online.target time-sync.target chrony-wait.service
@@ -14,7 +16,7 @@ Wants=network-online.target time-sync.target chrony-wait.service
 ContainerName=wd2l-receiver
 # The release's image, verified and loaded beforehand (docs/releasing.md). For strict change
 # control, name it by the digest in the release notes: ghcr.io/joehazurmoney/wd2l@sha256:...
-Image=ghcr.io/joehazurmoney/wd2l:0.3.0rc4
+Image=ghcr.io/joehazurmoney/wd2l:0.3.0rc5
 Pull=never
 Network=host
 User=wd2l
@@ -22,7 +24,9 @@ Group=wd2l
 Volume=/etc/passwd:/etc/passwd:ro
 Volume=/etc/group:/etc/group:ro
 Volume=/etc/wd2l:/etc/wd2l:ro,z
-Volume=/var/lib/wd2l:/var/lib/wd2l:z
+# No :z here: it would relabel the capture archive too. The wd2l RPM labels this directory for
+# containers (common/wd2l_container.cil).
+Volume=/var/lib/wd2l:/var/lib/wd2l
 Volume=/var/log/wd2l:/var/log/wd2l:z
 DropCapability=all
 # Raw socket for capture, nothing else.

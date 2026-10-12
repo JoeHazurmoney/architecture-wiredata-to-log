@@ -140,9 +140,25 @@ rsyslog config and port label). `dnf upgrade` took 14 s, the SELinux module incl
 
 R-8 (no time alarm at boot) needs a reboot: not done yet.
 
+## rc4 reboot and rc5 (2026-10-11/12)
+
+| # | Where | Type | What happened | Fix | Ansible |
+|---|---|---|---|---|---|
+| R5-1 | reboot (rc4) | works | R-8 fixed: the sender and receiver started 24.5 s after boot, right after `chrony-wait`; no "unsynced" alarm | — | — |
+| R5-2 | reboot (rc4) | site | A "stratum 5 > 3" alarm after boot: the public NTP pool gave stratum 3-4 sources | rc5 `--max-stratum` | Point chrony at the site's stratum ≤ 2 / GPS servers; set `--max-stratum` only for a lab |
+| R5-3 | reboot (rc4, single box) | expected | A plain `systemctl reboot` stops sender and receiver in parallel: the last run shows `stream_lost` (no event lost) | — | The patch/reboot flow does the planned-downtime stop first |
+| R5-4 | Pi | missing-automation | The journal is volatile (no `/var/log/journal`): the previous boot's log is gone | — | Create `/var/log/journal` (the testbed kickstart does) |
+| R5-5 | native rc5 on the Pi | bug (fixed in rc5) | With `/var/lib/wd2l` labelled `container_file_t`, host tcpdump (`netutils_t`) couldn't open its file; nothing logged (dontaudit) | `wd2l_pcap.cil`: search-only rule on `container_file_t` dirs | — |
+| R5-6 | Quadlet switch (Pi) | doc-wrong (fixed) | `sudo chattr -a /var/log/wd2l/audit-*.jsonl` unlocks nothing: the operator's shell can't read 2750 `/var/log/wd2l` to expand the glob; the first start failed (`PermissionError`), the directories were relabelled but the files not | containers.md: `sudo sh -c '…'`, and "start again" after unlocking | Use a root-side glob (`ansible.builtin.shell` with `become`) |
+| R5-7 | Quadlet (Pi) | works | User `wd2l` resolves; env options reach wd2l; tcpdump keeps writing; `archive_age_s` 0.1; restart over sealed files works; container replay without `:z` filled 18 events; 0 AVCs after the unlock | — | — |
+| R5-8 | Quadlet | minor | `--chrony-addr 127.0.0.1:323` is on the command line twice (env file since rc4, and the Quadlet `Exec`); harmless | rc6: drop it from the Quadlet `Exec` | — |
+| R5-9 | testbed VMs | site | A FIPS-mode sshd refuses ed25519 keys ("not in PubkeyAcceptedAlgorithms") | ECDSA P-256 key | Inventory: ECDSA/RSA keys for FIPS hosts |
+| R5-10 | PC | ops | After a Windows sign-in, Docker Desktop didn't start, so Splunk was down (the receiver spooled, nothing lost). Then the Splunk container looped: its start-up posts `serverCert=''` for HEC | `/tmp/defaults/default.yml` with `splunk.hec.cert` in the container | The Splunk set-up script should mount that file |
+| R5-11 | CI | flake | Release dry run: `--fault foreign-only` lost 1 event (second time in two days) and `--loss 1` lost its reconcile record; reran | — | — |
+
 ## Not done yet
 
-* **R-8 on the Pi:** reboot with rc4 installed and check there is no `time_status=alarm` record.
-* **Container mode (Quadlet)**: blocked on the Pi by A0-1 (no arm64 image) and A2-6.
+* ~~R-8 on the Pi~~ done (R5-1).
+* ~~Container mode on the Pi~~ done with rc5 (R5-7); the amd64 FIPS VMs are next.
 * **Re-send from Enclave 1** for the 110 events lost in the fault tests: optional demo of
   operations.md "Re-sending from Enclave 1" (no retention server here; the journal is the source).

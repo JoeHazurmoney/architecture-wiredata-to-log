@@ -95,7 +95,7 @@ br = load_script("packaging/container/base_record.py")
 
 
 def write_evidence(d, i, ref_name, tag, sign_digest=None, prov_digest=None, fips=True,
-                   index_bytes=None):
+                   index_bytes=None, releases=None):
     """Evidence files for FROM number i, as the base-verify job writes them. Returns the
     index digest the Containerfile must name."""
     amd = "sha256:" + hashlib.sha256(b"amd%d" % i).hexdigest()
@@ -108,7 +108,12 @@ def write_evidence(d, i, ref_name, tag, sign_digest=None, prov_digest=None, fips
     labels = {"version": "3.12.15", "release": "1791414125"}
     if fips:
         labels["io.hummingbird-project.variant.fips"] = "true"
-    (d / ("config-%d.json" % i)).write_text(json.dumps({"config": {"Labels": labels}}))
+    releases = releases or {}
+    for arch in ("amd64", "arm64"):
+        (d / ("config-%d-%s.json" % (i, arch))).write_text(json.dumps({"config": {"Labels": dict(
+            labels, release=releases.get(arch, labels["release"]))}}))
+        (d / ("sbom-%d-%s.spdx.json" % (i, arch))).write_text(json.dumps({
+            "spdxVersion": "SPDX-2.3", "packages": [{"name": "python3.12"}, {"name": "glibc"}]}))
     (d / ("signature-%d.json" % i)).write_text(json.dumps([{"critical": {
         "image": {"docker-manifest-digest": sign_digest or digest}}}]))
     statement = {"_type": "https://in-toto.io/Statement/v0.1",
@@ -118,8 +123,6 @@ def write_evidence(d, i, ref_name, tag, sign_digest=None, prov_digest=None, fips
     (d / ("provenance-%d.json" % i)).write_text(json.dumps({
         "payloadType": "application/vnd.in-toto+json",
         "payload": base64.b64encode(json.dumps(statement).encode()).decode()}) + "\n")
-    (d / ("sbom-%d.spdx.json" % i)).write_text(json.dumps({
-        "spdxVersion": "SPDX-2.3", "packages": [{"name": "python3.12"}, {"name": "glibc"}]}))
     return digest
 
 
@@ -148,7 +151,8 @@ def test_record_from_good_evidence(tmp_path):
     assert img["source_image"] == B + ":1791414125-source"
     assert img["mirror"] == "quay.io/hummingbird/python@" + froms[1]["digest"]
     assert img["signature"]["verified"] and img["provenance"]["predicate_type"].endswith("v0.2")
-    assert img["sbom"]["packages"] == 2
+    assert set(img["sboms"]) == {"amd64", "arm64"} and img["sboms"]["arm64"]["packages"] == 2
+    assert img["configs"]["arm64"]["release"] == "1791414125" and img["release"] == "1791414125"
     assert rec["keys"]["redhat-release3.pub"] == hashlib.sha256(b"rh").hexdigest()
 
 
@@ -179,9 +183,23 @@ def test_record_refuses_a_fips_tag_without_the_fips_label(tmp_path):
 
 def test_record_refuses_missing_evidence(tmp_path):
     froms, d, keys = evidence(tmp_path)
-    (d / "sbom-1.spdx.json").unlink()
+    (d / "sbom-1-arm64.spdx.json").unlink()
     _rec, probs = br.record(froms, str(d), str(keys), "now")
-    assert any("sbom-1.spdx.json" in p for p in probs)
+    assert any("sbom-1-arm64.spdx.json" in p for p in probs)
+
+
+def test_record_refuses_platforms_with_different_releases(tmp_path):
+    froms, d, keys = evidence(tmp_path, releases={"arm64": "1791000000"})
+    _rec, probs = br.record(froms, str(d), str(keys), "now")
+    assert any("release" in p and "arm64" in p for p in probs)
+
+
+def test_record_refuses_an_index_without_arm64(tmp_path):
+    index = json.dumps({"manifests": [{"digest": "sha256:" + "a" * 64,
+                                       "platform": {"os": "linux", "architecture": "amd64"}}]}).encode()
+    froms, d, keys = evidence(tmp_path, index_bytes=index)
+    _rec, probs = br.record(froms, str(d), str(keys), "now")
+    assert any("arm64" in p and "index" in p for p in probs)
 
 
 import stat

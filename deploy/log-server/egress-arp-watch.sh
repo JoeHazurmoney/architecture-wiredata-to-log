@@ -21,5 +21,10 @@ ensure() {
 }
 
 ensure
-# Any link or neighbour event: check again (cheap, and events are rare on this host).
-ip -o monitor link neigh | while read -r _; do ensure; done
+# A link or neighbour event on this NIC: check again. Link events name it "N: IFACE:" or, for a
+# veth or VLAN, "N: IFACE@peer:"; neighbour events "... dev IFACE ...". Other NICs are ignored.
+ip -o monitor link neigh | while read -r line; do
+  case "$line" in
+    *": $IFACE:"*|*": $IFACE@"*|*" dev $IFACE "*|*" dev $IFACE") ensure ;;
+  esac
+done

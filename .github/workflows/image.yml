@@ -1,6 +1,8 @@
 name: image
 # The container image's checks (docs/decisions/0004-container-base-image.md): every push and PR
-# via tests.yml, and every release via release.yml, which then runs publish.yml.
+# via tests.yml, and every release via release.yml, which then runs publish.yml. The image is
+# built for linux/amd64 and linux/arm64, each natively on its own runner, and every check runs
+# for both.
 on:
   workflow_call:
   workflow_dispatch:
@@ -25,7 +27,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Collect each base image's signature, provenance, SBOM, index and config
+      - name: Collect each base image's signature, provenance, index, and each platform's config and SBOM
         run: |
           mkdir -p evidence
           python3 packaging/container/check_containerfile.py --json > evidence/froms.json
@@ -34,15 +36,17 @@ jobs:
             digest=$(jq -r ".[$i].digest" evidence/froms.json)
             mirror="quay.io/hummingbird/${name#registry.access.redhat.com/hi/}"
             skopeo inspect --raw "docker://$name@$digest" > "evidence/index-$i.json"
-            skopeo inspect --config --override-os linux --override-arch amd64 \
-              "docker://$name@$digest" > "evidence/config-$i.json"
+            for arch in amd64 arm64; do
+              skopeo inspect --config --override-os linux --override-arch $arch \
+                "docker://$name@$digest" > "evidence/config-$i-$arch.json"
+              child=$(jq -r --arg a $arch '.manifests[] | select(.platform.architecture == $a) | .digest' "evidence/index-$i.json")
+              layer=$(packaging/ci/tool oras manifest fetch "$mirror:sha256-${child#sha256:}.sbom" | jq -r '.layers[0].digest')
+              packaging/ci/tool oras blob fetch --output "/work/evidence/sbom-$i-$arch.spdx.json" "$mirror@$layer"
+            done
             packaging/ci/tool cosign verify --key /work/packaging/container/keys/redhat-release3.pub \
               --insecure-ignore-tlog "$name@$digest" > "evidence/signature-$i.json"
             packaging/ci/tool cosign verify-attestation --key /work/packaging/container/keys/hummingbird-ci.pub \
               --insecure-ignore-tlog --type slsaprovenance "$mirror@$digest" > "evidence/provenance-$i.json"
-            amd=$(jq -r '.manifests[] | select(.platform.architecture == "amd64") | .digest' "evidence/index-$i.json")
-            layer=$(packaging/ci/tool oras manifest fetch "$mirror:sha256-${amd#sha256:}.sbom" | jq -r '.layers[0].digest')
-            packaging/ci/tool oras blob fetch --output "/work/evidence/sbom-$i.spdx.json" "$mirror@$layer"
           done
       - name: Cross-check and record
         run: python3 packaging/container/base_record.py --evidence evidence --out evidence/base-image-record.json
@@ -51,8 +55,7 @@ jobs:
           name: base-evidence
           path: evidence/
 
-  build:
-    needs: [lint, base-verify]
+  wheel:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,35 +69,60 @@ jobs:
           git rev-parse HEAD > wd2l/BUILD
           python -m build
           python packaging/check_dist.py dist --commit "$(git rev-parse HEAD)"
-      - name: Image
-        run: |
-          started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          packaging/container/build.sh dist localhost/wd2l:ci
-          mkdir -p image build-info
-          podman save --format oci-archive -o image/image.oci.tar localhost/wd2l:ci
-          jq -n --arg commit "$(git rev-parse HEAD)" \
-                --arg version "$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' wd2l/__init__.py)" \
-                --arg image_id "$(podman image inspect --format '{{.Id}}' localhost/wd2l:ci)" \
-                --arg epoch "$(git log -1 --format=%ct)" --arg started "$started" \
-                '{commit: $commit, version: $version, image_id: $image_id, epoch: $epoch, started: $started}' \
-                > build-info/build-info.json
-          cat build-info/build-info.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist/
+
+  build:
+    needs: [wheel, lint, base-verify]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: Image (native, so each runner builds its own platform)
+        run: |
+          started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          packaging/container/build.sh dist localhost/wd2l:ci
+          got=$(podman image inspect --format '{{.Architecture}}' localhost/wd2l:ci)
+          [ "$got" = "${{ matrix.arch }}" ] || { echo "built $got on the ${{ matrix.arch }} runner" >&2; exit 1; }
+          mkdir -p image build-info
+          podman save --format oci-archive -o image/image.oci.tar localhost/wd2l:ci
+          jq -n --arg commit "$(git rev-parse HEAD)" \
+                --arg version "$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' wd2l/__init__.py)" \
+                --arg arch "${{ matrix.arch }}" \
+                --arg image_id "$(podman image inspect --format '{{.Id}}' localhost/wd2l:ci)" \
+                --arg epoch "$(git log -1 --format=%ct)" --arg started "$started" \
+                '{commit: $commit, version: $version, arch: $arch, image_id: $image_id, epoch: $epoch, started: $started}' \
+                > build-info/build-info.json
+          cat build-info/build-info.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: image
+          name: image-${{ matrix.arch }}
           path: image/
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: build-info
+          name: build-info-${{ matrix.arch }}
           path: build-info/
 
   reproducible:
     needs: [build]
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
     continue-on-error: true      # report-only until it has matched on 10 pushes in a row
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -103,7 +131,16 @@ jobs:
           python-version: "3.12"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: "{dist,image,build-info}"
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-${{ matrix.arch }}
+          path: image
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-info-${{ matrix.arch }}
+          path: build-info
       - name: Rebuild the wheel and the image from the same commit, on a fresh runner
         run: |
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"; export SOURCE_DATE_EPOCH
@@ -129,13 +166,27 @@ jobs:
 
   hardening:
     needs: [build]
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: "{image,dist,build-info}"
-          merge-multiple: false
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-${{ matrix.arch }}
+          path: image
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-info-${{ matrix.arch }}
+          path: build-info
       - name: Filesystem and config
         run: |
           IMG=$(podman load -q -i image/image.oci.tar | awk '{print $NF}')
@@ -153,13 +204,20 @@ jobs:
         run: podman run --rm -v "$PWD/packaging/container/fips_check.py:/fips_check.py:ro" "$IMG" python3 /fips_check.py
 
   vuln-scan:
+    # Reads the image archive only, so both platforms are scanned on the amd64 runner.
     needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64}
+          - {arch: arm64}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: image
+          name: image-${{ matrix.arch }}
           path: image
       - name: Grype and Trivy
         run: |
@@ -177,49 +235,66 @@ jobs:
           python3 packaging/container/vuln_gate.py --grype vuln/grype.json --trivy vuln/trivy.json \
             --exceptions packaging/container/vuln-exceptions.json \
             --summary vuln/vuln-summary.md --predicate vuln/vuln-predicate.json || rc=$?
-          cat vuln/vuln-summary.md >> "$GITHUB_STEP_SUMMARY"
+          { echo "### ${{ matrix.arch }}"; cat vuln/vuln-summary.md; } >> "$GITHUB_STEP_SUMMARY"
           exit $rc
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: vuln
+          name: vuln-${{ matrix.arch }}
           path: vuln/
 
   sbom:
+    # Reads the image archives only: both platforms on the amd64 runner.
     needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64}
+          - {arch: arm64}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: image
+          name: image-${{ matrix.arch }}
           path: image
-      - name: SBOMs of the image and of its base
+      - name: SBOMs of the image and of its base (the same platform)
         run: |
           mkdir -p sbom
           packaging/ci/tool syft oci-archive:/work/image/image.oci.tar -q \
             -o spdx-json=/work/sbom/wd2l.spdx.json -o cyclonedx-json=/work/sbom/wd2l.cdx.json
           BASE=$(python3 packaging/container/check_containerfile.py --base)
-          podman pull -q "$BASE" && podman save -q --format oci-archive -o base.oci.tar "$BASE"
+          podman pull -q --arch ${{ matrix.arch }} "$BASE" && podman save -q --format oci-archive -o base.oci.tar "$BASE"
           packaging/ci/tool syft oci-archive:/work/base.oci.tar -q -o spdx-json=/work/sbom/base.spdx.json
       - run: python3 packaging/container/sbom_diff.py sbom/base.spdx.json sbom/wd2l.spdx.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sbom
+          name: sbom-${{ matrix.arch }}
           path: sbom/
 
   functional:
     needs: [build]
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, runner: ubuntu-24.04, uname: x86_64}
+          - {arch: arm64, runner: ubuntu-24.04-arm, uname: aarch64}
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: image
+          name: image-${{ matrix.arch }}
           path: image
       - run: sudo apt-get update -q && sudo apt-get install -y -q iproute2 nftables tcpdump
-      - name: Load
-        run: echo "IMG=$(sudo podman load -q -i image/image.oci.tar | awk '{print $NF}')" >> "$GITHUB_ENV"
+      - name: Load (on its own platform, never emulated)
+        run: |
+          [ "$(uname -m)" = "${{ matrix.uname }}" ]
+          IMG=$(sudo podman load -q -i image/image.oci.tar | awk '{print $NF}')
+          [ "$(sudo podman image inspect --format '{{.Architecture}}' "$IMG")" = "${{ matrix.arch }}" ]
+          echo "IMG=$IMG" >> "$GITHUB_ENV"
       - name: Smoke
         run: |
           for c in wd2l-sender wd2l-receiver wd2l-audit-report; do sudo podman run --rm "$IMG" "$c" --help > /dev/null; done
@@ -233,8 +308,14 @@ jobs:
 
   fips-tests:
     # The whole test suite under the OpenSSL FIPS provider (the builder has the same Python and
-    # crypto policy as the runtime image, plus a shell and dnf for pytest).
-    runs-on: ubuntu-24.04
+    # crypto policy as the runtime image, plus a shell and dnf for pytest), on each platform.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, runner: ubuntu-24.04}
+          - {arch: arm64, runner: ubuntu-24.04-arm}
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: |

@@ -38,6 +38,7 @@ carry `records: true`. The `health` counters, cumulative since the receiver star
 | `clock_offset_s` | Receiver clock minus sender clock at the last heartbeat (plus under 1 ms of fiber delay) | within a few ms of 0 |
 | `other_packets`, `bad_frames`, `bad_events`, `digest_mismatch` (with `*_reasons`) | Traffic that isn't the log flow; corrupt or malformed input | 0 |
 | `kernel_drops` | Packets the kernel dropped before the receiver read them | 0 |
+| `capture_down_errors` | Reads that failed because the capture NIC went down, since the receiver started: usually one per outage (rule 1 says where and for how long) | 0 |
 | `reasm_expired`, `reasm_evicted`, `event_too_big` | Split events that never completed | 0 |
 | `sender_drops`, `sender_truncated`, `sender_bad_input`, `sender_unread_bytes`, `sender_opaque_events`, `sender_events_in` | From the sender's heartbeat | 0; truncated and opaque at your sources' usual level; `sender_events_in` grows with `events_delivered` |
 | `hec_*` (`events_sent`, `spool_files`, `spool_bytes`, `posts_failed`, `rejected_events`, `queue_overflow_events`) | SIEM delivery; `audit_hec_*` for the audit output | spool, rejected, overflow 0 |
@@ -232,7 +233,8 @@ On a manual install (code in `/opt/wd2l`), put `env PYTHONPATH=/opt/wd2l` after 
 and for `python3 -m wd2l.audit verify` above. In a container, see
 [containers.md](deployment/containers.md#replay-from-the-archive).
 `--audit-dir` records the replay (`replay_run`, naming you); it needs the audit token too (name the
-same file twice if the site uses one token).
+same file twice if the site uses one token). A start can wait up to about 3 minutes for the clock
+([waiting for the clock](planned-downtime.md#start)).
 
 The summary's `late_fills` is how many gap events it recovered, and `open_gap_events` what is still
 missing. tcpdump keeps capturing while the receiver is stopped, so the stop loses nothing: the

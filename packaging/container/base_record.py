@@ -3,13 +3,15 @@
 base-image-record.json: the exact images a build stood on, and how each was checked
 (docs/decisions/0006-release-artifacts-and-signing.md).
 
-EVIDENCE holds, for FROM number i of the Containerfile (0 = the first):
-  index-<i>.json       the image index, raw bytes (skopeo inspect --raw)
-  config-<i>.json      the amd64 image config (skopeo inspect --config)
-  signature-<i>.json   `cosign verify` output with keys/redhat-release3.pub
-  provenance-<i>.json  `cosign verify-attestation --type slsaprovenance` output with
-                       keys/hummingbird-ci.pub, one JSON object per line
-  sbom-<i>.spdx.json   the base's SPDX SBOM, from quay.io/hummingbird
+EVIDENCE holds, for FROM number i of the Containerfile (0 = the first), and each platform
+<arch> (amd64, arm64):
+  index-<i>.json              the image index, raw bytes (skopeo inspect --raw)
+  config-<i>-<arch>.json      that platform's image config (skopeo inspect --config)
+  signature-<i>.json          `cosign verify` output with keys/redhat-release3.pub
+  provenance-<i>.json         `cosign verify-attestation --type slsaprovenance` output with
+                              keys/hummingbird-ci.pub, one JSON object per line
+  sbom-<i>-<arch>.spdx.json   that platform's SPDX SBOM, from quay.io/hummingbird
+Both platforms must be in the index, FIPS where the tag says so, and the same release.
 cosign has already verified the signatures (it exits non-zero otherwise). This script checks
 that they are about the pinned digests, so nothing else could have been verified instead.
 
@@ -31,6 +33,7 @@ import check_containerfile  # noqa: E402  (a sibling script, not a package)
 REGISTRY = "registry.access.redhat.com/hi/"
 MIRROR = "quay.io/hummingbird/"
 SIGNING_KEY, PROVENANCE_KEY = "redhat-release3.pub", "hummingbird-ci.pub"
+ARCHES = ("amd64", "arm64")       # the platforms wd2l is built for, each from its own base image
 
 
 def _sha256(path: str) -> str:
@@ -77,16 +80,29 @@ def _entry(i: int, f: Dict[str, Any], ev: str, probs: List[str]) -> Dict[str, An
             probs.append("%s: the index fetched (%s) is not the pinned digest" % (f["ref"], got))
         with open(p) as fh:
             out["platforms"] = platform_digests(json.load(fh))
+        for arch in ARCHES:
+            if arch not in out["platforms"]:
+                probs.append("%s: the index has no linux/%s image" % (f["ref"], arch))
     known = {digest} | set(out.get("platforms", {}).values())
-    p = path("config-%d.json")
-    if p:
+    configs: Dict[str, Dict[str, Any]] = {}
+    for arch in ARCHES:
+        p = path("config-%d-" + arch + ".json")
+        if not p:
+            continue
         with open(p) as fh:
             labels = (json.load(fh).get("config") or {}).get("Labels") or {}
-        out["version"], out["release"] = labels.get("version"), labels.get("release")
-        out["source_image"] = "%s:%s-source" % (f["name"], labels.get("release"))
+        configs[arch] = {"version": labels.get("version"), "release": labels.get("release")}
         if str(f["tag"]).endswith(("-fips", "-fips-builder")) and \
                 labels.get("io.hummingbird-project.variant.fips") != "true":
-            probs.append("%s: tagged FIPS but its config has no FIPS variant label" % f["ref"])
+            probs.append("%s: tagged FIPS but its %s config has no FIPS variant label" % (f["ref"], arch))
+    out["configs"] = configs
+    if len({c["release"] for c in configs.values()}) > 1:
+        probs.append("%s: the platforms are different releases: %s" % (
+            f["ref"], ", ".join("%s %s" % (a, c["release"]) for a, c in sorted(configs.items()))))
+    if configs:
+        first = configs[sorted(configs)[0]]
+        out["version"], out["release"] = first["version"], first["release"]
+        out["source_image"] = "%s:%s-source" % (f["name"], first["release"])
     p = path("signature-%d.json")
     if p:
         with open(p) as fh:
@@ -103,14 +119,18 @@ def _entry(i: int, f: Dict[str, Any], ev: str, probs: List[str]) -> Dict[str, An
             probs.append("%s: the provenance is about %s, not this image" % (f["ref"], sorted(subjects)))
         out["provenance"] = {"key": PROVENANCE_KEY, "predicate_type": ",".join(sorted(types)),
                              "subjects": sorted(subjects), "evidence_sha256": _sha256(p)}
-    p = path("sbom-%d.spdx.json")
-    if p:
+    sboms: Dict[str, Dict[str, Any]] = {}
+    for arch in ARCHES:
+        p = path("sbom-%d-" + arch + ".spdx.json")
+        if not p:
+            continue
         with open(p) as fh:
             sbom = json.load(fh)
         if not str(sbom.get("spdxVersion", "")).startswith("SPDX-"):
-            probs.append("%s: the SBOM is not SPDX" % f["ref"])
-        out["sbom"] = {"file": os.path.basename(p), "sha256": _sha256(p),
+            probs.append("%s: the %s SBOM is not SPDX" % (f["ref"], arch))
+        sboms[arch] = {"file": os.path.basename(p), "sha256": _sha256(p),
                        "packages": len(sbom.get("packages", []))}
+    out["sboms"] = sboms
     return out
 
 

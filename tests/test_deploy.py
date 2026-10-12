@@ -206,6 +206,9 @@ def test_arp_watch_runs_whenever_the_egress_nic_does():
     assert arp["After"] == ["wd2l-egress-nic.service"] and arp["PartOf"] == ["wd2l-egress-nic.service"]
     assert arp["ExecStart"] == ["/opt/wd2l/deploy/log-server/egress-arp-watch.sh"]
     assert arp["Restart"] == ["always"] and arp["CapabilityBoundingSet"] == ["CAP_NET_ADMIN"]
+    # A watcher that keeps failing must keep retrying (systemd's default gives up after 5 starts
+    # in 10 s), and not spin.
+    assert arp["StartLimitIntervalSec"] == ["0"] and arp["RestartSec"] == ["5"]
     assert "WantedBy" not in arp          # started by wd2l-egress-nic's Wants=, never enabled alone
     with open(os.path.join(REPO, "deploy", "log-server", "wd2l.rules")) as f:
         assert "-w /etc/systemd/system/wd2l-egress-arp.service -p wa -k wd2l-units" in f.read().splitlines()
@@ -235,3 +238,37 @@ def test_manual_install_copies_every_unit(side):
              for n in os.listdir(os.path.join(REPO, "deploy", d)) if n.endswith((".service", ".timer"))]
     missing = [u for u in units if not any(fnmatch.fnmatch(u, c) for c in copied)]
     assert not missing, missing
+
+
+@pytest.mark.parametrize("side, name", [("log-server", "wd2l-sender"), ("receiver", "wd2l-receiver")])
+def test_quadlets_mount_var_lib_wd2l_without_relabelling(side, name):
+    # :z relabelled /var/lib/wd2l/pcap to container_file_t and stopped host tcpdump (A2-6); the
+    # wd2l_container module labels /var/lib/wd2l instead, and the pcap rule wins there.
+    vols = quadlet(os.path.join(REPO, "deploy", side, name + ".container"))["Container"]["Volume"]
+    assert [v for v in vols if v.startswith("/var/lib/wd2l:")] == ["/var/lib/wd2l:/var/lib/wd2l"]
+    assert "/var/log/wd2l:/var/log/wd2l:z" in vols
+
+
+def test_containers_md_relabels_after_podman_and_never_mounts_var_lib_with_z():
+    with open(os.path.join(REPO, "docs", "deployment", "containers.md"), encoding="utf-8") as f:
+        doc = f.read()
+    assert "/var/lib/wd2l:/var/lib/wd2l:z" not in doc
+    assert "sudo restorecon -RF /var/lib/wd2l" in doc
+
+
+def test_containers_md_gives_a_working_signature_policy():
+    with open(os.path.join(REPO, "docs", "deployment", "containers.md"), encoding="utf-8") as f:
+        doc = f.read()
+    assert '"type": "sigstoreSigned"' in doc and "use-sigstore-attachments: true" in doc
+    assert "whether Podman's `sigstoreSigned` policy accepts" not in doc
+
+
+def test_containers_md_unlocks_the_audit_files_with_a_root_glob():
+    # /var/log/wd2l is 2750 root:wd2l-audit: an operator's shell can't expand the glob, so
+    # `sudo chattr -a /var/log/wd2l/audit-*.jsonl` unlocked nothing and the first start failed
+    # (found switching the Pi to Quadlet, rc5).
+    with open(os.path.join(REPO, "docs", "deployment", "containers.md"), encoding="utf-8") as f:
+        doc = f.read()
+    assert "sudo sh -c 'chattr -a /var/log/wd2l/audit-*.jsonl'" in doc
+    assert "sudo chattr -a /var/log/wd2l/audit-*.jsonl" not in doc
+    assert "Confirmed on AlmaLinux 10" in doc and "Still to confirm" not in doc

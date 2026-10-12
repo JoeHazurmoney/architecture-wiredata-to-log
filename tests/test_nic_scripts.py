@@ -4,6 +4,8 @@ import json
 import os
 import subprocess
 
+import pytest
+
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 CAPTURE = os.path.join(REPO, "deploy", "receiver", "capture-nic.sh")
 EGRESS = os.path.join(REPO, "deploy", "log-server", "egress-nic.sh")
@@ -131,12 +133,12 @@ echo "$*" >> "$STUBS/calls"
 case "$1 $2" in
   "neigh show") cat "$STUBS/neigh" ;;
   "neigh replace") echo "$3 dev $9 lladdr $5 PERMANENT" > "$STUBS/neigh" ;;
-  "-o monitor") [ -n "$KEEP" ] || : > "$STUBS/neigh"; echo "4: test0: <BROADCAST,UP,LOWER_UP> state UP" ;;
+  "-o monitor") [ -n "$KEEP" ] || : > "$STUBS/neigh"; echo "${EVENT:-4: test0: <BROADCAST,UP,LOWER_UP> state UP}" ;;
 esac
 '''
 
 
-def run_watch(tmp_path, neigh, keep=""):
+def run_watch(tmp_path, neigh, keep="", event=""):
     stubs = tmp_path / "stubs"
     stubs.mkdir()
     ip = stubs / "ip"
@@ -144,7 +146,7 @@ def run_watch(tmp_path, neigh, keep=""):
     ip.chmod(0o755)
     (stubs / "neigh").write_text(neigh)
     env = dict(os.environ, PATH="%s:%s" % (stubs, os.environ["PATH"]), STUBS=str(stubs), KEEP=keep,
-               **egress_env(tmp_path))
+               EVENT=event, **egress_env(tmp_path))
     r = subprocess.run(["bash", WATCH], env=env, universal_newlines=True, timeout=20,
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     calls = (stubs / "calls").read_text().splitlines()
@@ -163,6 +165,19 @@ def test_arp_watch_leaves_a_present_entry_alone(tmp_path):
                             keep="1")
     assert r.returncode == 0, r.stderr
     assert replaces == [] and r.stdout == ""
+
+
+@pytest.mark.parametrize("event, replaces", [
+    ("4: test0@peer0: <BROADCAST,UP,LOWER_UP> state UP", 2),   # a veth names its peer
+    ("10.9.9.2 dev test0 lladdr 02:00:00:00:00:09 PERMANENT", 2),
+    ("Deleted 10.9.9.2 dev test0 lladdr 02:00:00:00:00:09 PERMANENT", 2),
+    ("5: eth9: <BROADCAST,UP,LOWER_UP> state UP", 1),          # another NIC: only the start check
+    ("10.0.0.7 dev eth9 lladdr 52:54:00:00:00:01 REACHABLE", 1),
+])
+def test_arp_watch_reacts_only_to_its_own_nic(tmp_path, event, replaces):
+    r, got = run_watch(tmp_path, neigh="", event=event)
+    assert r.returncode == 0, r.stderr
+    assert len(got) == replaces, got
 
 
 def test_capture_nic_keeps_going_when_the_kernel_refuses_the_egress_drop(tmp_path):

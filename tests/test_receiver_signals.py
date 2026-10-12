@@ -1,7 +1,7 @@
 import json
 
 from wd2l import wire
-from wd2l.receiver import Receiver
+from wd2l.receiver import Receiver, poll_capture
 
 from helpers import MemOutput, eth
 
@@ -21,3 +21,24 @@ def test_health_summary_carries_the_receivers_signals():
     assert (rec["nic_carrier"], rec["nic_rx_packets"], rec["archive_age_s"]) == (True, 50, 0.4)
     assert rec["cpu_pct"] >= 0 and rec["rss_mb"] > 0
     assert (rec["packet_age_s"], rec["frame_age_s"], rec["sender_events_in"]) == (2.5, 2.5, 7)
+
+
+
+
+class FakeCap:
+    def __init__(self):
+        self.down_errors = 0
+        self.stats = [(10, 2), (5, 0)]
+
+    def kernel_stats(self):
+        return self.stats.pop(0)
+
+
+def test_live_poll_counts_kernel_drops_and_reads_with_the_capture_nic_down():
+    r = Receiver(MemOutput(), dst_ip="10.255.255.2", dst_port=5514, health_interval=1e9)
+    cap = FakeCap()
+    poll_capture(r, cap)
+    cap.down_errors = 3
+    poll_capture(r, cap)
+    rec = r.emit_health(1)
+    assert (rec["kernel_drops"], rec["capture_down_errors"]) == (2, 3)

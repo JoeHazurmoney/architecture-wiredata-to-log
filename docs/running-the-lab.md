@@ -19,7 +19,7 @@ checks what comes out the other side. No network gear is needed. Commands are fo
 ## 2. Install the tools
 
 ```bash
-sudo dnf install -y git python3 python3-pip iproute nftables tcpdump
+sudo dnf install -y git python3 python3-pip iproute iproute-tc nftables tcpdump
 python3 -m pip install --user pytest
 ```
 

@@ -29,8 +29,8 @@ Use the container or the native unit on a host, never both. Both read the same o
 
 ## Bring the image in (offline)
 
-Verify the release and load the image as [releasing.md](../releasing.md#bringing-a-release-into-an-enclave)
-says. Then check that the loaded image is the one the release notes name:
+Verify the release and load your platform's image as [releasing.md](../releasing.md#bringing-a-release-into-an-enclave)
+says. Then check that the loaded image is your platform's image in the release notes:
 
 ```bash
 sudo podman image inspect --format '{{.Digest}}' ghcr.io/joehazurmoney/wd2l:<version>
@@ -48,17 +48,36 @@ sudo podman pull ghcr.io/joehazurmoney/wd2l@$D
 sudo podman tag ghcr.io/joehazurmoney/wd2l@$D ghcr.io/joehazurmoney/wd2l:<version>
 ```
 
-Podman's own signature policy (`sigstoreSigned` in `/etc/containers/policy.json`) isn't used
-here yet. The release's signatures are cosign 3 Sigstore bundles, stored as OCI referrers, and
-it isn't confirmed yet that Podman reads them (see the list under
-[User, SELinux and FIPS](#user-selinux-and-fips)).
+## Signature policy (registry pulls)
+
+A host that pulls from a registry can have Podman check the signature itself, on every pull.
+Put `cosign.pub` (from a trusted channel) at `/etc/pki/wd2l/cosign.pub`. Then
+`/etc/containers/registries.d/wd2l.yaml`:
+
+```yaml
+docker:
+  ghcr.io/joehazurmoney:
+    use-sigstore-attachments: true
+```
+
+and in `/etc/containers/policy.json`, under `transports.docker`:
+
+```json
+"ghcr.io/joehazurmoney/wd2l": [{"type": "sigstoreSigned", "keyPath": "/etc/pki/wd2l/cosign.pub",
+                                "signedIdentity": {"type": "matchRepository"}}]
+```
+
+Podman reads only cosign's older signature format, so every release also signs each platform
+image that way. Pulling by the index digest checks your platform's image. The release workflow
+checks this policy on both platforms (`import-check`); it was also checked on AlmaLinux 10
+(Podman 5.8).
 
 ## Install the unit
 
 ```bash
 sudo systemctl disable --now wd2l-receiver.service 2>/dev/null   # the native unit, if it was on
 sudo cp /usr/share/wd2l/quadlet/wd2l-receiver.container /etc/containers/systemd/
-# strict change control: name the release's digest instead of the tag
+# strict change control: name your platform's digest from the release notes instead of the tag
 sudo sed -i 's|^Image=.*|Image=ghcr.io/joehazurmoney/wd2l@sha256:<digest from the release notes>|' \
   /etc/containers/systemd/wd2l-receiver.container
 # auditd: who changes the Quadlet unit. A file of its own, because the watch needs Podman's
@@ -80,10 +99,14 @@ start, and again after a `restorecon` or a full relabel. Each time, in a planned
 the start:
 
 ```bash
-sudo chattr -a /var/log/wd2l/audit-*.jsonl      # note it in the change record
-sudo systemctl start wd2l-receiver               # Podman relabels the directory
-sudo systemctl start wd2l-audit-seal.service     # the files are append-only again
+sudo sh -c 'chattr -a /var/log/wd2l/audit-*.jsonl'   # root expands the glob; note it in the change record
+sudo systemctl start wd2l-receiver                    # Podman relabels the directory
+sudo systemctl start wd2l-audit-seal.service          # the files are append-only again
 ```
+
+If the first start failed because a file was still append-only (the journal shows
+`PermissionError` on an `audit-*.jsonl`), unlock as above and start again: Podman relabels the
+files then.
 
 The units run the container:
 
@@ -98,17 +121,22 @@ They stop it within the native units' times: 30 s for the sender and 60 s for th
 
 ## User, SELinux and FIPS
 
-* **SELinux.** `/var/lib/wd2l` and `/var/log/wd2l` are mounted with `:z` (shared), because host
-  tcpdump and the audit seal timer use them too. `/etc/wd2l` is mounted read-only.
-* **Still to confirm on RHEL 10** with SELinux enforcing (the [release plan's checks](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md), at the first
-  release candidate):
-  * the user name resolves;
-  * `:z` doesn't stop tcpdump writing the archive;
-  * the options from the env file reach wd2l;
-  * the first start over sealed audit files, with the steps above;
-  * whether Podman's `sigstoreSigned` policy accepts the release's signatures.
-
-  If one doesn't, this section will say what to use instead.
+* **SELinux.** `/var/lib/wd2l` is mounted without `:z`: Podman's relabel would also relabel the
+  capture archive and stop host tcpdump writing it. The `wd2l` RPM labels the directory for
+  containers instead (`container_file_t`), and the receiver's module lets containers read the
+  archive, never write it. `/var/log/wd2l` keeps `:z` (the audit seal timer uses it);
+  `/etc/wd2l` is mounted read-only. Before the first start, `ls -dZ /var/lib/wd2l /var/lib/wd2l/pcap`
+  shows `container_file_t` and `netutils_tmp_t`; if not (a host that ran an older Quadlet with
+  `:z`, or files restored from a backup), relabel once: `sudo restorecon -RF /var/lib/wd2l`.
+* **Confirmed on AlmaLinux 10** (aarch64, SELinux enforcing, Podman 5.8, rc5), the checks the
+  [release plan](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md)
+  left open:
+  * the user name resolves (`podman top wd2l-receiver user huser`: `wd2l wd2l`);
+  * the options from the env file reach wd2l (`podman top wd2l-receiver args`);
+  * host tcpdump keeps writing the archive (`netutils_tmp_t`), and the receiver reads it
+    (`archive_age_s`) and replays it;
+  * the first start over sealed audit files, with the steps above, and later restarts;
+  * Podman's signature policy (see [Signature policy](#signature-policy-registry-pulls)).
 * **FIPS.** The image always uses OpenSSL's FIPS provider, and MD5 is refused. It is **validated
   only on a RHEL host installed in FIPS mode**; on other hosts it is FIPS-configured. The image
   has no CA bundle, so `receiver.env` must keep `--hec-ca`.
@@ -134,7 +162,7 @@ Stop the live receiver first (`sudo systemctl stop wd2l-receiver`), then:
 ```bash
 sudo podman run --rm --network host --user wd2l \
   -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro \
-  -v /var/lib/wd2l:/var/lib/wd2l:z -v /var/log/wd2l:/var/log/wd2l:z -v /etc/wd2l:/etc/wd2l:ro,z \
+  -v /var/lib/wd2l:/var/lib/wd2l -v /var/log/wd2l:/var/log/wd2l:z -v /etc/wd2l:/etc/wd2l:ro,z \
   ghcr.io/joehazurmoney/wd2l:<version> wd2l-receiver --pcap /var/lib/wd2l/pcap/cap-....pcap \
   <the replay options from operations.md> --chrony-addr 127.0.0.1:323
 ```

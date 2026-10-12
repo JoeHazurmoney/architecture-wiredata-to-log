@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 
@@ -86,7 +87,9 @@ def test_signing_config_names_no_log_and_no_timestamp_service():
 
 notes = load_script("packaging/release/notes.py")
 SUMS = ("%s  wd2l-0.3.0-py3-none-any.whl\n%s  wd2l-0.3.0-1.el10.noarch.rpm\n"
-        "%s  wd2l-0.3.0-image-oci.tar\n" % ("a" * 64, "b" * 64, "c" * 64))
+        "%s  wd2l-0.3.0-image-amd64-oci.tar\n%s  wd2l-0.3.0-image-arm64-oci.tar\n"
+        % ("a" * 64, "b" * 64, "c" * 64, "f" * 64))
+PLATFORMS = {"amd64": "sha256:" + "8" * 64, "arm64": "sha256:" + "9" * 64}
 RECORD = {"images": [
     {"ref": "r/hi/python:3.12-fips-builder@sha256:" + "1" * 64, "stage": "build",
      "index_digest": "sha256:" + "1" * 64, "source_image": "r/hi/python:111-source"},
@@ -94,7 +97,7 @@ RECORD = {"images": [
      "index_digest": "sha256:" + "2" * 64, "source_image": "r/hi/python:222-source"}]}
 ARGS = dict(image="ghcr.io/joehazurmoney/wd2l", digest="sha256:" + "d" * 64, sums_text=SUMS,
             base_record=RECORD, repo_url="https://github.com/o/r",
-            run_url="https://github.com/o/r/actions/runs/7", commit="e" * 40)
+            run_url="https://github.com/o/r/actions/runs/7", commit="e" * 40, platforms=PLATFORMS)
 
 
 def test_notes_name_every_asset_the_image_and_its_bases():
@@ -102,7 +105,9 @@ def test_notes_name_every_asset_the_image_and_its_bases():
     for part in ("wd2l-0.3.0-py3-none-any.whl", "b" * 64, "ghcr.io/joehazurmoney/wd2l@sha256:" + "d" * 64,
                  "r/hi/python:3.12-fips@sha256:" + "2" * 64, "r/hi/python:222-source",
                  "cosign verify-blob --key cosign.pub --insecure-ignore-tlog --bundle SHA256SUMS.sigstore.json SHA256SUMS",
-                 "sha256sum -c SHA256SUMS", "--local-image wd2l-oci", "e" * 40,
+                 "sha256sum -c SHA256SUMS", "tar -xf wd2l-0.3.0-image-amd64-oci.tar",
+                 "--local-image wd2l-oci", "| linux/arm64 | `sha256:" + "9" * 64 + "` |",
+                 "wd2l-0.3.0-image-arm64-oci.tar", "e" * 40,
                  "https://github.com/o/r/blob/v0.3.0/docs/releasing.md"):
         assert part in text, part
     assert "Pre-release" not in text
@@ -166,6 +171,11 @@ def test_notes_show_how_to_verify_the_github_attestations():
     assert "--bundle wd2l-0.4.0-attestations.jsonl --custom-trusted-root trusted_root.jsonl" in text
 
 
+def test_dry_run_notes_have_no_platform_table():
+    text = notes.notes(versions.names("0.4.0"), **dict(ARGS, digest="", platforms={}))
+    assert "| linux/amd64 |" not in text
+
+
 def test_dry_run_notes_have_no_image_attestation_line():
     text = notes.notes(versions.names("0.4.0"), **dict(ARGS, digest=""))
     assert "gh attestation verify wd2l-0.4.0-py3-none-any.whl" in text
@@ -183,3 +193,77 @@ def test_releasing_md_pins_the_signer_workflow_and_the_tag():
     assert ("--certificate-identity https://github.com/JoeHazurmoney/architecture-wiredata-to-log"
             "/.github/workflows/attest.yml@refs/tags/v<version>") in doc
     assert "--certificate-github-workflow-repository JoeHazurmoney/architecture-wiredata-to-log" in doc
+
+
+image_index = load_script("packaging/release/image_index.py")
+
+
+def _index_case(drop=None, wrong_config=None):
+    manifests, ids, entries = {}, {}, []
+    for arch in ("amd64", "arm64"):
+        ids[arch] = hashlib.sha256(arch.encode()).hexdigest()
+        cfg = "sha256:" + ("0" * 64 if arch == wrong_config else ids[arch])
+        m = json.dumps({"mediaType": "application/vnd.oci.image.manifest.v1+json",
+                        "config": {"digest": cfg}}).encode()
+        manifests[arch] = m
+        if arch != drop:
+            entries.append({"mediaType": "application/vnd.oci.image.manifest.v1+json",
+                            "digest": "sha256:" + hashlib.sha256(m).hexdigest(),
+                            "platform": {"os": "linux", "architecture": arch}})
+    index = json.dumps({"mediaType": "application/vnd.oci.image.index.v1+json",
+                        "manifests": entries}).encode()
+    return index, "sha256:" + hashlib.sha256(index).hexdigest(), manifests, ids
+
+
+def test_image_index_names_each_platform_digest():
+    index, digest, manifests, ids = _index_case()
+    got, probs = image_index.check(index, digest, manifests, ids)
+    assert probs == [] and set(got) == {"amd64", "arm64"}
+    assert got["arm64"] == "sha256:" + hashlib.sha256(manifests["arm64"]).hexdigest()
+
+
+def test_image_index_refuses_a_missing_platform_or_an_untested_image():
+    index, digest, manifests, ids = _index_case(drop="arm64")
+    assert any("linux/arm64" in p for p in image_index.check(index, digest, manifests, ids)[1])
+    index, digest, manifests, ids = _index_case(wrong_config="amd64")
+    assert any("amd64" in p and "tested" in p for p in image_index.check(index, digest, manifests, ids)[1])
+    index, digest, manifests, ids = _index_case()
+    assert any("index" in p for p in image_index.check(index, "sha256:" + "0" * 64, manifests, ids)[1])
+
+
+def test_release_assets_name_each_platform():
+    step = workflow("release.yml").split("- name: Assemble the assets", 1)[1].split("- name:", 1)[0]
+    for part in ('"assets/wd2l-$V-image-$a.spdx.json"', '"assets/wd2l-$V-image-$a.cdx.json"',
+                 '"assets/wd2l-$V-vuln-summary-$a.md"', '"image-release/wd2l-$V-image-"*-oci.tar'):
+        assert part in step, part
+    notes_step = workflow("release.yml").split("- name: Notes", 1)[1].split("- name:", 1)[0]
+    assert "--platform-digest amd64=${{ needs.publish.outputs.digest_amd64 }}" in notes_step
+
+
+def test_notes_skip_a_platform_without_a_digest(tmp_path, capsys):
+    # On a dry run publish is skipped, so release.yml passes "amd64=" and "arm64=".
+    sums = tmp_path / "SHA256SUMS"
+    sums.write_text(SUMS)
+    rec = tmp_path / "record.json"
+    rec.write_text(json.dumps(RECORD))
+    assert notes.main(["--sums", str(sums), "--base-record", str(rec), "--repo-url", "https://github.com/o/r",
+                       "--run-url", "u", "--commit", "e" * 40, "--image-digest", "",
+                       "--platform-digest", "amd64=", "--platform-digest", "arm64="]) == 0
+    assert "| linux/amd64 |" not in capsys.readouterr().out
+
+
+def test_releasing_md_brings_in_one_platform():
+    with open(os.path.join(REPO, "docs", "releasing.md"), encoding="utf-8") as f:
+        doc = f.read()
+    assert "tar -xf wd2l-<version>-image-<arch>-oci.tar" in doc
+    assert "sudo skopeo copy oci:wd2l-oci containers-storage:ghcr.io/joehazurmoney/wd2l:<version>" in doc
+
+
+def test_releasing_md_names_the_attestation_types_publish_uses():
+    with open(os.path.join(REPO, "docs", "releasing.md"), encoding="utf-8") as f:
+        doc = f.read()
+    pub = workflow("publish.yml")
+    for t in ("base-image-record/v2", "vuln-scan/v1"):
+        assert t in pub and "/attestations/" + t in doc, t
+    assert "base-image-record/v1" not in doc
+    assert "wd2l-<version>-vuln-summary-<arch>.md" in doc and "`vuln-<arch>`" in doc

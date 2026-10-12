@@ -1,5 +1,5 @@
 name: image-rescan
-# Re-scans the released images with today's vulnerability data: a CVE disclosed after a release
+# Re-scans the released images, both platforms, with today's vulnerability data: a CVE disclosed after a release
 # opens an issue (docs/decisions/0004-container-base-image.md, docs/releasing.md).
 on:
   schedule:
@@ -30,17 +30,19 @@ jobs:
           mapfile -t tags < tags.txt
           for tag in "${tags[@]}"; do
             v=${tag#v}; ref="ghcr.io/joehazurmoney/wd2l:$v"
-            packaging/ci/tool grype "registry:$ref" -q -o json --file "/work/grype-$v.json"
-            packaging/ci/tool trivy image --quiet --cache-dir /work/.cache/trivy --scanners vuln \
-              --format json --output "/work/trivy-$v.json" "$ref"
-            if ! python3 packaging/container/vuln_gate.py --grype "grype-$v.json" --trivy "trivy-$v.json" \
-                 --exceptions packaging/container/vuln-exceptions.json --summary "summary-$v.md" > /dev/null; then
-              fail=1
-              title="Image rescan: wd2l $v has a fixable High/Critical vulnerability"
-              n=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
-              if [ -n "$n" ]; then gh issue comment "$n" --body-file "summary-$v.md"
-              else gh issue create --title "$title" --body-file "summary-$v.md"; fi
-            fi
-            { echo "## wd2l $v"; cat "summary-$v.md"; } >> "$GITHUB_STEP_SUMMARY"
+            for a in amd64 arm64; do
+              packaging/ci/tool grype "registry:$ref" --platform "linux/$a" -q -o json --file "/work/grype-$v-$a.json"
+              packaging/ci/tool trivy image --platform "linux/$a" --quiet --cache-dir /work/.cache/trivy --scanners vuln \
+                --format json --output "/work/trivy-$v-$a.json" "$ref"
+              if ! python3 packaging/container/vuln_gate.py --grype "grype-$v-$a.json" --trivy "trivy-$v-$a.json" \
+                   --exceptions packaging/container/vuln-exceptions.json --summary "summary-$v-$a.md" > /dev/null; then
+                fail=1
+                title="Image rescan: wd2l $v ($a) has a fixable High/Critical vulnerability"
+                n=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+                if [ -n "$n" ]; then gh issue comment "$n" --body-file "summary-$v-$a.md"
+                else gh issue create --title "$title" --body-file "summary-$v-$a.md"; fi
+              fi
+              { echo "## wd2l $v ($a)"; cat "summary-$v-$a.md"; } >> "$GITHUB_STEP_SUMMARY"
+            done
           done
           exit $fail
