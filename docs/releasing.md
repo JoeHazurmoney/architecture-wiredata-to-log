@@ -66,8 +66,8 @@ proves:
   ([`provenance.py`](../packaging/release/provenance.py)) and the base record to all three, and
   each platform's SBOM and scan results to its own image; and saves each platform's image, with
   its signatures and attestations, as `wd2l-<version>-image-<arch>-oci.tar`.
-* **verify-published**: checks the pushed images and the saved copies as a consumer would, the
-  second time with no network.
+* **verify-published**: checks the pushed images (each platform image's older `.sig` too) and the
+  saved copies as a consumer would, the second time with no network.
 * **import-check**: on each platform's own runner, imports that platform's tar offline and
   pulls the image from the registry under Podman's signature policy.
 * **assets**: every release file and `SHA256SUMS` over them, made once for the two jobs

@@ -127,7 +127,7 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | `--audit-min-free-mb` | `256` | Free space the audit directory must keep. Below it, nothing more goes in the audit files: records are still forwarded, counted as missed, and `audit_ok` is false until there is space again |
 | `--egress-iface` | none | `sender.env` uses `ens224`. NIC carrier and transmit counters go into every heartbeat |
 | `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
-| `--chrony-addr` | none | Ask chronyd over UDP (`HOST[:PORT]`, port 323) instead of running `chronyc`. The env file and the container unit use `127.0.0.1:323`: nothing to run, and no SELinux denial (chronyc can't enter its domain under `NoNewPrivileges`). chronyd's default configuration answers it; `cmdport 0` turns it off |
+| `--chrony-addr` | none | Ask chronyd over UDP (`HOST[:PORT]`, port 323) instead of running `chronyc`. The env file uses `127.0.0.1:323`, for the native and the container unit alike: nothing to run, and no SELinux denial (chronyc can't enter its domain under `NoNewPrivileges`). chronyd's default configuration answers it; `cmdport 0` turns it off |
 | `--max-stratum` | 3 | Time alarm above this chrony stratum. 3 suits a site with its own GPS time; a host on a public NTP pool may need 4 or 5 |
 | `--log-format` | text | `sender.env` uses `json`: one JSON object per log line |
 

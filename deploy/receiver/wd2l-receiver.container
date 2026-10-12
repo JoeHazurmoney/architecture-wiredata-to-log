@@ -16,7 +16,7 @@ Wants=network-online.target time-sync.target chrony-wait.service
 ContainerName=wd2l-receiver
 # The release's image, verified and loaded beforehand (docs/releasing.md). For strict change
 # control, name it by the digest in the release notes: ghcr.io/joehazurmoney/wd2l@sha256:...
-Image=ghcr.io/joehazurmoney/wd2l:0.3.0rc5
+Image=ghcr.io/joehazurmoney/wd2l:0.3.0rc6
 Pull=never
 Network=host
 User=wd2l
@@ -36,7 +36,7 @@ ReadOnly=true
 PodmanArgs=--umask=0027
 # Final health record, up to 15 s for the SIEM, then the state file.
 StopTimeout=60
-Exec=wd2l-receiver $WD2L_RECEIVER_ARGS --chrony-addr 127.0.0.1:323
+Exec=wd2l-receiver $WD2L_RECEIVER_ARGS
 
 [Service]
 EnvironmentFile=/etc/wd2l/receiver.env

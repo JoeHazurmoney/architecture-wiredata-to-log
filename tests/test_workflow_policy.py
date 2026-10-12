@@ -160,6 +160,15 @@ def test_publish_signs_the_index_and_each_platform_image():
         assert out in pub
 
 
+def test_verify_published_checks_the_older_format_signature_of_each_platform_image():
+    # With this flag cosign reads only the older .sig: it finds none on the index (checked
+    # against rc5's images), so a missing Podman-readable signature fails here too.
+    ver = jobs(read("publish.yml"))["verify-published"]
+    assert "--new-bundle-format=false" in ver
+    older = ver.split("--new-bundle-format=false", 1)[1].split("\n", 1)[0]
+    assert '"$IMG@$c"' in older
+
+
 def test_import_check_runs_the_offline_import_and_the_podman_policy_on_both_platforms():
     imp = jobs(read("publish.yml"))["import-check"]
     assert "skopeo copy -q oci:wd2l-oci" in imp and 'type: "sigstoreSigned"' in imp
