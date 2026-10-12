@@ -1,7 +1,7 @@
 # Pinned CI tool images. Never built: packaging/ci/tool runs a stage by name, and Dependabot
 # (.github/dependabot.yml) proposes new digests. Re-pin by hand with:
 #   packaging/ci/pin-images.sh packaging/ci/tools.Containerfile
-FROM registry.access.redhat.com/hi/cosign:latest@sha256:9d892a27d5ecc4235ce101798ea6d9f5f46221eb7447e309793db1c2450e384e AS cosign
+FROM registry.access.redhat.com/hi/cosign:latest@sha256:17d443385a03b0f6592120ff4b99aa00cea043a0e9b84514070f0d2360a78fde AS cosign
 FROM registry.access.redhat.com/hi/grype:0.119@sha256:a4b323580f29ae8b9f820da350a73e1d7283e52641fcbf091d735bf87bfc63f6 AS grype
 FROM registry.access.redhat.com/hi/oras:1.3@sha256:b5a146743b09c88bba3b91b888ce68588b257789b53ea7f69cc62420a4841bd7 AS oras
 FROM docker.io/anchore/syft:v1.54.1@sha256:3eb5379ba7b409c3f4069b686110527af0c47df993fa5c10d13e7cf34f49b1aa AS syft
