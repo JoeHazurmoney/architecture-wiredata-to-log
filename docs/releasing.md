@@ -5,7 +5,7 @@ the FIPS variant of Red Hat Hardened Images. Every file can be checked offline, 
 enclave. Why it is built this way: [ADR-0004](decisions/0004-container-base-image.md) (the base
 image), [ADR-0005](decisions/0005-quadlet.md) (running it under systemd) and
 [ADR-0006](decisions/0006-release-artifacts-and-signing.md) (the artifacts and how they are
-signed).
+signed), and [ADR-0008](decisions/0008-release-manifest.md) (the release manifest).
 
 ## How a release is built
 
@@ -108,6 +108,11 @@ Three layers enforce the title:
 All three use one script, [`check_title.py`](../packaging/ci/check_title.py). Dependabot's
 titles follow it too (`build(deps): bump …`).
 
+**Issues** carry one category label, which groups them in the release manifest
+([ADR-0008](decisions/0008-release-manifest.md)): `enhancement`, `bug`, `security`,
+`documentation`, `dependencies` or `release`. `retroactive` marks an issue recorded after its
+work had merged. It's linked from that PR's description and dated by the PR's merge.
+
 ## Cutting a release
 
 1. Set `__version__` in `wd2l/__init__.py`, and the `Image=` tag in both `.container` files
@@ -123,16 +128,40 @@ titles follow it too (`build(deps): bump …`).
 4. Watch `release.yml`. It waits twice for your approval (the `release` environment): before
    `publish` signs the image, and before `release` signs `SHA256SUMS` and drafts the release.
    Approve on the run's page with **Review deployments**.
-5. Review the draft release:
+5. Open **the draft the workflow made**: Releases, the draft named "wd2l X.Y.Z" (by
+   github-actions), **Edit**. Never use **Draft a new release**: that makes a second release on
+   the tag, with none of the files. Once published it's immutable, so files can't be added to
+   it, and deleting it retires the tag name for good (0.3.0rc6, #27).
+6. Review the draft:
    * the assets list, and the notes;
    * the `vuln-scan` gate summary, the `hardening` result and the `reproducible` result in the
      run.
-6. Edit the notes if needed (a short "What changed" section on top), then publish.
+7. Add a short "What changed" section at the top of the notes if they lack one, then
+   **Publish release**.
+8. Check that what was published is the draft: `gh release view vX.Y.Z --json assets,author`
+   shows every file, and github-actions as the author.
 
 Pre-releases are `X.Y.ZrcN` (tag `vX.Y.ZrcN`). Their RPMs sort before the release
 (`X.Y.Z~rcN`). GitHub doesn't allow `~` in an asset's name, so the files are named
 `…-X.Y.Z.rcN-…rpm`; the package inside is still `X.Y.Z~rcN`, and `SHA256SUMS` lists the
 names as served.
+
+## When a release run fails
+
+* **Never delete the run.** Its artifacts go with it, and its failed jobs can then never be
+  re-run.
+* **A job failed for a reason outside the code** (a registry timeout, a forge outage): use
+  **Re-run failed jobs** on the run's page. The re-run keeps the run's artifacts and the
+  outputs of the jobs that passed, so nothing is built or pushed twice.
+* **The run stalls**, e.g. a job sits queued at an approval gate with no **Review
+  deployments** button (0.3.0rc5, during a forge outage). Cancel it and wait until it shows
+  completed; a re-run before that is refused. Then use **Re-run failed jobs**.
+* **The code has to change:**
+  * **Before `publish` has run,** delete the tag, fix the code through a PR, and tag again.
+  * **After `publish` has run,** cut a new version. A new run of the same version can't
+    succeed: the build is reproducible, so it pushes the same image digests, which already
+    carry the first run's signatures. The older-format `.sig` among them would then break the
+    offline tar.
 
 ## One-time setup
 
