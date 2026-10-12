@@ -26,6 +26,8 @@ BuildRequires:  systemd-rpm-macros
 Requires:       python3 >= 3.9
 Requires(pre):  shadow-utils
 Requires(post): systemd
+Requires(post): policycoreutils
+Requires(postun): policycoreutils
 %{?systemd_requires}
 
 %description
@@ -57,6 +59,8 @@ Requires:       nftables
 Requires:       ethtool
 Requires:       iproute
 Requires:       findutils
+Requires(post): policycoreutils
+Requires(postun): policycoreutils
 
 %description receiver
 The receiver's systemd units (or a Quadlet example to run it as a container),
@@ -100,6 +104,7 @@ install -Dm0644 -t %{buildroot}%{_datadir}/wd2l/quadlet \
 install -Dm0644 -t %{buildroot}%{_datadir}/wd2l/splunk receiver/splunk/*
 install -Dm0644 receiver/90-wd2l.conf %{buildroot}%{_sysctldir}/90-wd2l.conf
 install -Dm0644 receiver/wd2l_pcap.cil %{buildroot}%{_datadir}/wd2l/selinux/wd2l_pcap.cil
+install -Dm0644 common/wd2l_container.cil %{buildroot}%{_datadir}/wd2l/selinux/wd2l_container.cil
 for d in $(%{python3} ../packaging/rpm/rpmify.py --drop-in-dirs log-server/wd2l.rules receiver/wd2l.rules | sort -u); do
     install -d %{buildroot}$d
 done
@@ -119,12 +124,21 @@ exit 0
 
 %post
 %tmpfiles_create wd2l.conf
+# Container mode's label for /var/lib/wd2l (common/wd2l_container.cil); off without container-selinux.
+if [ -x /usr/sbin/semodule ]; then
+    /usr/sbin/semodule -X 200 -i %{_datadir}/wd2l/selinux/wd2l_container.cil || \
+        echo "wd2l: the container-mode SELinux label didn't load; see docs/deployment/containers.md" >&2
+fi
+/usr/sbin/restorecon -RF %{_sharedstatedir}/wd2l 2>/dev/null || :
 %systemd_post wd2l-audit-seal.service wd2l-audit-seal.timer
 
 %preun
 %systemd_preun wd2l-audit-seal.service wd2l-audit-seal.timer
 
 %postun
+if [ $1 -eq 0 ] && [ -x /usr/sbin/semodule ]; then
+    /usr/sbin/semodule -X 200 -r wd2l_container >/dev/null 2>&1 || :
+fi
 %systemd_postun wd2l-audit-seal.service wd2l-audit-seal.timer
 
 %post sender
@@ -144,7 +158,7 @@ if [ -x /usr/sbin/semodule ]; then
         echo "wd2l-receiver: the capture archive's SELinux label didn't load; see docs/deployment/receiver.md" >&2
 fi
 %tmpfiles_create wd2l-receiver.conf
-/usr/sbin/restorecon -R %{_sharedstatedir}/wd2l/pcap 2>/dev/null || :
+/usr/sbin/restorecon -RF %{_sharedstatedir}/wd2l 2>/dev/null || :
 %sysctl_apply 90-wd2l.conf
 %systemd_post wd2l-receiver.service wd2l-capture.service wd2l-capture-nic.service wd2l-pcap-prune.service wd2l-pcap-prune.timer
 
@@ -178,6 +192,8 @@ fi
 %dir %{_datadir}/wd2l
 %dir %{_datadir}/wd2l/audit
 %dir %{_datadir}/wd2l/quadlet
+%dir %{_datadir}/wd2l/selinux
+%{_datadir}/wd2l/selinux/wd2l_container.cil
 %dir %{_sysconfdir}/systemd/system/wd2l-audit-seal.service.d
 %dir %{_sysconfdir}/systemd/system/wd2l-audit-seal.timer.d
 
@@ -213,7 +229,6 @@ fi
 %{_datadir}/wd2l/audit/receiver-quadlet.rules
 %{_datadir}/wd2l/quadlet/wd2l-receiver.container
 %{_datadir}/wd2l/splunk/
-%dir %{_datadir}/wd2l/selinux
 %{_datadir}/wd2l/selinux/wd2l_pcap.cil
 %dir %{_sysconfdir}/systemd/system/wd2l-receiver.service.d
 %dir %{_sysconfdir}/systemd/system/wd2l-capture.service.d

@@ -238,3 +238,19 @@ def test_manual_install_copies_every_unit(side):
              for n in os.listdir(os.path.join(REPO, "deploy", d)) if n.endswith((".service", ".timer"))]
     missing = [u for u in units if not any(fnmatch.fnmatch(u, c) for c in copied)]
     assert not missing, missing
+
+
+@pytest.mark.parametrize("side, name", [("log-server", "wd2l-sender"), ("receiver", "wd2l-receiver")])
+def test_quadlets_mount_var_lib_wd2l_without_relabelling(side, name):
+    # :z relabelled /var/lib/wd2l/pcap to container_file_t and stopped host tcpdump (A2-6); the
+    # wd2l_container module labels /var/lib/wd2l instead, and the pcap rule wins there.
+    vols = quadlet(os.path.join(REPO, "deploy", side, name + ".container"))["Container"]["Volume"]
+    assert [v for v in vols if v.startswith("/var/lib/wd2l:")] == ["/var/lib/wd2l:/var/lib/wd2l"]
+    assert "/var/log/wd2l:/var/log/wd2l:z" in vols
+
+
+def test_containers_md_relabels_after_podman_and_never_mounts_var_lib_with_z():
+    with open(os.path.join(REPO, "docs", "deployment", "containers.md"), encoding="utf-8") as f:
+        doc = f.read()
+    assert "/var/lib/wd2l:/var/lib/wd2l:z" not in doc
+    assert "sudo restorecon -RF /var/lib/wd2l" in doc

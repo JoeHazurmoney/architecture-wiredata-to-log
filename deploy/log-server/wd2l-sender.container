@@ -22,7 +22,9 @@ Group=wd2l
 Volume=/etc/passwd:/etc/passwd:ro
 Volume=/etc/group:/etc/group:ro
 Volume=/etc/wd2l:/etc/wd2l:ro,z
-Volume=/var/lib/wd2l:/var/lib/wd2l:z
+# No :z here: it would relabel the capture archive too. The wd2l RPM labels this directory for
+# containers (common/wd2l_container.cil).
+Volume=/var/lib/wd2l:/var/lib/wd2l
 Volume=/var/log/wd2l:/var/log/wd2l:z
 DropCapability=all
 NoNewPrivileges=true

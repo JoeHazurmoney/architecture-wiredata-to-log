@@ -136,5 +136,8 @@ flowchart LR
 
   Each has a fallback ready: options written in `Exec=`; a small SELinux policy module; numeric
   `User=`/`Group=`.
+* **Update (0.3.0rc5):** `:z` did stop host tcpdump: it relabelled the archive. `/var/lib/wd2l`
+  is now mounted without it; a small module in the RPM labels the directory for containers and
+  lets them read the archive only ([containers.md](../deployment/containers.md#user-selinux-and-fips)).
 * **Revisit** when wd2l runs on a platform without systemd, or when more than one container per
   host needs coordinating.

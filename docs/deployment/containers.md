@@ -98,12 +98,16 @@ They stop it within the native units' times: 30 s for the sender and 60 s for th
 
 ## User, SELinux and FIPS
 
-* **SELinux.** `/var/lib/wd2l` and `/var/log/wd2l` are mounted with `:z` (shared), because host
-  tcpdump and the audit seal timer use them too. `/etc/wd2l` is mounted read-only.
+* **SELinux.** `/var/lib/wd2l` is mounted without `:z`: Podman's relabel would also relabel the
+  capture archive and stop host tcpdump writing it. The `wd2l` RPM labels the directory for
+  containers instead (`container_file_t`, needs container-selinux), and the receiver's module
+  lets containers read the archive, never write it. `/var/log/wd2l` keeps `:z` (the audit seal
+  timer uses it); `/etc/wd2l` is mounted read-only. If Podman (container-selinux) was installed
+  after the RPMs, relabel once before the first start: `sudo restorecon -RF /var/lib/wd2l`.
+  Then `ls -dZ /var/lib/wd2l /var/lib/wd2l/pcap` shows `container_file_t` and `netutils_tmp_t`.
 * **Still to confirm on RHEL 10** with SELinux enforcing (the [release plan's checks](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md), at the first
   release candidate):
   * the user name resolves;
-  * `:z` doesn't stop tcpdump writing the archive;
   * the options from the env file reach wd2l;
   * the first start over sealed audit files, with the steps above;
   * whether Podman's `sigstoreSigned` policy accepts the release's signatures.
@@ -134,7 +138,7 @@ Stop the live receiver first (`sudo systemctl stop wd2l-receiver`), then:
 ```bash
 sudo podman run --rm --network host --user wd2l \
   -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro \
-  -v /var/lib/wd2l:/var/lib/wd2l:z -v /var/log/wd2l:/var/log/wd2l:z -v /etc/wd2l:/etc/wd2l:ro,z \
+  -v /var/lib/wd2l:/var/lib/wd2l -v /var/log/wd2l:/var/log/wd2l:z -v /etc/wd2l:/etc/wd2l:ro,z \
   ghcr.io/joehazurmoney/wd2l:<version> wd2l-receiver --pcap /var/lib/wd2l/pcap/cap-....pcap \
   <the replay options from operations.md> --chrony-addr 127.0.0.1:323
 ```

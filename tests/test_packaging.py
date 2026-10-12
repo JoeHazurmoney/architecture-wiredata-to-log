@@ -307,15 +307,52 @@ def test_descriptions_fit_rpmlint_width():
         assert all(len(line) <= 79 for line in block.splitlines()), block
 
 
+def cil_lines(path):
+    return [x for x in read(path).splitlines() if x.strip() and not x.startswith(";")]
+
+
 def test_receiver_labels_the_capture_archive_for_tcpdump():
     # tcpdump started by systemd runs as netutils_t, which may only write netutils_tmp_t files.
-    cil = [x for x in read("deploy/receiver/wd2l_pcap.cil").splitlines() if x.strip() and not x.startswith(";")]
-    assert cil == ['(filecon "/var/lib/wd2l/pcap(/.*)?" any (system_u object_r netutils_tmp_t ((s0) (s0))))']
+    # In container mode the receiver (container_t) may read the archive, never write it.
+    assert cil_lines("deploy/receiver/wd2l_pcap.cil") == [
+        '(filecon "/var/lib/wd2l/pcap(/.*)?" any (system_u object_r netutils_tmp_t ((s0) (s0))))',
+        '(optional wd2l_pcap_container_read',
+        '  (allow container_t netutils_tmp_t (dir (getattr open read search)))',
+        '  (allow container_t netutils_tmp_t (file (getattr open read))))']
     s = spec()
     for line in ("install -Dm0644 receiver/wd2l_pcap.cil %{buildroot}%{_datadir}/wd2l/selinux/wd2l_pcap.cil",
                  "semodule -X 200 -i %{_datadir}/wd2l/selinux/wd2l_pcap.cil",
                  "semodule -X 200 -r wd2l_pcap",
-                 "restorecon -R %{_sharedstatedir}/wd2l/pcap",
                  "%{_datadir}/wd2l/selinux/wd2l_pcap.cil"):
         assert line in s, line
+    # -F: Podman's :z (rc4's Quadlet) left pcap/ container_file_t, a "customizable" type that a
+    # plain restorecon keeps.
+    receiver_post = s.split("%post receiver", 1)[1].split("%preun receiver", 1)[0]
+    assert "restorecon -RF %{_sharedstatedir}/wd2l" in receiver_post
     assert "matchpathcon /var/lib/wd2l/pcap/cap-1.pcap" in read("packaging/rpm/install-test.sh")
+
+
+def test_container_mode_labels_var_lib_wd2l_instead_of_relabelling_it():
+    assert cil_lines("deploy/common/wd2l_container.cil") == [
+        '(optional wd2l_container_files',
+        '  (filecon "/var/lib/wd2l(/.*)?" any (system_u object_r container_file_t ((s0) (s0)))))']
+    s = spec()
+    base_post = s.split("\n%post\n", 1)[1].split("\n%preun\n", 1)[0]
+    for line in ("semodule -X 200 -i %{_datadir}/wd2l/selinux/wd2l_container.cil",
+                 "restorecon -RF %{_sharedstatedir}/wd2l"):
+        assert line in base_post, line
+    assert "semodule -X 200 -r wd2l_container" in s.split("\n%postun\n", 1)[1]
+    base_files = s.split("\n%files\n", 1)[1].split("%files sender", 1)[0]
+    assert "%{_datadir}/wd2l/selinux/wd2l_container.cil" in base_files
+    assert "%dir %{_datadir}/wd2l/selinux" in base_files
+    test = read("packaging/rpm/install-test.sh")
+    assert "dnf install -y -q container-selinux" in test and ":container_file_t:" in test
+
+
+def test_scriptlets_that_run_semodule_require_policycoreutils():
+    s = spec()
+    base = s.split("%package sender", 1)[0]
+    receiver = s.split("%package receiver", 1)[1].split("%description receiver", 1)[0]
+    for part in (base, receiver):
+        assert re.search(r"^Requires\(post\):\s+policycoreutils$", part, re.M)
+        assert re.search(r"^Requires\(postun\):\s+policycoreutils$", part, re.M)

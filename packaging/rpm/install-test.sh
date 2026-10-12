@@ -15,7 +15,17 @@ case "$leg" in
     dnf install -y -q selinux-policy-targeted     # a policy store, so %post can load the label
     dnf install -y -q "$rel1"/*.noarch.rpm
     matchpathcon /var/lib/wd2l/pcap/cap-1.pcap | grep -q ':netutils_tmp_t:' \
-      || fail "the capture archive isn't labelled for tcpdump: $(matchpathcon /var/lib/wd2l/pcap)" ;;
+      || fail "the capture archive isn't labelled for tcpdump: $(matchpathcon /var/lib/wd2l/pcap)"
+    # Container mode's label: off without container-selinux, on once it is installed, and the
+    # archive keeps tcpdump's label either way.
+    semodule -l | grep -qx wd2l_container || fail "the container-mode module isn't loaded"
+    matchpathcon /var/lib/wd2l/state.json | grep -q ':var_lib_t:' \
+      || fail "without container-selinux /var/lib/wd2l changed: $(matchpathcon /var/lib/wd2l/state.json)"
+    dnf install -y -q container-selinux
+    matchpathcon /var/lib/wd2l/state.json | grep -q ':container_file_t:' \
+      || fail "with container-selinux /var/lib/wd2l isn't container_file_t: $(matchpathcon /var/lib/wd2l/state.json)"
+    matchpathcon /var/lib/wd2l/pcap/cap-1.pcap | grep -q ':netutils_tmp_t:' \
+      || fail "container-selinux took the capture archive's label" ;;
   over-manual)
     dnf install -y -q shadow-utils
     groupadd -r wd2l && useradd -r -g wd2l -s /sbin/nologin wd2l && groupadd -r wd2l-audit
