@@ -84,6 +84,30 @@ proves:
 a branch push that changes it. A dry run builds and checks everything, but pushes, signs,
 attests and releases nothing. The assets and notes are in the run's `release-assets` artifact.
 
+## Conventions
+
+Every change reaches `main` as one squash commit, and that commit is what a release's history
+is made of. The repository's squash setting lands the PR's title as the commit subject and its
+description as the body, unchanged. So:
+
+* **The PR title is a [Conventional Commit](https://www.conventionalcommits.org/):**
+  `<type>[(scope)][!]: <description>`, with `<type>` one of `feat`, `fix`, `security`, `docs`,
+  `build`, `ci`, `test`, `refactor`, `perf`, `chore`, `revert`. Examples:
+  `fix(receiver): keep the spool on a full disk`, `chore(release): 1.0.0`.
+* **The description says which issue it closes**: `Closes #N`, as the
+  [PR template](../.github/pull_request_template.md) starts. That line lands in the commit too,
+  so the link survives in git history alone.
+
+Three layers enforce the title:
+* **Blocking:** [`pr-title.yml`](../.github/workflows/pr-title.yml) checks it on every PR, and
+  `main`'s ruleset requires that check.
+* **What lands:** the squash setting lands the checked title unchanged.
+* **Warn only:** `tests.yml`'s `landed-title` job checks what landed on `main` and warns, for a
+  title edited after the check passed.
+
+All three use one script, [`check_title.py`](../packaging/ci/check_title.py). Dependabot's
+titles follow it too (`build(deps): bump …`).
+
 ## Cutting a release
 
 1. Set `__version__` in `wd2l/__init__.py`, and the `Image=` tag in both `.container` files

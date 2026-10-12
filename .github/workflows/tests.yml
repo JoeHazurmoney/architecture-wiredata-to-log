@@ -119,6 +119,16 @@ jobs:
           sarif_file: vuln-arm64/trivy.sarif
           category: trivy-image-arm64
 
+  landed-title:
+    # The commit convention on what landed (docs/releasing.md, "Conventions"): pr-title.yml
+    # checked the title, but it can be edited after that check. Warns, never fails, and isn't
+    # in ci-ok: a red main for a wording slip would teach people to ignore red.
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: git log -1 --format=%s | python3 packaging/ci/check_title.py --warn
+
   ci-ok:
     # The one check main's ruleset requires: every job above passed, or was skipped by design
     # (release.yml calls this workflow with image: false).
