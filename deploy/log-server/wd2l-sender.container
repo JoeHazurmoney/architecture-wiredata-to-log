@@ -16,7 +16,7 @@ Requires=wd2l-egress-nic.service
 ContainerName=wd2l-sender
 # The release's image, verified and loaded beforehand (docs/releasing.md). For strict change
 # control, name it by the digest in the release notes: ghcr.io/joehazurmoney/wd2l@sha256:...
-Image=ghcr.io/joehazurmoney/wd2l:1.0.0rc1
+Image=ghcr.io/joehazurmoney/wd2l:1.0.0
 Pull=never
 Network=host
 User=wd2l

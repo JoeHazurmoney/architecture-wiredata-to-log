@@ -155,12 +155,15 @@ Changing one byte of a downloaded RPM is enough to see it work: `sha256sum -c` r
 
 ## Status
 
-Proof of concept. Verified in the namespace lab (the end of
-[architecture.md](docs/architecture.md)). The signed v0.3.0rc3 release was also deployed on one
-AlmaLinux 10 machine (a Raspberry Pi 5, SELinux enforcing), with rsyslog as the aggregator, Splunk
-as the SIEM and a virtual cable standing in for the tap and fiber; the problems it found are fixed
-in 0.3.0rc4. Not yet verified: the physical tap, switch and fiber, and a log retention server; the
-deployment guides list the checks for each.
+Proof of concept, complete as of 1.0.0 and ready to be used with real hardware. It's verified in
+the namespace lab (the end of [architecture.md](docs/architecture.md)), and signed releases have
+been deployed on AlmaLinux 10, with rsyslog as the aggregator and Splunk as the SIEM:
+* a Raspberry Pi 5 (arm64, SELinux enforcing), in container mode, with a virtual cable standing
+  in for the tap and fiber;
+* two FIPS-mode virtual machines on a port-mirrored virtual switch, running the native packages.
+
+Not yet verified: the physical tap, switch and fiber, and a log retention server. The deployment
+guides list the checks for each.
 
 Audit records (aimed at common audit-control requirements, for example the NIST SP 800-53 AU
 family or SOC 2 CC7.2), end-to-end reconciliation and fault location are built and verified. The

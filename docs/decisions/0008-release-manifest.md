@@ -1,6 +1,6 @@
 # ADR-0008: A release manifest with every release
 
-**Status:** Proposed (2026-10-12)
+**Status:** Accepted (2026-10-13, proven on 1.0.0rc1)
 **Date:** 2026-10-12
 **Deciders:** System owner. The security owner.
 
@@ -147,8 +147,15 @@ image, and `publish` runs before the files it lists are final.
 
 ## Action items
 
-1. [ ] The schema, the generator and the markdown view (#32, #33).
-2. [ ] The git-cliff changelog (#34).
-3. [ ] The source bundle and `verify-release` (#35).
-4. [ ] Proven end to end on 1.0.0rc1 (#36), then this ADR becomes Accepted.
+1. [x] The schema, the generator and the markdown view (#32, #33, in #71).
+2. [x] The git-cliff changelog (#34, in #72).
+3. [x] The source bundle and `verify-release` (#35, in #72).
+4. [x] Proven end to end on 1.0.0rc1 (#36), then this ADR becomes Accepted. Done in
+   [run 38330161057](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/actions/runs/38330161057),
+   published as the workflow's draft (29 files):
+   * `gh release verify v1.0.0rc1` passes, and `verify-asset` passes on the manifest;
+   * `gh attestation verify` on the manifest passes, pinned to `attest.yml` at the tag;
+   * `verify-release` passes with no network: the signature, 26 checksums, 24 deliverables, the
+     bundle's commit, and the amd64 image's signature;
+   * the manifest's image digest matches the registry's, and it records the `publish` approval.
 5. [ ] The retrieval drill on a clean host (#38).
