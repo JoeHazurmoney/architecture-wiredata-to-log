@@ -155,9 +155,9 @@ Changing one byte of a downloaded RPM is enough to see it work: `sha256sum -c` r
 
 ## Status
 
-1.0.0 is the first release meant for production. It's verified in the namespace lab (the end of
-[architecture.md](docs/architecture.md)), and signed releases have been deployed on AlmaLinux 10,
-with rsyslog as the aggregator and Splunk as the SIEM:
+Proof of concept, complete as of 1.0.0 and ready to be used with real hardware. It's verified in
+the namespace lab (the end of [architecture.md](docs/architecture.md)), and signed releases have
+been deployed on AlmaLinux 10, with rsyslog as the aggregator and Splunk as the SIEM:
 * a Raspberry Pi 5 (arm64, SELinux enforcing), in container mode, with a virtual cable standing
   in for the tap and fiber;
 * two FIPS-mode virtual machines on a port-mirrored virtual switch, running the native packages.
