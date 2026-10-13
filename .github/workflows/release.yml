@@ -125,6 +125,18 @@ jobs:
           # files that way first, so SHA256SUMS lists what a download gets. Only pre-release
           # RPMs have one (X.Y.Z~rcN); the package inside keeps its version.
           for f in assets/*~*; do if [ -e "$f" ]; then mv -- "$f" "${f//\~/.}"; fi; done
+      - name: The changelog, the source bundle and verify-release, to retrieve the release offline
+        run: |
+          # git-cliff (cliff.toml): the changes since the previous final release, or all of
+          # history when there's none. On a tag the release's own tag is at HEAD; a dry run's
+          # commits come out as "Unreleased".
+          prev=$(python packaging/release/manifest.py previous-release)
+          packaging/ci/tool git-cliff --config /work/cliff.toml --repository /work \
+            ${prev:+"$prev..HEAD"} --output "/work/assets/wd2l-$V-changelog.md"
+          # The source with its full history and every version tag.
+          mapfile -t tags < <(git tag --merged HEAD --list 'v*')
+          git bundle create "assets/wd2l-$V-source.bundle" HEAD "${tags[@]}"
+          cp packaging/release/verify_release.py "assets/wd2l-$V-verify-release.py"
       - name: The release manifest, checked against its schema (docs/decisions/0008-release-manifest.md)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -138,7 +150,7 @@ jobs:
           python packaging/release/manifest.py generate --assets assets \
             --base-record assets/base-image-record.json --image-digest "$DIGEST" \
             --platform-digest "amd64=$DIGEST_AMD64" --platform-digest "arm64=$DIGEST_ARM64" \
-            "${dry[@]}" > "wd2l-$V-release-manifest.json"
+            --changelog "assets/wd2l-$V-changelog.md" "${dry[@]}" > "wd2l-$V-release-manifest.json"
           python packaging/release/manifest.py validate "wd2l-$V-release-manifest.json"
           python packaging/release/manifest.py render "wd2l-$V-release-manifest.json" > "wd2l-$V-release-manifest.md"
           mv "wd2l-$V-release-manifest.json" "wd2l-$V-release-manifest.md" assets/
@@ -146,6 +158,8 @@ jobs:
           cat "assets/wd2l-$V-release-manifest.md" >> "$GITHUB_STEP_SUMMARY"
       - name: SHA256SUMS over every file, the manifest included
         run: (cd assets && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+      - name: The files check out as a customer would check them (the signature comes later)
+        run: python "assets/wd2l-$V-verify-release.py" --dir assets --skip-signature
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: assets

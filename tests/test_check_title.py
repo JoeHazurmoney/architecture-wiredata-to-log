@@ -100,3 +100,24 @@ def test_dependabot_titles_follow_the_convention():
 
 def test_the_pr_template_asks_for_the_issue_it_closes():
     assert read(".github", "pull_request_template.md").startswith("Closes #")
+
+
+def cliff_parsers():
+    """cliff.toml's commit parsers, in order: (pattern, group)."""
+    toml = read("cliff.toml")
+    return [(p.replace("\\\\", "\\"), g) for p, g in
+            re.findall(r'\{ message = "([^"]+)", group = "([^"]+)" \}', toml)]
+
+
+@pytest.mark.parametrize("t", title.TYPES)
+def test_every_type_has_its_own_changelog_group(t):
+    # git-cliff takes the first parser that matches; the catch-all is only for commits from
+    # before the convention.
+    for subject in ("%s: x" % t, "%s(scope): x" % t, "%s!: x" % t):
+        first = next(p for p, g in cliff_parsers() if re.match(p, subject))
+        assert first != ".*", subject
+
+
+def test_the_changelog_strips_only_the_conventions_own_prefixes():
+    toml = read("cliff.toml")
+    assert "(?:%s)" % "|".join(title.TYPES) in toml

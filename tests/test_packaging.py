@@ -126,7 +126,7 @@ def tool_refs():
 
 
 def test_every_tool_is_pinned_by_digest():
-    assert set(tool_refs()) == {"cosign", "grype", "oras", "syft", "trivy", "hadolint",
+    assert set(tool_refs()) == {"cosign", "grype", "oras", "syft", "trivy", "hadolint", "git-cliff",
                                 "ubi9", "ubi10", "fedora"}
 
 

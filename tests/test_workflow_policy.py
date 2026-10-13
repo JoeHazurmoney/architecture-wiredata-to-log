@@ -221,3 +221,15 @@ def test_notes_get_the_manifest_and_the_attestation_pages():
     att = read("attest.yml")
     assert "files-url: ${{ steps.files.outputs.attestation-url }}" in att
     assert "image-url: ${{ steps.image.outputs.attestation-url }}" in att
+
+
+def test_assets_adds_the_changelog_bundle_and_verify_release_before_the_manifest():
+    a = jobs(read("release.yml"))["assets"]
+    cliff = a.index("packaging/ci/tool git-cliff --config /work/cliff.toml")
+    bundle = a.index('git bundle create "assets/wd2l-$V-source.bundle" HEAD "${tags[@]}"')
+    script = a.index('cp packaging/release/verify_release.py "assets/wd2l-$V-verify-release.py"')
+    assert max(cliff, bundle, script) < a.index("manifest.py generate")
+    assert '--changelog "assets/wd2l-$V-changelog.md"' in a
+    # ...and the release checks itself with the script it ships, after SHA256SUMS.
+    assert a.index("sha256sum -- * > SHA256SUMS") < \
+        a.index('python "assets/wd2l-$V-verify-release.py" --dir assets --skip-signature')

@@ -13,8 +13,9 @@ import re
 import sys
 from typing import Optional, Sequence
 
-# The convention's types (docs/releasing.md, "Conventions").
-TYPES =("feat", "fix", "security", "docs", "build", "ci", "test", "refactor", "perf", "chore",
+# The convention's types (docs/releasing.md, "Conventions"). cliff.toml groups the changelog by
+# them; tests/test_check_title.py keeps the two in step.
+TYPES = ("feat", "fix", "security", "docs", "build", "ci", "test", "refactor", "perf", "chore",
          "revert")
 TITLE = re.compile(r"^(%s)(\([a-z0-9][a-z0-9._/-]*\))?!?: \S" % "|".join(TYPES))
 
