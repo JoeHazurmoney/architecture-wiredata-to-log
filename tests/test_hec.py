@@ -1,6 +1,7 @@
 import configparser
 import json
 import os
+import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -295,3 +296,89 @@ def test_forwarded_records_keep_their_index_whatever_force_index_says(splunk, tm
         ("wd2l_audit", "wd2l:sender:audit", "logsrv01", '{"event":"start"}')
     assert (h["index"], h["sourcetype"]) == ("wd2l", "wd2l:sender:health")
     assert a["fields"] == {"wd2l_stream": "0000000000000022", "wd2l_seq": 1}
+
+
+class RawServer:
+    """Answers every connection with fixed bytes and closes it: a broken collector, or
+    something else listening on the SIEM's port."""
+
+    def __init__(self, reply):
+        import socket
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(16)
+        self.port = self.sock.getsockname()[1]
+        self.reply = reply
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self):
+        import socket
+        while True:
+            try:
+                c, _ = self.sock.accept()
+            except OSError:
+                return
+            with c:
+                c.settimeout(2)
+                try:
+                    # Read the whole request first: closing with some of it unread sends a
+                    # reset, which the client sees as an OSError instead of this reply.
+                    data = b""
+                    while b"\r\n\r\n" not in data:
+                        data += c.recv(65536) or b"\r\n\r\n"
+                    head, _, body = data.partition(b"\r\n\r\n")
+                    n = int(re.search(rb"(?i)content-length:\s*(\d+)", head).group(1))
+                    while len(body) < n:
+                        chunk = c.recv(65536)
+                        if not chunk:
+                            break
+                        body += chunk
+                    c.sendall(self.reply)
+                    c.shutdown(socket.SHUT_WR)
+                except (OSError, AttributeError):
+                    pass
+
+    def stop(self):
+        self.sock.close()
+
+
+@pytest.mark.parametrize("reply", [
+    b"garbage\r\n\r\n",                                         # http.client.BadStatusLine
+    b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort",     # http.client.IncompleteRead
+])
+def test_a_malformed_reply_is_retried_not_the_end_of_delivery(tmp_path, reply):
+    """Neither is an OSError. Uncaught, it ended the hec thread: the receiver looked healthy
+    while nothing reached the SIEM, nothing was spooled and no post counted as failed."""
+    srv = RawServer(reply)
+    try:
+        o = hec("http://127.0.0.1:%d" % srv.port, tmp_path, retry_interval=60)
+        for i in range(3):
+            o.event({"_raw": "e%d" % i}, 1, i + 1)
+        assert wait_for(lambda: o.stats()["hec_spool_files"] == 1)
+        assert o.thread.is_alive()
+        assert o.stats()["hec_posts_failed"] >= 1 and o.stats()["hec_thread_errors"] == 0
+        assert o.pending() == {}            # spooled counts as handed over
+        o.close()
+    finally:
+        srv.stop()
+
+
+def test_an_unexpected_error_in_the_hec_thread_is_counted_and_delivery_goes_on(splunk, tmp_path):
+    o = hec("http://127.0.0.1:%d" % splunk.port, tmp_path)
+    real, calls = o._deliver, []
+
+    def flaky(batch):
+        calls.append(len(batch))
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+        return real(batch)
+
+    o._deliver = flaky
+    o.event({"_raw": "a"}, 1, 1)
+    assert wait_for(lambda: o.stats()["hec_thread_errors"] == 1)
+    assert o.thread.is_alive()
+    o.event({"_raw": "b"}, 1, 2)
+    # The failed batch was spooled and goes once the back-off ends; nothing is lost.
+    assert wait_for(lambda: sorted(r["event"] for r in splunk.records()) == ["a", "b"])
+    assert wait_for(lambda: o.pending() == {})
+    o.close()

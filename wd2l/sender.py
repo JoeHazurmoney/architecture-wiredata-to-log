@@ -684,16 +684,25 @@ class InputServer(socketserver.ThreadingTCPServer):
 def _heartbeat_loop(sender: Sender, interval: float, stop: threading.Event,
                     stats_every: float) -> None:
     next_stats = time.monotonic() + stats_every
+    last_error: Optional[float] = None
     while not stop.wait(interval):
-        sender.send_heartbeat()
-        if time.monotonic() >= next_stats:
-            next_stats += stats_every
-            with sender.lock:
-                counters = json.dumps(sender.counters, sort_keys=True)
-            log.info("stream=%016x last_seq=%d %s", sender.stream_id, sender.seq, counters,
-                     extra={"stream": "%016x" % sender.stream_id, "seq": sender.seq})
-            sender.periodic()
-        sender.flush_records()
+        try:
+            sender.send_heartbeat()
+            if time.monotonic() >= next_stats:
+                next_stats += stats_every
+                with sender.lock:
+                    counters = json.dumps(sender.counters, sort_keys=True)
+                log.info("stream=%016x last_seq=%d %s", sender.stream_id, sender.seq, counters,
+                         extra={"stream": "%016x" % sender.stream_id, "seq": sender.seq})
+                sender.periodic()
+            sender.flush_records()
+        except Exception as e:
+            # Ended, this thread would stop heartbeats, the records stream and state saves
+            # while data kept flowing. Log it (traceback at most once a minute) and go on.
+            now = time.monotonic()
+            if last_error is None or now - last_error >= 60:
+                last_error = now
+                log.error("heartbeat loop error, heartbeats go on: %s", e, exc_info=True)
 
 
 def _hostport(s: str) -> Tuple[str, int]:

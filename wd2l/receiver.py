@@ -20,6 +20,7 @@ import platform
 import re
 import signal
 import time
+import urllib.parse
 from collections import OrderedDict, deque
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
@@ -407,6 +408,8 @@ class Receiver:
         self.last_save = 0.0
         self.dirty = False
         self.saved_with_pending = False
+        self.state_save_failed = False
+        self.state_error_logged: Optional[float] = None
         self.audit = audit
         self.component = component
         self.tq = time_quality
@@ -824,7 +827,8 @@ class Receiver:
             "kernel_drops": self.counters["kernel_drops"],
             "output_dropped": self.counters["output_dropped"],
             "hec_errors": sum(stats.get(p + k, 0) for p in ("", "audit_")
-                              for k in ("hec_posts_failed", "hec_rejected_events")),
+                              for k in ("hec_posts_failed", "hec_rejected_events",
+                                        "hec_thread_errors")),
             "spool_files": stats.get("hec_spool_files", 0) + stats.get("audit_hec_spool_files", 0),
             "sender_drops": hb.get("sender_drops", 0), "send_errors": hb.get("send_errors", 0),
             "input_backlog_bytes": hb.get("input_backlog_bytes", 0)})
@@ -957,6 +961,8 @@ class Receiver:
                    heartbeat_stale=self.hb_stale, other_reasons=self.other_reasons,
                    bad_reasons=self.bad_reasons, reasm_buffered=self.reasm.buffered)
         rec.update(self.sample)
+        if self.state_path:
+            rec["state_save_failed"] = self.state_save_failed
         rec.update(packet_age_s=round(now - self.last_packet, 1) if self.last_packet is not None else None,
                    frame_age_s=round(now - self.last_wd2l, 1) if self.last_wd2l is not None else None)
         if self.fault_interval:
@@ -1069,11 +1075,26 @@ class Receiver:
         if saved_hash:
             state["config_sha256"] = saved_hash
         tmp = self.state_path + ".tmp"  # type: ignore[operator]
-        with open(tmp, "w") as f:
-            json.dump(state, f, separators=(",", ":"))
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, self.state_path)  # type: ignore[arg-type]
+        try:
+            with open(tmp, "w") as f:
+                json.dump(state, f, separators=(",", ":"))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self.state_path)  # type: ignore[arg-type]
+        except OSError as e:
+            # Keep receiving: stopping would lose live traffic, and a restart would reload the
+            # last good state and report delivered events as gaps again. The state stays
+            # dirty, so tick() retries each second; health shows state_save_failed.
+            self.last_save = mono = time.monotonic()
+            self.state_save_failed = True
+            if self.state_error_logged is None or mono - self.state_error_logged >= 10:
+                self.state_error_logged = mono
+                log.error("can't save the state file %s (receiving goes on, retried each "
+                          "second): %s", self.state_path, e)
+            return
+        if self.state_save_failed:
+            self.state_save_failed = False
+            log.info("state file %s saved again", self.state_path)
         self.last_save = time.monotonic()
         self.dirty = False
         self.saved_with_pending = any(pending.values())
@@ -1221,6 +1242,11 @@ def build_outputs(a: argparse.Namespace) -> Tuple[Output, Output]:
     if a.hec_url:
         if not a.hec_token_file:
             raise SystemExit("--hec-url needs --hec-token-file")
+        u = urllib.parse.urlsplit(a.hec_url)
+        if u.scheme not in ("http", "https") or not u.netloc:
+            # Otherwise the first post fails with a ValueError, every post after it too.
+            raise SystemExit("--hec-url must be https://host:port (or http://), not %r"
+                             % a.hec_url)
         hec = HecOutput(a.hec_url, _token(a.hec_token_file), a.spool_dir, a.hec_ca,
                         a.hec_insecure, a.default_index, a.health_index, a.force_index,
                         queue_size=a.hec_queue, audit_index=a.audit_index)

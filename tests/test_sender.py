@@ -343,3 +343,31 @@ def test_fixed_source_port_is_used_and_held():
             Sender(("127.0.0.1", 9), "127.0.0.1", rate_pps=0, bind_port=port)
     finally:
         snd.sock.close()
+
+
+def test_an_error_in_the_heartbeat_loop_does_not_stop_heartbeats():
+    """Uncaught, one exception ended heartbeats, the records stream and state saves for the
+    life of the process, while data kept flowing."""
+    from wd2l.sender import _heartbeat_loop
+    snd, sock = sender()
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+
+    snd.periodic = flaky
+    stop = threading.Event()
+    t = threading.Thread(target=_heartbeat_loop, args=(snd, 0.01, stop, 0.01), daemon=True)
+    t.start()
+    try:
+        end = time.time() + 5
+        while len(calls) < 3 and time.time() < end:
+            time.sleep(0.01)
+        assert len(calls) >= 3 and t.is_alive()
+    finally:
+        stop.set()
+        t.join(2)
+    beats = [f for f in (wire.decode(d) for d in sock.sent) if f.type == wire.TYPE_HEARTBEAT]
+    assert len(beats) >= 3
