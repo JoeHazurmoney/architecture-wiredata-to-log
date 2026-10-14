@@ -131,6 +131,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: git log -1 --format=%s | python3 packaging/ci/check_title.py --warn
 
+  signing-key-scope:
+    # The signing key belongs in the `release` environment only (docs/releasing.md, one-time
+    # setup). This job names no environment, so secrets.* here holds only repository and
+    # organization secrets: the key showing up means any branch's workflow can read it. Only
+    # the comparison's result is used, never the value. On main only, like landed-title.
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          REPO_KEY: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
+        run: |
+          [ "$REPO_KEY" = false ] || {
+            echo "COSIGN_PRIVATE_KEY is a repository secret: delete it there, keep the release environment's (docs/releasing.md)" >&2
+            exit 1
+          }
+
   ci-ok:
     # The one check main's ruleset requires: every job above passed, or was skipped by design
     # (release.yml calls this workflow with image: false).

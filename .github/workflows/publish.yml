@@ -6,8 +6,8 @@ name: publish
 # never on push or PR, so they never hold package-write permission.
 on:
   workflow_call:
-    # COSIGN_PRIVATE_KEY and COSIGN_PASSWORD come from the `release` environment (the caller
-    # passes secrets: inherit), not declared here: an environment's secrets can't be passed in.
+    # COSIGN_PRIVATE_KEY and COSIGN_PASSWORD come from the `release` environment, which the
+    # publish job names; the caller passes no secrets, and an environment's can't be passed in.
     outputs:
       digest:
         value: ${{ jobs.publish.outputs.digest }}

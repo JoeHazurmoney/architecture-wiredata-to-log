@@ -108,8 +108,8 @@ attests and releases nothing. The assets and notes are in the run's `release-ass
 ## Conventions
 
 Every change reaches `main` as one squash commit, and that commit is what a release's history
-is made of. The repository's squash setting lands the PR's title as the commit subject and its
-description as the body, unchanged. So:
+is made of. The repository allows only squash merges, which land the PR's title as the commit
+subject and its description as the body, unchanged. So:
 
 * **The PR title is a [Conventional Commit](https://www.conventionalcommits.org/):**
   `<type>[(scope)][!]: <description>`, with `<type>` one of `feat`, `fix`, `security`, `docs`,
@@ -207,7 +207,8 @@ names as served.
 
   Keep `cosign.key` offline, or destroy it: the secret is then the only copy. Commit
   `cosign.pub` (`.gitignore` keeps `cosign.key` out). Don't keep the two as repository
-  secrets: any workflow on any branch can read those.
+  secrets: any workflow on any branch can read those. `tests.yml`'s `signing-key-scope` job
+  fails on `main` if the key is one.
 * **Who can cause a signature.** These settings are in place:
   * **`main`:** a ruleset with no bypass, even for the owner. Every change goes through a PR
     whose `ci-ok` check passed (`tests.yml`); no force-push, no deletion.

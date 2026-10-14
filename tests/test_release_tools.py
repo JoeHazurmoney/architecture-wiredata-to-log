@@ -153,7 +153,8 @@ def test_asset_names_are_what_github_serves_before_sha256sums_lists_them():
 def test_signing_jobs_use_the_release_environment():
     rel, pub = workflow("release.yml"), workflow("publish.yml")
     assert "environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}" in rel
-    assert "secrets: inherit" in rel and "COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}\n      COSIGN_PASSWORD" not in rel
+    # Nothing passes the key to publish.yml: its job reads it from the environment it names.
+    assert "secrets: inherit" not in rel and "COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}\n      COSIGN_PASSWORD" not in rel
     publish_job = pub.split("\n  publish:\n", 1)[1].split("\n  verify-published:\n", 1)[0]
     assert "    environment: release\n" in publish_job
     # tests.yml's code-scanning job asks for security-events: write; a caller must grant it,
