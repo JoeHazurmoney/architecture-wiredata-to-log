@@ -351,8 +351,8 @@ Nothing can be resent across a one-way link. Every problem is detected and repor
 | WD2L frame | `event_len` ≤ the receiver's `--max-event` | Receiver | Counted as `event_too_big`, dropped |
 | Event | All pieces within 5 s; total held under 64 MB | Receiver | `reasm_expired` / `reasm_evicted`. The event becomes a gap |
 | Event | Joined length = `event_len`, SHA-256 = `digest` | Receiver | `digest_mismatch`, dropped. The event becomes a gap |
-| Event | Valid JSON (not too deeply nested to read) with a `_raw` string | Receiver | `bad_events`, dropped |
-| Heartbeat | Body is a JSON object (not too deeply nested to read) | Receiver | Counted as `bad_frames` (`bad heartbeat json`), dropped |
+| Event | Valid JSON (not too deeply nested to read, no `NaN` or `Infinity`) with a `_raw` string | Receiver | `bad_events`, dropped |
+| Heartbeat | Body is a JSON object (not too deeply nested to read, no `NaN` or `Infinity`) | Receiver | Counted as `bad_frames` (`bad heartbeat json`), dropped. A number too big for a float (`1e999`) is dropped from the body |
 | Record | A JSON object naming the Enclave 1 sender (`enclave` 1, `component` `sender`) | Receiver | Counted as `records_bad`, dropped |
 | Sequence | Every `seq` of every stream arrives | Receiver | `gap` record naming the stream and `seq` range, after 2 s (`--gap-window`) |
 | Liveness | A heartbeat at least every 5 s | Receiver | `heartbeat_stale` record |

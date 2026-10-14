@@ -38,6 +38,22 @@ def test_corruption_detected():
         wire.decode(bytes(bad))
 
 
+@pytest.mark.parametrize("lit", [b"NaN", b"Infinity", b"-Infinity"])
+def test_parse_event_refuses_nan_and_infinity(lit):
+    with pytest.raises(wire.FrameError, match="not JSON"):
+        wire.parse_event(b'{"_raw":"x","_time":' + lit + b"}")
+
+
+def test_parse_event_drops_numbers_too_big_for_a_float():
+    e = wire.parse_event(b'{"_raw":"x","_time":1e999,"fields":{"a":1e999,"b":2}}')
+    assert e == {"_raw": "x", "fields": {"b": 2}}
+
+
+def test_a_heartbeat_never_carries_a_non_finite_number():
+    f = wire.decode(wire.encode_heartbeat(1, 1, {"a": float("nan"), "b": float("inf"), "c": 1.5}))
+    assert json.loads(f.payload) == {"c": 1.5}
+
+
 def test_bad_magic_with_valid_crc():
     body = b"XXXX" + wire.encode_event(1, 1, b"x")[0][4:-4]
     import zlib

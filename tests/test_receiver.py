@@ -189,6 +189,63 @@ def test_deeply_nested_json_is_counted_not_a_crash():
     assert out.seqs() == [2]
 
 
+def raw_hb(payload, last_seq=1, sid=SID):
+    """A heartbeat frame around any body, valid or not."""
+    import hashlib
+    return wire._pack(wire.TYPE_HEARTBEAT, sid, last_seq, 0, 1, len(payload),
+                      hashlib.sha256(payload).digest(), payload, 0)
+
+
+def test_nan_and_infinity_in_a_heartbeat_are_a_bad_frame():
+    """Not JSON (RFC 8259). Kept, int() on them raised in every health record, and the state
+    file carried them across restarts: one crafted packet put the receiver in a restart loop."""
+    r, out = rx(health_interval=10, fault_interval=1)
+    feed(r, ev(1), 0)
+    for lit in (b"NaN", b"Infinity", b"-Infinity"):
+        r.handle_datagram(raw_hb(b'{"events_sent":1,"sender_drops":' + lit + b"}"), 0)
+    assert r.counters["bad_frames"] == 3 and r.bad_reasons["bad heartbeat json"] == 3
+    assert r.counters["heartbeats"] == 0
+    r.tick(0)
+    r.tick(11)
+    assert out.kinds("health")
+
+
+def test_a_number_too_big_for_a_float_is_dropped_from_a_heartbeat():
+    # 1e999 is valid JSON, and Python reads it as inf.
+    r, out = rx(health_interval=10, fault_interval=1)
+    feed(r, ev(1), 0)
+    r.handle_datagram(raw_hb(b'{"events_sent":1,"sender_drops":1e999,'
+                             b'"time_synced":true,"time_stratum":1e999}'), 0)
+    assert r.counters["heartbeats"] == 1
+    hb_kept = r.streams[SID].hb
+    assert hb_kept["events_sent"] == 1 and "sender_drops" not in hb_kept
+    assert "time_stratum" not in hb_kept
+    r.tick(0)
+    r.tick(11)                              # the health record and the time check both run
+    [h] = out.kinds("health")
+    assert h["sender_drops"] == 0
+
+
+def test_a_state_file_holding_infinity_loads_and_health_runs(tmp_path):
+    state = str(tmp_path / "state.json")
+    r, _ = rx(state_path=state)
+    feed(r, ev(1) + [hb(1)], 0)
+    r.save_state()
+    with open(state) as f:
+        text = f.read()
+    assert '"hb":{"events_sent":1' in text
+    with open(state, "w") as f:             # what json.dump wrote before the fix
+        f.write(text.replace('"hb":{"events_sent":1', '"hb":{"events_sent":1,"sender_drops":Infinity'))
+    r2, out2 = rx(state_path=state, health_interval=10)
+    assert "sender_drops" not in r2.streams[SID].hb
+    r2.tick(0)
+    r2.tick(11)
+    assert out2.kinds("health")
+    r2.save_state()
+    with open(state) as f:
+        assert "Infinity" not in f.read()
+
+
 def test_other_traffic_is_counted():
     from wd2l import packets
     r, out = rx()
