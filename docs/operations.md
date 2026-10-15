@@ -190,7 +190,8 @@ breaks it. Records hold metadata, counts and hashes, never log content. The cata
 | SIEM | `index=wd2l_audit`: `wd2l:audit` (receiver), `wd2l:sender:audit` (sender, in-band) | The auditor role only |
 
 **Verify a copy.** Each prints a JSON result (`ok`, or `failed` with the problems) and exits 1 on
-a problem or when there is nothing to verify. Each host also checks itself daily (`audit_verify`).
+a problem or when there is nothing to verify, or 2 when it can't read the directory: run it as
+`wd2l`, as below. Each host also checks itself daily (`audit_verify`).
 
 ```bash
 sudo -u wd2l python3 -m wd2l.audit verify /var/log/wd2l      # on the host

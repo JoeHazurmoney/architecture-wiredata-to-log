@@ -216,7 +216,8 @@ records). `reconcile` puts both sides on one row per day and stream. `events` fi
 stream, event, segment, component and host. Output is `--format json` or `csv`. It treats its
 input as untrusted: `verify` lists unreadable lines and fails, the others skip and count them,
 and from an export it keeps the first copy of each `n` (a different second copy is a problem).
-It exits 0 when all is well, 1 on a problem or nothing to verify, 2 for a missing file.
+It exits 0 when all is well, 1 on a problem or nothing to verify, 2 when it could read nothing:
+a missing file or directory, or one it may not read (run it as `wd2l`, or join `wd2l-audit`).
 
 **Code:** `wd2l/reconcile.py` (`SetHash`, `StreamReconciler`), `wd2l/audit_report.py`.
 

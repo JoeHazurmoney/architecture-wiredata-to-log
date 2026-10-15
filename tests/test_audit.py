@@ -142,6 +142,58 @@ def test_verify_cli(tmp_path, capsys):
     assert audit.main(["verify", str(tmp_path), "--upto", "9"]) == 1
 
 
+def test_an_empty_upto_hash_is_checked_not_skipped():
+    """#131: --upto-hash "" used to skip the hash check."""
+    recs = chain(3)
+    res = audit.verify_lines([("f", lines(recs))], upto=3, upto_hash="")
+    assert not res.ok and any("n=3 has hash" in p for p in res.problems)
+
+
+def test_a_line_too_deep_to_hash_is_a_problem_not_a_crash():
+    """#131: it parses, but json.dumps can't serialize it again (the RecursionError catch)."""
+    depth = 30000                   # deeper than either Python's parser allows (3.12: ~10,000)
+    deep = b'{"n":1,"prev_hash":"' + b"0" * 64 + b'","hash":"x","v":' + b"[" * depth + \
+        b"]" * depth + b"}\n"
+    res = audit.verify_lines([("f", [deep])])
+    assert not res.ok and res.problems
+
+
+def test_verify_cli_checks_upto_hash(tmp_path, capsys):
+    """#131: the daily self-check's form, --upto with --upto-hash, from the command line."""
+    recs = chain(3)
+    (tmp_path / "audit-20261005T000000.000000Z.jsonl").write_bytes(b"".join(lines(recs)))
+    assert audit.main(["verify", str(tmp_path), "--upto", "3", "--upto-hash", recs[2]["hash"]]) == 0
+    capsys.readouterr()
+    assert audit.main(["verify", str(tmp_path), "--upto", "3", "--upto-hash", "0" * 64]) == 1
+    assert any("n=3 has hash" in p for p in json.loads(capsys.readouterr().out)["problems"])
+
+
+def test_verify_cli_says_when_the_directory_is_missing_or_unreadable(tmp_path, capsys, monkeypatch):
+    """#131: glob returns [] for a directory it can't read, which looked like an empty trail.
+    Exit 2, and still a JSON result, which the daily self-check records. CI runs as root, so
+    the unreadable case mocks os.access."""
+    assert audit.main(["verify", str(tmp_path / "gone")]) == 2
+    out = json.loads(capsys.readouterr().out)
+    assert out["result"] == "failed" and out["problems"] == ["no such directory: %s" % (tmp_path / "gone")]
+    (tmp_path / "audit-20261005T000000.000000Z.jsonl").write_bytes(b"".join(lines(chain(1))))
+    monkeypatch.setattr(audit.os, "access", lambda path, mode: False)
+    assert audit.main(["verify", str(tmp_path)]) == 2
+    out = json.loads(capsys.readouterr().out)
+    assert out["problems"] == ["can't read %s: permission denied (run as wd2l, or join wd2l-audit)"
+                               % tmp_path]
+
+
+def test_verify_cli_says_when_a_file_is_unreadable(tmp_path, capsys, monkeypatch):
+    (tmp_path / "audit-20261005T000000.000000Z.jsonl").write_bytes(b"".join(lines(chain(1))))
+
+    def denied(*a, **kw):
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr(audit, "open", denied, raising=False)
+    assert audit.main(["verify", str(tmp_path)]) == 2
+    out = json.loads(capsys.readouterr().out)
+    assert out["result"] == "failed" and out["problems"][0].startswith("can't read %s: " % tmp_path)
+
+
 def test_verify_cli_fails_when_there_is_nothing_to_verify(tmp_path, capsys):
     """Final review Minor 7: an empty or wiped directory must not verify as ok."""
     assert audit.main(["verify", str(tmp_path)]) == 1

@@ -98,7 +98,8 @@ wd2l-audit-report verify --dir <copy>
 ```
 
 It prints a JSON result: `result` is `ok`, or `failed` with what is wrong with the chain. It
-exits 1 on a problem. See [operations.md](../operations.md#audit-records).
+exits 1 on a problem, and 2 if it can't read the copy. See
+[operations.md](../operations.md#audit-records).
 
 ## 7. Checks
 
