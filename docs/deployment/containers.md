@@ -156,7 +156,8 @@ the person. The host's auditd records who ran `podman`. To make that explicit, a
 host's wd2l rules:
 
 ```text
--w /usr/bin/podman -p x -k wd2l-podman
+-a always,exit -F arch=b64 -F path=/usr/bin/podman -F perm=x -k wd2l-podman
+-a always,exit -F arch=b32 -F path=/usr/bin/podman -F perm=x -k wd2l-podman
 ```
 
 ## Replay from the archive

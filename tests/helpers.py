@@ -1,4 +1,5 @@
 import random
+import re
 
 from wd2l import packets
 from wd2l.outputs import Output
@@ -181,3 +182,20 @@ def chronyd_server(replies):
         stop.set()
         t.join()
         s.close()
+
+
+def audit_watch(kind, path, key):
+    """A watch as auditd syscall rules, for 64- and 32-bit syscalls (what `-w path -p wa` covered)."""
+    return ["-a always,exit -F arch=%s -F %s=%s -F perm=wa -k %s" % (a, kind, path, key)
+            for a in ("b64", "b32")]
+
+
+def assert_rules_load_silently(rules):
+    # augenrules warns "Old style watch rules are slower" for each -w, and "perm used without an
+    # arch is slower" for each perm= rule with no arch=: 28 lines at every install (#110).
+    assert rules
+    for r in rules:
+        assert re.match(r"-a always,exit -F arch=b(64|32) ", r) and " -F perm=wa" in r, r
+        assert re.search(r" -k wd2l-[a-z-]+$", r), r
+    b64 = [r for r in rules if "arch=b64" in r]
+    assert sorted(r.replace("arch=b64", "arch=b32") for r in b64) == sorted(set(rules) - set(b64))

@@ -19,9 +19,11 @@ from typing import List, Optional, Sequence
 
 SCRIPT = re.compile(r"/opt/wd2l/deploy/[A-Za-z0-9_-]+/([A-Za-z0-9_.-]+\.sh)")
 PYTHONPATH = re.compile(r"^Environment=PYTHONPATH=/opt/wd2l[ \t]*\n", re.M)
-UNIT_WATCH = re.compile(r"^-w /etc/systemd/system/(\S+) -p wa -k (\S+)$")
-DROP_IN = re.compile(r"^-w (/etc/systemd/system/\S+\.d)/ ")
-CODE_WATCH = "-w /opt/wd2l/ -p wa -k wd2l-code"
+# The rules' watches are syscall rules, one per arch (deploy/*/wd2l.rules, #110).
+RULE = "-a always,exit -F arch=%s -F %s=%s -F perm=wa -k %s"
+UNIT_WATCH = re.compile(r"^-a always,exit -F arch=(b\d\d) -F path=/etc/systemd/system/(\S+) -F perm=wa -k (\S+)$")
+DROP_IN = re.compile(r"^-a always,exit -F arch=b\d\d -F dir=(/etc/systemd/system/\S+\.d) ")
+CODE_WATCH = re.compile(r"^-a always,exit -F arch=(b\d\d) -F dir=/opt/wd2l -F perm=wa -k wd2l-code$")
 
 
 def rewrite_unit(text: str, libexec: str) -> str:
@@ -31,21 +33,25 @@ def rewrite_unit(text: str, libexec: str) -> str:
 def rewrite_rules(text: str, sitelib: str, libexec: str, unitdir: str) -> str:
     out = []
     for line in text.splitlines():
-        if line == CODE_WATCH:
-            out += ["-w %s/wd2l/ -p wa -k wd2l-code" % sitelib, "-w %s/ -p wa -k wd2l-code" % libexec]
+        m = CODE_WATCH.match(line)
+        if m:
+            arch = m.group(1)
+            out += [RULE % (arch, "dir", sitelib + "/wd2l", "wd2l-code"),
+                    RULE % (arch, "dir", libexec, "wd2l-code")]
             continue
         m = UNIT_WATCH.match(line)
         if m:
-            unit, key = m.groups()
-            out += [line, "-w %s/%s -p wa -k %s" % (unitdir, unit, key),
-                    "-w /etc/systemd/system/%s.d/ -p wa -k %s" % (unit, key)]
+            arch, unit, key = m.groups()
+            out += [line, RULE % (arch, "path", "%s/%s" % (unitdir, unit), key),
+                    RULE % (arch, "dir", "/etc/systemd/system/%s.d" % unit, key)]
             continue
         out.append(line)
     return "\n".join(out) + "\n"
 
 
 def drop_in_dirs(rules_text: str) -> List[str]:
-    return [m.group(1) for m in map(DROP_IN.match, rules_text.splitlines()) if m]
+    dirs = [m.group(1) for m in map(DROP_IN.match, rules_text.splitlines()) if m]
+    return list(dict.fromkeys(dirs))      # one rule per arch: each directory once
 
 
 def _read(path: str) -> str:
