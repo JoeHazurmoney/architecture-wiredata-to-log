@@ -13,6 +13,7 @@ Delivery contract with the receiver:
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import os
@@ -303,8 +304,10 @@ class HecOutput(Output):
         self.counters = {"hec_events_sent": 0, "hec_posts_failed": 0, "hec_spooled_batches": 0,
                          "hec_rejected_batches": 0, "hec_rejected_events": 0,
                          "hec_spool_overflow_events": 0, "hec_queue_overflow_events": 0,
-                         "hec_audit_index_refused": 0, "hec_records_lost": 0}
+                         "hec_audit_index_refused": 0, "hec_records_lost": 0,
+                         "hec_thread_errors": 0}
         self.retry_after = 0.0
+        self._last_error_log: Optional[float] = None
         self._plock = threading.Lock()
         self._pending: Dict[int, Set[int]] = {}
         self._failed: List[Key] = []
@@ -434,6 +437,9 @@ class HecOutput(Output):
         except (urllib.error.URLError, OSError) as e:
             log.error("HEC unreachable: %s", e)
             return "retry"
+        except http.client.HTTPException as e:     # a malformed or cut-off reply
+            log.error("HEC reply unreadable: %r", e)
+            return "retry"
 
     def _reject(self, lines: List[bytes]) -> None:
         self.counters["hec_rejected_batches"] += 1
@@ -524,12 +530,48 @@ class HecOutput(Output):
                     break
                 batch.append(item)
                 size += len(item[0]) + 1
-            if batch:
-                self._deliver(batch)
-            elif self.stop.is_set():
-                return
-            if time.monotonic() >= self.retry_after and not self.stop.is_set():
-                self._drain_spool()
+            try:
+                if batch:
+                    self._deliver(batch)
+                elif self.stop.is_set():
+                    return
+                if time.monotonic() >= self.retry_after and not self.stop.is_set():
+                    self._drain_spool()
+            except Exception as e:      # this thread must never end while the process runs
+                self._thread_error(e, batch)
+
+    def _thread_error(self, e: Exception, batch: List[Tuple[bytes, Optional[Key]]]) -> None:
+        """Anything unexpected in the hec thread. Ended, the thread would leave the process
+        looking healthy while nothing reached the SIEM. So: count it (rule 10 sees the count),
+        log it with the traceback at most once a minute, back off, and keep the batch's events
+        that weren't handed over yet: spooled, or given up as failed (a gap a replay fills) if
+        even the spool can't take them."""
+        self.counters["hec_thread_errors"] += 1
+        now = time.monotonic()
+        self.retry_after = now + self.retry_interval
+        if self._last_error_log is None or now - self._last_error_log >= 60:
+            self._last_error_log = now
+            log.error("HEC thread error, delivery goes on after %.0f s: %s",
+                      self.retry_interval, e, exc_info=True)
+        left = [(line, k) for line, k in batch if k is None or self._is_pending(k)]
+        if not left:
+            return
+        keys = [k for _, k in left]
+        try:
+            spooled = self.spool.write(b"".join(line + b"\n" for line, _ in left))
+        except Exception:
+            spooled = False
+        if spooled:
+            self.counters["hec_spooled_batches"] += 1
+            self._settle(keys)
+        else:
+            self.counters["hec_spool_overflow_events"] += len(left)
+            self._settle(keys, failed=True)
+
+    def _is_pending(self, key: Key) -> bool:
+        with self._plock:
+            s = self._pending.get(key[0])
+            return s is not None and key[1] in s
 
     def flush(self) -> None:
         pass  # the background thread sends continuously

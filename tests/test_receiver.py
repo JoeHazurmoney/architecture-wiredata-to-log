@@ -1,4 +1,7 @@
 import json
+import os
+
+import pytest
 
 from wd2l import wire
 from wd2l.receiver import RangeSet, Receiver
@@ -581,3 +584,31 @@ def test_health_totals_the_senders_opaque_events():
     feed(r, [hb(0, opaque_events=2)], 0)
     feed(r, [hb(0, sid=0x2222, opaque_events=3)], 0)
     assert r.emit_health(0)["sender_opaque_events"] == 5
+
+
+def test_a_state_file_that_cant_be_saved_is_reported_not_fatal(tmp_path):
+    """ENOSPC or EIO on /var/lib/wd2l raised out of tick(): a restart every few seconds, each
+    one reporting delivered events as gaps again. Now it is retried and shown in health."""
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("")
+    r, out = rx(state_path=str(blocker / "state.json"))
+    feed(r, ev(1), 0)
+    r.tick(0)                               # the save fails: no exception
+    r.save_state()
+    assert r.state_save_failed and r.dirty
+    assert r.emit_health(1)["state_save_failed"] is True
+    r.state_path = str(tmp_path / "state.json")
+    r.save_state()
+    assert not r.state_save_failed and os.path.exists(r.state_path)
+    assert r.emit_health(2)["state_save_failed"] is False
+
+
+def test_a_hec_url_without_a_scheme_is_refused(tmp_path):
+    from wd2l import receiver
+    tok = tmp_path / "token"
+    tok.write_text("t")
+    a = receiver.build_parser().parse_args(
+        ["--pcap", "x.pcap", "--hec-url", "siem:8088", "--hec-token-file", str(tok),
+         "--spool-dir", str(tmp_path / "spool")])
+    with pytest.raises(SystemExit, match="http"):
+        receiver.build_outputs(a)

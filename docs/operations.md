@@ -41,7 +41,7 @@ carry `records: true`. The `health` counters, cumulative since the receiver star
 | `capture_down_errors` | Reads that failed because the capture NIC went down, since the receiver started: usually one per outage (rule 1 says where and for how long) | 0 |
 | `reasm_expired`, `reasm_evicted`, `event_too_big` | Split events that never completed | 0 |
 | `sender_drops`, `sender_truncated`, `sender_bad_input`, `sender_unread_bytes`, `sender_opaque_events`, `sender_events_in` | From the sender's heartbeat | 0; truncated and opaque at your sources' usual level; `sender_events_in` grows with `events_delivered` |
-| `hec_*` (`events_sent`, `spool_files`, `spool_bytes`, `posts_failed`, `rejected_events`, `queue_overflow_events`) | SIEM delivery; `audit_hec_*` for the audit output | spool, rejected, overflow 0 |
+| `hec_*` (`events_sent`, `spool_files`, `spool_bytes`, `posts_failed`, `rejected_events`, `queue_overflow_events`, `thread_errors`) | SIEM delivery; `audit_hec_*` for the audit output. `thread_errors`: unexpected errors in delivery, which goes on (the journal has the traceback) | spool, rejected, overflow, thread errors 0 |
 | `records_delivered`, `records_bad` | Enclave 1 records passed on, and refused | growing; 0 |
 | `fault_*`, `seg_*` | The receiver's verdict, and each segment's colour | `ok` (`unknown` while unseen) |
 | `time_status`, `time_reason`, `time_quality` | The time check and chrony's numbers | `ok`; synced, stratum 3 |
@@ -49,6 +49,7 @@ carry `records: true`. The `health` counters, cumulative since the receiver star
 | `reconcile_unbalanced` | Sender runs whose last comparison didn't balance | 0 |
 | `packet_age_s`, `frame_age_s` | Since any packet, and any wd2l frame, arrived | under ~1 s |
 | `nic_*`, `archive_*`, `cpu_pct`, `rss_mb` | The capture NIC, the newest pcap file, the receiver process | carrier true; archive age under an hour |
+| `state_save_failed` | The state file can't be written (disk full, or `/var/lib/wd2l` read-only). Receiving goes on and the save is retried each second | false |
 | `streams`, `retired_streams` | Per sender run; finished runs with nothing open retire after `--stream-retention` (7 days) | |
 
 ### Gap reasons
