@@ -4,6 +4,10 @@
 # The digest is the multi-arch index's when there is one. Looks digests up with skopeo if it
 # is installed, else `docker buildx imagetools` (Docker Desktop). RESOLVE=cmd overrides (tests).
 # A file is rewritten only when every FROM in it resolved.
+#
+# --check rewrites nothing. It exits 1 naming each FROM that isn't pinned, or whose pinned
+# digest the registry no longer serves (image-rescan.yml, weekly; docs/releasing.md, before a tag):
+#   pin-images.sh --check packaging/container/Containerfile packaging/ci/tools.Containerfile
 set -euo pipefail
 resolve() {
   if [ -n "${RESOLVE:-}" ]; then "$RESOLVE" "$1"
@@ -12,6 +16,23 @@ resolve() {
   else docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$1"; fi
 }
 re='^([Ff][Rr][Oo][Mm][[:space:]]+)([^@[:space:]]+)(@sha256:[0-9a-f]{64})?(.*)$'
+if [ "${1:-}" = "--check" ]; then
+  shift; bad=0
+  for f in "$@"; do
+    while IFS= read -r line || [ -n "$line" ]; do
+      line="${line%$'\r'}"
+      [[ "$line" =~ $re ]] || continue
+      ref="${BASH_REMATCH[2]}"; pin="${BASH_REMATCH[3]#@}"
+      if [ -z "$pin" ]; then echo "pin-images: not pinned: $ref ($f)" >&2; bad=1; continue; fi
+      # By digest alone: skopeo refuses a reference with both a tag and a digest.
+      name="$ref"; [[ "${ref##*/}" == *:* ]] && name="${ref%:*}"
+      d="$(resolve "$name@$pin" 2>/dev/null || true)"
+      if [ "$d" = "$pin" ]; then echo "resolves $ref@$pin" >&2
+      else echo "pin-images: gone: $ref@$pin ($f)" >&2; bad=1; fi
+    done < "$f"
+  done
+  exit "$bad"
+fi
 for f in "$@"; do
   tmp="$(mktemp)"
   while IFS= read -r line || [ -n "$line" ]; do

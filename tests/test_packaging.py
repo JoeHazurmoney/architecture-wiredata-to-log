@@ -184,6 +184,44 @@ def test_pin_images_refuses_a_bad_digest(tmp_path):
     assert f.read_text() == "FROM a.io/x:1\n"
 
 
+def check_pins(tmp_path, text, resolver_sh):
+    f = tmp_path / "Containerfile"
+    f.write_text(text)
+    resolver = tmp_path / "resolve"
+    resolver.write_text("#!/bin/sh\necho \"$1\" >> %s\n%s" % (tmp_path / "asked", resolver_sh))
+    resolver.chmod(0o755)
+    r = subprocess.run(["bash", PIN, "--check", str(f)], env=dict(os.environ, RESOLVE=str(resolver)),
+                       stderr=subprocess.PIPE)
+    assert f.read_text() == text
+    asked = (tmp_path / "asked").read_text().split() if (tmp_path / "asked").exists() else []
+    return r, asked
+
+
+def test_pin_images_check_looks_each_pin_up_by_digest_alone(tmp_path):
+    a, b = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+    # The registry serves every pinned digest: the lookup answers with the digest it was given.
+    r, asked = check_pins(tmp_path, "FROM a.io/x:1@%s AS one\nRUN echo hi\nFROM h.io:5000/y:2@%s\n" % (a, b),
+                          'echo "${1#*@}"\n')
+    assert r.returncode == 0, r.stderr
+    assert asked == ["a.io/x@" + a, "h.io:5000/y@" + b]  # no tag: skopeo refuses a tag with a digest
+
+
+def test_pin_images_check_names_each_pin_that_is_gone_or_missing(tmp_path):
+    a, b = "sha256:" + "a" * 64, "sha256:" + "b" * 64
+    # b is gone; a lookup answering with another digest (skopeo hashing an empty answer) is gone too.
+    r, _ = check_pins(tmp_path, "FROM a.io/x:1@%s AS one\nFROM b.io/y:2@%s\nFROM c.io/z:3\n" % (a, b),
+                      'case "$1" in *bbbb*) echo "manifest unknown"; exit 1;; esac\necho "${1#*@}"\n')
+    assert r.returncode == 1
+    err = r.stderr.decode()
+    assert "gone: b.io/y:2@" + b in err and "not pinned: c.io/z:3" in err and "gone: a.io/x" not in err
+
+
+def test_pin_images_check_rejects_a_different_digest(tmp_path):
+    a = "sha256:" + "a" * 64
+    r, _ = check_pins(tmp_path, "FROM a.io/x:1@%s\n" % a, "echo sha256:%s\n" % ("e" * 64))
+    assert r.returncode == 1 and b"gone: a.io/x:1@" + a.encode() in r.stderr
+
+
 import pytest
 
 rpmify = load_script("packaging/rpm/rpmify.py")
