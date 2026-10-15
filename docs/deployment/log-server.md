@@ -160,7 +160,7 @@ Check the chain:
 
 ```bash
 sudo -u wd2l python3 -m wd2l.audit verify /var/log/wd2l
-wd2l-audit-report verify --dir /var/log/wd2l
+sudo -u wd2l wd2l-audit-report verify --dir /var/log/wd2l
 ```
 
 The aggregator copies these files to the log retention server
@@ -277,12 +277,14 @@ doesn't see them. So, in a planned window:
 
    ```bash
    sudo systemctl disable wd2l-sender wd2l-egress-nic wd2l-audit-seal.timer
-   sudo rm /etc/systemd/system/wd2l-sender.service /etc/systemd/system/wd2l-egress-nic.service \
+   sudo rm -f /etc/systemd/system/wd2l-sender.service /etc/systemd/system/wd2l-egress-nic.service \
+     /etc/systemd/system/wd2l-egress-arp.service \
      /etc/systemd/system/wd2l-audit-seal.service /etc/systemd/system/wd2l-audit-seal.timer
    sudo rm -rf /opt/wd2l
    sudo cp /usr/share/wd2l/audit/log-server.rules /etc/audit/rules.d/wd2l.rules && sudo augenrules --load
    sudo systemctl daemon-reload
    sudo systemctl enable wd2l-sender wd2l-egress-nic wd2l-audit-seal.timer
+   sudo systemctl restart wd2l-egress-nic wd2l-egress-arp    # now from the packaged units
    systemctl cat wd2l-sender | head -1      # /usr/lib/systemd/system/wd2l-sender.service
    ```
 

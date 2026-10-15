@@ -151,7 +151,7 @@ The transfer keeps going; the audit records are what is at risk.
   after 6 hours). On that host:
   ```bash
   journalctl -u wd2l-receiver | grep 'self-check'     # wd2l-sender on the log server
-  wd2l-audit-report verify --dir /var/log/wd2l
+  sudo -u wd2l wd2l-audit-report verify --dir /var/log/wd2l
   ```
   If the chain verifies and the journal says `could not start` or `timeout`, fix the cause
   (memory, a very large directory); the flag clears at the next check. Otherwise compare the other
@@ -194,7 +194,7 @@ a problem or when there is nothing to verify. Each host also checks itself daily
 
 ```bash
 sudo -u wd2l python3 -m wd2l.audit verify /var/log/wd2l      # on the host
-wd2l-audit-report verify --dir /var/log/wd2l                 # or a copy of the files
+sudo -u wd2l wd2l-audit-report verify --dir /var/log/wd2l     # or a copy of the files
 wd2l-audit-report verify --export siem-export.json --complete  # a SIEM export, none missing
 ```
 

@@ -242,6 +242,22 @@ def test_manual_install_copies_every_unit(side):
     assert not missing, missing
 
 
+@pytest.mark.parametrize("side", ["log-server", "receiver"])
+def test_moving_to_the_rpms_removes_every_unit_the_manual_install_copied(side):
+    # One left in /etc/systemd/system wins over the packaged unit and still runs from the
+    # /opt/wd2l the same step deletes (wd2l-egress-arp.service did, restarting every 5 s).
+    import glob
+    with open(os.path.join(REPO, "docs", "deployment", side + ".md"), encoding="utf-8") as f:
+        text = f.read()
+    move = text.split("## Moving a manual install to the RPMs", 1)[1].split("\n## ", 1)[0]
+    appendix = text.split("## Appendix: manual install", 1)[1]
+    copied = re.findall(r"deploy/(?:%s|common)/[\w.*-]+" % side, appendix)
+    units = {os.path.basename(p) for c in copied for p in glob.glob(os.path.join(REPO, c))
+             if p.endswith((".service", ".timer"))}
+    removed = set(re.findall(r"/etc/systemd/system/([\w.-]+)", move))
+    assert units and not units - removed, sorted(units - removed)
+
+
 @pytest.mark.parametrize("side, name", [("log-server", "wd2l-sender"), ("receiver", "wd2l-receiver")])
 def test_quadlets_mount_var_lib_wd2l_without_relabelling(side, name):
     # :z relabelled /var/lib/wd2l/pcap to container_file_t and stopped host tcpdump (A2-6); the
