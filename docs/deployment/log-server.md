@@ -104,7 +104,7 @@ nftables, then restart the sender the clean way ([planned-downtime.md](../planne
 Only after that, add `--src-port 5514` to `/etc/wd2l/receiver.env` in Enclave 2. In the other order the
 receiver counts every packet as `other_packets` until the sender is changed.
 
-Every minute it logs its stream id, last sequence number and counters. Options
+Every minute (`--stats-interval`) it logs its stream id, last sequence number and counters. Options
 (`python3 -m wd2l.sender --help`):
 
 | Option | Default | Notes |
@@ -115,6 +115,8 @@ Every minute it logs its stream id, last sequence number and counters. Options
 | `--max-datagram` | `1472` | `8972` if MTU 9000 end to end |
 | `--max-event` | `262144` | Bigger events are truncated and flagged |
 | `--rate-pps` | `20000` | Packet rate cap, smooths bursts. 0 = off |
+| `--heartbeat` | `1` s | Seconds between heartbeats |
+| `--stats-interval` | `60` s | Seconds between the `stream=… last_seq=…` log lines. The per-minute health record, audit summaries and checks keep their own minute |
 | `--auth-token-file` | none | Must match the token set in the log aggregator |
 | `--extra-field` | none | Extra aggregator field to carry as an indexed field in the SIEM (repeatable) |
 | `--source-seq` | off | Number events per file (`wd2l_src_seq`) so Enclave 2 can rebuild interleaved files and name lost lines. See [multiple-files.md](../multiple-files.md) |

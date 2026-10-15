@@ -46,6 +46,8 @@ OPAQUE_FIELD = "wd2l_opaque"
 OPAQUE_BYTES_FIELD = "wd2l_opaque_bytes"
 MAX_LINE = 16 * 1024 * 1024
 ERROR_LOG_EVERY = 10.0
+# Sender.periodic(): the per-minute health record, audit summaries and checks the docs promise.
+PERIODIC_EVERY = 60.0
 # The final heartbeat ends a run, and nothing acknowledges it: lost, Enclave 2 sees stream_lost
 # instead of stream_end and has no reconcile record until its hourly pass. So it goes out this
 # many times, identical, this far apart; the receiver acts on the first (ICD §8).
@@ -701,18 +703,25 @@ class InputServer(socketserver.ThreadingTCPServer):
 
 
 def _heartbeat_loop(sender: Sender, interval: float, stop: threading.Event,
-                    stats_every: float) -> None:
+                    stats_every: float, periodic_every: float = PERIODIC_EVERY) -> None:
+    """Heartbeats; the stats log line every stats_every (--stats-interval); and the per-minute
+    work on its own timer, so quieting the journal can't slow the health records and the audit
+    checks (#135)."""
     next_stats = time.monotonic() + stats_every
+    next_periodic = time.monotonic() + periodic_every
     last_error: Optional[float] = None
     while not stop.wait(interval):
         try:
             sender.send_heartbeat()
-            if time.monotonic() >= next_stats:
+            now = time.monotonic()
+            if now >= next_stats:
                 next_stats += stats_every
                 with sender.lock:
                     counters = json.dumps(sender.counters, sort_keys=True)
                 log.info("stream=%016x last_seq=%d %s", sender.stream_id, sender.seq, counters,
                          extra={"stream": "%016x" % sender.stream_id, "seq": sender.seq})
+            if now >= next_periodic:
+                next_periodic += periodic_every
                 sender.periodic()
             sender.flush_records()
         except Exception as e:
