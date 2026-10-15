@@ -2,7 +2,7 @@
 # (.github/dependabot.yml) proposes new digests. Re-pin by hand with:
 #   packaging/ci/pin-images.sh packaging/ci/tools.Containerfile
 FROM registry.access.redhat.com/hi/cosign:latest@sha256:17d443385a03b0f6592120ff4b99aa00cea043a0e9b84514070f0d2360a78fde AS cosign
-FROM registry.access.redhat.com/hi/grype:0.119@sha256:1870f5513102bc232ba1e40372531119c4bc41f896e0c0a5ce3a3acbebb23a81 AS grype
+FROM registry.access.redhat.com/hi/grype:0.119@sha256:1885fd16dbad4977a36b700d2ba55d1cc9946ed608c249833c5e45e31bd3906f AS grype
 FROM registry.access.redhat.com/hi/oras:1.3@sha256:244ffe118d64ac08d20aa7b632951e399387a88760cf30b254bedfddc60caca1 AS oras
 FROM docker.io/anchore/syft:v1.54.1@sha256:3eb5379ba7b409c3f4069b686110527af0c47df993fa5c10d13e7cf34f49b1aa AS syft
 FROM docker.io/aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa AS trivy
