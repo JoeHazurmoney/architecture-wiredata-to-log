@@ -3,6 +3,8 @@ name: compare-bases
 # Runs when the measuring files change; by hand once on main: gh workflow run compare-bases.yml
 on:
   push:
+    # Branches only: GitHub doesn't apply paths to a tag push, so every release tag ran it (#116).
+    branches: ["**"]
     paths:
       - packaging/container/compare-bases.sh
       - packaging/container/candidates/**
@@ -16,6 +18,7 @@ permissions:
 jobs:
   compare:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: packaging/container/compare-bases.sh | tee compare.md >> "$GITHUB_STEP_SUMMARY"

@@ -10,6 +10,11 @@ on:
     branches: ["**"]
     paths: [".github/workflows/release.yml"]   # not evaluated for tags
   workflow_dispatch:
+concurrency:
+  # A newer dry run of the same branch cancels the older one. A tag run is never cancelled, and
+  # a second run of the same tag waits for the first to finish (docs/releasing.md).
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 permissions:
   contents: read
 defaults:
@@ -20,6 +25,7 @@ env:
 jobs:
   version:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
       pep440: ${{ steps.v.outputs.pep440 }}
       tag: ${{ steps.v.outputs.tag }}
@@ -87,6 +93,7 @@ jobs:
           || (needs.publish.result == 'skipped' && !startsWith(github.ref, 'refs/tags/v'))) }}
     needs: [version, tests, image, rpm, publish]
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: read
@@ -193,6 +200,7 @@ jobs:
           || (needs.attest.result == 'skipped' && !startsWith(github.ref, 'refs/tags/v'))) }}
     needs: [version, publish, assets, attest]
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     # The signing secrets and the approval gate live in the `release` environment, which only a
     # v* tag may use; a dry run needs neither.
     environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
