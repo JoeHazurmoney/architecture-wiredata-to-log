@@ -371,3 +371,21 @@ def test_an_error_in_the_heartbeat_loop_does_not_stop_heartbeats():
         t.join(2)
     beats = [f for f in (wire.decode(d) for d in sock.sent) if f.type == wire.TYPE_HEARTBEAT]
     assert len(beats) >= 3
+
+
+def test_the_final_heartbeat_goes_out_three_times():
+    """The end of a run was one unacknowledged datagram on a lossy one-way link (#74): lost,
+    Enclave 2 saw stream_lost instead of stream_end, and wrote no reconcile record until its
+    hourly pass. Three identical copies; the receiver acts on the first."""
+    snd, sock = sender()
+    snd.send_event({"_raw": "x"})
+    snd.send_heartbeat(final=True)
+    frames = [wire.decode(d) for d in sock.sent]
+    finals = [d for d, f in zip(sock.sent, frames)
+              if f.type == wire.TYPE_HEARTBEAT and json.loads(f.payload).get("final") is True]
+    assert len(finals) == 3 and len(set(finals)) == 1
+    assert sock.sent[-3:] == finals                 # still the last frames of the run
+    n = len(sock.sent)
+    snd.send_heartbeat(final=True)
+    snd.send_heartbeat()
+    assert len(sock.sent) == n                      # closed: nothing after the final copies

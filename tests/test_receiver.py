@@ -612,3 +612,46 @@ def test_a_hec_url_without_a_scheme_is_refused(tmp_path):
          "--spool-dir", str(tmp_path / "spool")])
     with pytest.raises(SystemExit, match="http"):
         receiver.build_outputs(a)
+
+
+def test_an_event_split_by_a_sender_pause_is_still_delivered():
+    """#74: the lab's sender-hang froze the sender between two pieces of one event for 10 s.
+    The receiver dropped the first pieces after --reasm-timeout (5 s) although the stream had
+    sent nothing since, so the event was lost although every piece arrived. A paused stream's
+    part-built event now waits; the gap declared meanwhile is filled when it completes."""
+    r, out = rx(reasm_timeout=5, gap_window=2)
+    dgs = ev(2, "y" * 3000, max_dg=600)
+    assert len(dgs) >= 4
+    # The sender froze in the middle of seq 2. It holds its lock across an event's pieces, so
+    # no heartbeat can come between them, before or after the pause (ICD §7).
+    feed(r, ev(1) + [hb(1)] + dgs[:2], 0)
+    for t in range(1, 11):
+        r.tick(t)                           # 10 s with nothing from the sender
+    feed(r, dgs[2:] + [hb(2)] + ev(3), 10.5)   # it resumes where it stopped
+    r.tick(11)
+    r.tick(20)
+    assert out.seqs() == [1, 2, 3]
+    assert r.reasm.counters["reasm_expired"] == 0 and r.reasm.buffered == 0
+    assert r.streams[SID].gaps.r == []      # any gap declared during the pause is filled
+
+
+def test_a_lost_piece_still_expires_once_the_stream_moves_on():
+    # An idle sender still sends a heartbeat a second: that moves the stream on too.
+    r, out = rx(reasm_timeout=1, gap_window=2)
+    dgs = ev(2, "y" * 3000, max_dg=600)
+    feed(r, ev(1) + dgs[:-1], 0)            # the last piece of seq 2 is lost
+    feed(r, [hb(2)], 1)
+    r.tick(1.5)
+    assert r.reasm.counters["reasm_expired"] == 0       # 0.5 s after the stream moved on
+    r.tick(2.5)
+    assert r.reasm.counters["reasm_expired"] == 1 and r.reasm.buffered == 0
+
+
+def test_a_silent_streams_part_built_event_expires_when_the_stream_would_be_lost():
+    r, out = rx(reasm_timeout=1, stream_lost_after=60)
+    dgs = ev(1, "y" * 3000, max_dg=600)
+    feed(r, dgs[:2], 0)                     # then nothing at all from this sender
+    r.tick(59)
+    assert r.reasm.counters["reasm_expired"] == 0
+    r.tick(61)
+    assert r.reasm.counters["reasm_expired"] == 1 and r.reasm.buffered == 0

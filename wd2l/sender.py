@@ -46,6 +46,11 @@ OPAQUE_FIELD = "wd2l_opaque"
 OPAQUE_BYTES_FIELD = "wd2l_opaque_bytes"
 MAX_LINE = 16 * 1024 * 1024
 ERROR_LOG_EVERY = 10.0
+# The final heartbeat ends a run, and nothing acknowledges it: lost, Enclave 2 sees stream_lost
+# instead of stream_end and has no reconcile record until its hourly pass. So it goes out this
+# many times, identical, this far apart; the receiver acts on the first (ICD §8).
+FINAL_COPIES = 3
+FINAL_SPACING_S = 0.05
 # Frequent events become one audit record per kind and key a minute (§4).
 SUMMARY_OUTCOME = {"auth_failure": "failure", "input_rejected": "failure",
                    "send_failure": "failure", "truncated": "info", "opaque_content": "info"}
@@ -385,10 +390,21 @@ class Sender:
             if self.closed:
                 return
             self.last_snapshot = snap
-            self._transmit(self._heartbeat_frame(final, snap))
+            frame = self._heartbeat_frame(final, snap)
+            self._transmit(frame)
             self._save_state()
             if final:
                 self.closed = True
+        if final:
+            self._repeat_final(frame)
+
+    def _repeat_final(self, frame: bytes) -> None:
+        """The rest of a final heartbeat's copies (FINAL_COPIES), spaced so that one burst of
+        loss doesn't take them all."""
+        for _ in range(FINAL_COPIES - 1):
+            time.sleep(FINAL_SPACING_S)
+            with self.lock:
+                self._transmit(frame)
 
     def count_bad_input(self, reason: str = "bad_json") -> None:
         with self.lock:
@@ -490,8 +506,11 @@ class Sender:
             if final:
                 info["final"] = True
                 self.rec_closed = True
-            self._transmit(wire.encode_heartbeat(self.rec_stream_id, self.rec_seq, info,
-                                                 flags=wire.FLAG_RECORDS))
+            frame = wire.encode_heartbeat(self.rec_stream_id, self.rec_seq, info,
+                                          flags=wire.FLAG_RECORDS)
+            self._transmit(frame)
+        if final:
+            self._repeat_final(frame)
 
 
 # ---------------------------------------------------------------- log aggregator input (JSON lines over TCP)

@@ -160,9 +160,11 @@ or 8,904 at MTU 9000.
   frame, not even a heartbeat, is sent between them.
 * The receiver reassembles by (`stream_id`, `seq`, `chunk_idx`), so it would also accept them
   out of order.
-* It holds a part-built event for up to 5 s (`--reasm-timeout`). It then checks the length
-  against `event_len` and the SHA-256 against `digest`. If any piece is lost, the whole event is
-  lost and reported as a gap.
+* It holds a part-built event until 5 s (`--reasm-timeout`) after its stream sends any other
+  frame: pieces come back to back, so by then a missing piece isn't coming. While the stream
+  sends nothing at all, e.g. a sender paused between two pieces, the event waits, up to 60 s
+  (`--stream-lost-after`). When complete it checks the length against `event_len` and the
+  SHA-256 against `digest`. If any piece is lost, the whole event is lost and reported as a gap.
 
 ### Event body
 
@@ -225,6 +227,10 @@ Sent every second (`--heartbeat`) and once more on clean shutdown. One packet, `
 `seq` in the header is the last DATA `seq` sent. That's how the receiver notices events lost at
 the very end of a burst, when nothing newer arrives to show the gap.
 
+The shutdown heartbeat (`final`) is sent three times, as identical copies 50 ms apart, because
+nothing acknowledges it and one lost copy would leave Enclave 2 without the end of the run. The
+receiver acts on the first copy it gets and ignores the others.
+
 The body is compact UTF-8 JSON with **keys in sorted order**, about 600–800 bytes with
 the deployed unit, so the datagram is about 670–870 bytes. It is always one packet: if the
 snapshot keys would not fit `--max-datagram`, they are left out of that heartbeat and
@@ -244,7 +250,7 @@ cumulative for this sender run unless noted.
 | `events_hash` | string, 64 hex digits | | always (wd2l ≥ 0.2.0) | Set hash of this run's events 1 … `seq` (the heartbeat's `seq` is the cut; all zeros before the first event): the sum modulo 2²⁵⁶ of SHA-256(`seq` as 8 bytes big-endian ‖ the event's SHA-256 `digest`). Enclave 2 compares it with its own value to prove it delivered exactly these events ([audit design §7](audit-and-health.md#7-reconciliation)). Never dropped from a trimmed heartbeat. |
 | `events_in` | integer | lines | always | Input lines that were events or were rejected |
 | `events_sent` | integer | events | always | Events numbered and sent |
-| `final` | `true` | | last heartbeat only | Clean shutdown. Always the last frame of a run |
+| `final` | `true` | | last heartbeat only | Clean shutdown. Always the last frames of a run: three identical copies |
 | `heartbeat_trimmed` | integer | heartbeats | always | Heartbeats sent without the snapshot because it wouldn't fit |
 | `input_backlog_bytes` | integer | bytes | always | Handed over by the aggregator, not yet read |
 | `nic_carrier` | boolean |  | with `--egress-iface` | The egress NIC has link |
@@ -278,7 +284,7 @@ Same frame, with `flags` bit 0 set. Sent every second and once more at shutdown.
 | `outbox_dropped` | integer | Records not queued for sending because more than 10,000 were waiting |
 | `sender_time` | number, 3 decimals | Sender's clock, seconds since 1970-01-01 UTC |
 | `uptime` | number, 1 decimal | Seconds since this run started |
-| `final` | `true` | Last heartbeat only. Clean shutdown |
+| `final` | `true` | Last heartbeat only. Clean shutdown. Three identical copies, like the data stream's |
 
 There is no `boot` and there are no `prev_*` keys. Records streams aren't linked across runs.
 
@@ -349,7 +355,7 @@ Nothing can be resent across a one-way link. Every problem is detected and repor
 | IPv4 / UDP | IPv4, not a fragment, protocol UDP, expected addresses and ports | Receiver | Counted as `other_packets` (with a reason), dropped |
 | WD2L frame | Length ≥ 68, CRC-32, magic, version, type, chunk fields | Receiver | Counted as `bad_frames`, dropped |
 | WD2L frame | `event_len` ≤ the receiver's `--max-event` | Receiver | Counted as `event_too_big`, dropped |
-| Event | All pieces within 5 s; total held under 64 MB | Receiver | `reasm_expired` / `reasm_evicted`. The event becomes a gap |
+| Event | All pieces within 5 s of the stream's next frame (60 s while the stream is silent); total held under 64 MB | Receiver | `reasm_expired` / `reasm_evicted`. The event becomes a gap |
 | Event | Joined length = `event_len`, SHA-256 = `digest` | Receiver | `digest_mismatch`, dropped. The event becomes a gap |
 | Event | Valid JSON (not too deeply nested to read, no `NaN` or `Infinity`) with a `_raw` string | Receiver | `bad_events`, dropped |
 | Heartbeat | Body is a JSON object (not too deeply nested to read, no `NaN` or `Infinity`) | Receiver | Counted as `bad_frames` (`bad heartbeat json`), dropped. A number too big for a float (`1e999`) is dropped from the body |
