@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Asks a real chronyd for `tracking` over UDP, as --chrony-addr does, and checks the answer is
 # chronyc's: the protocol check that lab/fake_chronyd.py, a stand-in, can't make. As root in
-# the pinned Fedora image (tests.yml), from the repo root:
-#   podman run --rm -v "$PWD:/src:ro" "$(packaging/ci/tool --ref fedora)" bash /src/packaging/ci/chrony-smoke.sh
+# the pinned AlmaLinux 10 image (tests.yml), from the repo root:
+#   podman run --rm -v "$PWD:/src:ro" "$(packaging/ci/tool --ref alma10)" bash /src/packaging/ci/chrony-smoke.sh
 set -euo pipefail
 dnf install -y -q chrony python3 >/dev/null
 printf 'local stratum 8\ndriftfile /tmp/chrony.drift\n' > /tmp/chrony.conf
