@@ -102,7 +102,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--health-index` | default index | Index for `wd2l:health` |
 | `--out-dir` | none | Also (or instead) write `events.jsonl` + `health.jsonl`. For the lab and tests; see [ADR-0003](../decisions/0003-receiver-to-siem-delivery.md) before using it in production |
 | `--gap-window` | `2` s | How long a missing event may be late before it's a gap |
-| `--reasm-timeout` | `5` s | How long to hold part of a split event |
+| `--reasm-timeout` | `5` s | How long to hold part of a split event once its stream has sent something else. While the stream sends nothing, up to `--stream-lost-after` |
 | `--hb-timeout` | `5` s | No heartbeat for this long → `heartbeat_stale` |
 | `--health-interval` | `60` s | Summary record interval |
 | `--max-event`, `--max-buffer` | 256 KB, 64 MB | Input caps |

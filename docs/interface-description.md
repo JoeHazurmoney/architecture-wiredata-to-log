@@ -160,9 +160,11 @@ or 8,904 at MTU 9000.
   frame, not even a heartbeat, is sent between them.
 * The receiver reassembles by (`stream_id`, `seq`, `chunk_idx`), so it would also accept them
   out of order.
-* It holds a part-built event for up to 5 s (`--reasm-timeout`). It then checks the length
-  against `event_len` and the SHA-256 against `digest`. If any piece is lost, the whole event is
-  lost and reported as a gap.
+* It holds a part-built event until 5 s (`--reasm-timeout`) after its stream sends any other
+  frame: pieces come back to back, so by then a missing piece isn't coming. While the stream
+  sends nothing at all, e.g. a sender paused between two pieces, the event waits, up to 60 s
+  (`--stream-lost-after`). When complete it checks the length against `event_len` and the
+  SHA-256 against `digest`. If any piece is lost, the whole event is lost and reported as a gap.
 
 ### Event body
 
@@ -353,7 +355,7 @@ Nothing can be resent across a one-way link. Every problem is detected and repor
 | IPv4 / UDP | IPv4, not a fragment, protocol UDP, expected addresses and ports | Receiver | Counted as `other_packets` (with a reason), dropped |
 | WD2L frame | Length ≥ 68, CRC-32, magic, version, type, chunk fields | Receiver | Counted as `bad_frames`, dropped |
 | WD2L frame | `event_len` ≤ the receiver's `--max-event` | Receiver | Counted as `event_too_big`, dropped |
-| Event | All pieces within 5 s; total held under 64 MB | Receiver | `reasm_expired` / `reasm_evicted`. The event becomes a gap |
+| Event | All pieces within 5 s of the stream's next frame (60 s while the stream is silent); total held under 64 MB | Receiver | `reasm_expired` / `reasm_evicted`. The event becomes a gap |
 | Event | Joined length = `event_len`, SHA-256 = `digest` | Receiver | `digest_mismatch`, dropped. The event becomes a gap |
 | Event | Valid JSON (not too deeply nested to read, no `NaN` or `Infinity`) with a `_raw` string | Receiver | `bad_events`, dropped |
 | Heartbeat | Body is a JSON object (not too deeply nested to read, no `NaN` or `Infinity`) | Receiver | Counted as `bad_frames` (`bad heartbeat json`), dropped. A number too big for a float (`1e999`) is dropped from the body |

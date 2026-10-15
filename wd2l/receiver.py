@@ -273,7 +273,7 @@ class StreamTracker:
 # ---------------------------------------------------------------- chunk reassembly
 
 class _Partial:
-    __slots__ = ("count", "event_len", "digest", "chunks", "size", "first")
+    __slots__ = ("count", "event_len", "digest", "chunks", "size", "first", "last", "passed")
 
     def __init__(self, f: wire.Frame, now: float):
         self.count = f.chunk_count
@@ -281,15 +281,24 @@ class _Partial:
         self.digest = f.digest
         self.chunks: Dict[int, bytes] = {}
         self.size = 0
-        self.first = now
+        self.first = self.last = now
+        self.passed: Optional[float] = None   # when its stream first sent anything else
 
 
 class Reassembler:
-    def __init__(self, max_event: int, max_buffer: int, timeout: float):
+    """Part-built events. The sender sends an event's pieces back to back, with no other frame
+    between them (ICD §7). So a missing piece is lost once the stream sends anything else, and
+    the event is given up `timeout` seconds after that. A stream that sends nothing at all, e.g.
+    a sender frozen between two pieces, isn't losing pieces: its event waits, up to `hold_max`
+    (the time after which the stream itself is reported lost)."""
+
+    def __init__(self, max_event: int, max_buffer: int, timeout: float, hold_max: float = 60.0):
         self.max_event = max_event
         self.max_buffer = max_buffer
         self.timeout = timeout
+        self.hold_max = hold_max
         self.partials: Dict[Tuple[int, int], _Partial] = {}
+        self.by_stream: Dict[int, Set[Tuple[int, int]]] = {}
         self.buffered = 0
         self.counters = {"reasm_expired": 0, "reasm_evicted": 0, "reasm_inconsistent": 0,
                          "digest_mismatch": 0, "event_too_big": 0}
@@ -305,6 +314,7 @@ class Reassembler:
         p = self.partials.get(key)
         if p is None:
             p = self.partials[key] = _Partial(f, now)
+            self.by_stream.setdefault(f.stream_id, set()).add(key)
         elif (p.count, p.event_len, p.digest) != (f.chunk_count, f.event_len, f.digest):
             self.counters["reasm_inconsistent"] += 1
             self._drop(key)
@@ -323,6 +333,7 @@ class Reassembler:
                 return None
         p.chunks[f.chunk_idx] = f.payload
         p.size += len(f.payload)
+        p.last = now
         self.buffered += len(f.payload)
         if len(p.chunks) < p.count:
             return None
@@ -340,9 +351,26 @@ class Reassembler:
         p = self.partials.pop(key, None)
         if p is not None:
             self.buffered -= p.size
+            keys = self.by_stream.get(key[0])
+            if keys is not None:
+                keys.discard(key)
+                if not keys:
+                    del self.by_stream[key[0]]
+
+    def note(self, f: wire.Frame, now: float) -> None:
+        """Any frame of a stream (a heartbeat, or a piece of another event) moves the stream on
+        past its part-built events: their missing pieces aren't coming."""
+        for key in self.by_stream.get(f.stream_id, ()):
+            if f.type == wire.TYPE_DATA and key[1] == f.seq:
+                continue
+            p = self.partials[key]
+            if p.passed is None:
+                p.passed = now
 
     def expire(self, now: float, force: bool = False) -> None:
-        for key in [k for k, p in self.partials.items() if force or now - p.first > self.timeout]:
+        for key in [k for k, p in self.partials.items()
+                    if force or (p.passed is not None and now - p.passed > self.timeout)
+                    or now - p.last > self.hold_max]:
             self.counters["reasm_expired"] += 1
             self._drop(key)
 
@@ -379,7 +407,7 @@ class Receiver:
         self.src_ip = src_ip
         self.src_port = src_port  # 0 = any
         self.state_path = state_path
-        self.reasm = Reassembler(max_event, max_buffer, reasm_timeout)
+        self.reasm = Reassembler(max_event, max_buffer, reasm_timeout, stream_lost_after)
         self.gap_window = gap_window
         self.hb_timeout = hb_timeout
         self.health_interval = health_interval
@@ -507,6 +535,7 @@ class Receiver:
             return
         self.last_wd2l = now
         t = self._stream(f.stream_id, now, bool(f.flags & wire.FLAG_RECORDS))
+        self.reasm.note(f, now)
         if f.type == wire.TYPE_HEARTBEAT:
             self._heartbeat(t, f, now)
             return
@@ -1184,7 +1213,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-event", type=int, default=wire.DEFAULT_MAX_EVENT)
     p.add_argument("--max-buffer", type=int, default=64 * 1024 * 1024,
                    help="max bytes held for partly received events")
-    p.add_argument("--reasm-timeout", type=float, default=5.0)
+    p.add_argument("--reasm-timeout", type=float, default=5.0,
+                   help="seconds a part-built event is held after its stream sends anything "
+                        "else (a silent stream's waits up to --stream-lost-after)")
     p.add_argument("--gap-window", type=float, default=2.0,
                    help="seconds a missing event may be late before it is declared a gap")
     p.add_argument("--hb-timeout", type=float, default=5.0)
