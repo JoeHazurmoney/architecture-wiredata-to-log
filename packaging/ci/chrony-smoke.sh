@@ -7,7 +7,10 @@ set -euo pipefail
 dnf install -y -q chrony python3 >/dev/null
 printf 'local stratum 8\ndriftfile /tmp/chrony.drift\n' > /tmp/chrony.conf
 chronyd -x -d -f /tmp/chrony.conf > /tmp/chronyd.log 2>&1 &
+# On failure, show why: chronyd's log, and the UDP sockets bound (the command port 323 is 0143).
+trap 'echo "chrony-smoke: failed. chronyd log:"; cat /tmp/chronyd.log; echo "UDP sockets:"; cat /proc/net/udp /proc/net/udp6' ERR
 for _ in $(seq 20); do chronyc -c tracking >/dev/null 2>&1 && break; sleep 0.5; done
+chronyc -c tracking >/dev/null
 chronyd --version | head -1
 python3 -I - "$(chronyc -c tracking)" <<'PY'
 import sys
