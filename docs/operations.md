@@ -19,9 +19,10 @@ same index. Audit records are in `index=wd2l_audit`, readable only by the audito
 | `stream_missing` | A sender run never reached Enclave 2 (needs sender `--state`) | `stream`, `boot`, `last_seq`; or `first_boot`, `last_boot`, `runs` |
 | `sender_boot_reset` | The sender's restart count went down (its state file was lost or replaced) | `boot`, `previous_boot` |
 | `stream_evicted` | Over 1,000 streams tracked: one with open gaps was dropped | `stream`, `open_gap_events`, `gaps` |
+| `gaps_forgotten` | A stream passed 100,000 open gap ranges: its oldest are no longer tracked, and a replay can't fill them. Once per stream | `stream`, `forgotten_gap_events`, `max_gap_ranges` |
 | `fault` | The fault status, segment or rule changed | `fault_status`, `fault_segment`, `fault_rule`, `fault_detail`, `segments`, `previous_*` |
 | `time_status` | The time check changed | `time_status` (`ok` or `alarm`), `time_reason` |
-| `reconcile` | A comparison of what the sender numbered with what the receiver delivered, up to a cut | `stream`, `cut`, `balanced`, `gaps_open`, `events_delivered` |
+| `reconcile` | A comparison of what the sender numbered with what the receiver delivered, up to a cut | `stream`, `cut`, `balanced`, `gaps_open`, `gaps_forgotten`, `events_delivered` |
 | `health` | Every 60 s | The counters below |
 
 Every record carries `host`, `enclave`, `component` and `version`. Records about the records stream
@@ -31,6 +32,7 @@ carry `records: true`. The `health` counters, cumulative since the receiver star
 |---|---|---|
 | `events_delivered` | Events handed to the SIEM (or file) | growing |
 | `gap_events` / `open_gap_events` | Events declared lost / still missing (includes earlier runs) | 0 |
+| `forgotten_gap_events` | Missing events no longer tracked: a stream keeps at most 100,000 open gap ranges, and drops the oldest past that | 0 |
 | `uncommitted_at_start` | Events the last run handed over but didn't see confirmed before it stopped | 0 |
 | `output_dropped` | Events the output gave up on (queue or spool full) | 0 |
 | `late_fills`, `duplicates` | Gaps filled later (replay); copies ignored | any |
@@ -50,7 +52,7 @@ carry `records: true`. The `health` counters, cumulative since the receiver star
 | `packet_age_s`, `frame_age_s` | Since any packet, and any wd2l frame, arrived | under ~1 s |
 | `nic_*`, `archive_*`, `cpu_pct`, `rss_mb` | The capture NIC, the newest pcap file, the receiver process | carrier true; archive age under an hour |
 | `state_save_failed` | The state file can't be written (disk full, or `/var/lib/wd2l` read-only). Receiving goes on and the save is retried each second | false |
-| `streams`, `retired_streams` | Per sender run; finished runs with nothing open retire after `--stream-retention` (7 days) | |
+| `streams`, `retired_streams` | Per sender run, with `open_gap_events` and `forgotten_gap_events`; finished runs with nothing open retire after `--stream-retention` (7 days) | |
 
 ### Gap reasons
 
@@ -112,7 +114,8 @@ on 127.0.0.1:323: as a normal user on the host, `chronyc -h 127.0.0.1 tracking` 
 The sender's heartbeats carry a hash of every event it numbered, up to a cut; the receiver keeps
 the same hash of what it delivered ([how](audit-and-health.md#7-reconciliation)). The alert fires
 when a stream has had no balanced `type=reconcile` record for an hour **and** its latest record
-has no open gaps. A stream with open gaps is "WD2L - Events lost in transfer"'s job.
+has no open gaps, and none dropped past the cap (`gaps_forgotten`). A stream with gaps is
+"WD2L - Events lost in transfer"'s job.
 
 1. **Open gaps** explain an unbalanced stream. A replay of the capture archive brings events back
    under their old numbers, and the stream balances at the next cut. A re-send from Enclave 1

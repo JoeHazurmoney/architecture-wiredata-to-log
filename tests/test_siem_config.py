@@ -38,7 +38,10 @@ def test_reconciliation_alert_fires_only_without_open_gaps():
     "Events lost" alert's job, so this one fires only for the unexplained case."""
     search = conf("savedsearches.conf")["WD2L - Reconciliation not balanced"]["search"]
     assert "latest(gaps_open) as gaps_open" in search
-    assert re.search(r"\| where balanced_checks=0 AND gaps_open=0\s*$", search), search
+    # Gaps dropped past the receiver's cap explain it too (#129); older records lack the field.
+    assert "latest(gaps_forgotten) as gaps_forgotten" in search
+    assert re.search(r"\| where balanced_checks=0 AND gaps_open=0 AND coalesce\(gaps_forgotten, 0\)=0\s*$",
+                     search), search
 
 
 def test_tap_alert_watches_every_boundary_counter():
