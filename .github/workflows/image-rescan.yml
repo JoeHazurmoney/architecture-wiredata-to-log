@@ -1,6 +1,7 @@
 name: image-rescan
 # Re-scans the released images, both platforms, with today's vulnerability data: a CVE disclosed after a release
-# opens an issue (docs/decisions/0004-container-base-image.md, docs/releasing.md).
+# opens an issue (docs/decisions/0004-container-base-image.md, docs/releasing.md). Also checks that every pinned
+# image digest still resolves: a registry that deletes retired digests otherwise breaks the next run that pulls (#97).
 on:
   schedule:
     - cron: "17 6 * * 1"
@@ -13,6 +14,26 @@ permissions:
   packages: read
   issues: write
 jobs:
+  pins:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Every pinned digest still resolves
+        run: |
+          if packaging/ci/pin-images.sh --check packaging/container/Containerfile packaging/ci/tools.Containerfile 2> pins.txt; then
+            cat pins.txt; exit 0
+          fi
+          { echo 'The registry no longer serves these pins. Re-pin each (docs/releasing.md, "Keeping the pins current"):'
+            echo; echo '```'; grep '^pin-images:' pins.txt; echo '```'; } > body.md
+          title="Pinned image digests no longer resolve"
+          n=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then gh issue comment "$n" --body-file body.md
+          else gh issue create --title "$title" --body-file body.md; fi
+          cat body.md >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
   rescan:
     runs-on: ubuntu-24.04
     env:
