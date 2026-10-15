@@ -135,7 +135,13 @@ def check_image(d: str, tar: Optional[str], key: Optional[str], cosign: str) -> 
         return ("skip", "image", "no --image-tar")
     if not key or not shutil.which(cosign):
         return ("FAIL", "image", "needs --key and cosign")
-    with tempfile.TemporaryDirectory() as tmp:
+    # Extract among the release files and give cosign a relative path: cosign run from a
+    # container sees only the directory mounted into it, not the host's /tmp (#109).
+    try:
+        work = tempfile.TemporaryDirectory(dir=d, prefix=".verify-release-")
+    except OSError:                   # read-only media: a native cosign still works from /tmp
+        work = tempfile.TemporaryDirectory()
+    with work as tmp:
         with tarfile.open(os.path.join(d, tar) if not os.path.isabs(tar) else tar) as t:
             for m in t.getmembers():      # refuse paths outside the directory
                 if m.name.startswith("/") or ".." in m.name.split("/"):
@@ -145,7 +151,7 @@ def check_image(d: str, tar: Optional[str], key: Optional[str], cosign: str) -> 
             except TypeError:             # a Python without extraction filters
                 t.extractall(tmp)
         code, out = run([cosign, "verify", "--key", key, "--insecure-ignore-tlog", "--local-image",
-                         os.path.join(tmp, "wd2l-oci")])
+                         os.path.relpath(os.path.join(tmp, "wd2l-oci"))])
     return ("ok", "image", "%s: signature verifies" % os.path.basename(tar)) if code == 0 else \
         ("FAIL", "image", out or "cosign verify failed")
 

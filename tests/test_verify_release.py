@@ -133,6 +133,48 @@ def test_the_image_tar_is_checked_with_cosign_and_unsafe_paths_are_refused(tmp_p
     assert "unsafe path" in by_check(vr.verify(str(d), "k", "evil-oci.tar", cosign=ok))["image"][1]
 
 
+def container_cosign(tmp_path):
+    """cosign as it runs from the saved image (releasing.md): only the current directory is
+    mounted, so it fails on any absolute path, and on an OCI layout it can't see from there."""
+    p = tmp_path / "container-cosign"
+    p.write_text('#!/bin/sh\n'
+                 'for a; do case "$a" in /*) echo "not mounted: $a" >&2; exit 1;; esac; done\n'
+                 'while [ $# -gt 0 ]; do\n'
+                 '  if [ "$1" = --local-image ] && [ ! -f "$2/index.json" ]; then\n'
+                 '    echo "no $2/index.json" >&2; exit 1\n'
+                 '  fi\n'
+                 '  shift\n'
+                 'done\n')
+    p.chmod(p.stat().st_mode | stat.S_IEXEC)
+    return str(p)
+
+
+def test_cosign_from_a_container_that_mounts_only_the_release_dir_passes(tmp_path, monkeypatch):
+    # The retrieval drill (#38, #109): the image check extracted to /tmp and gave cosign that
+    # absolute path, which the container doesn't have.
+    d = release_dir(tmp_path)
+    image_tar(d / "good-oci.tar", ["wd2l-oci/index.json"])
+    monkeypatch.chdir(d)
+    results = vr.verify(".", "cosign.pub", "good-oci.tar", cosign=container_cosign(tmp_path))
+    assert [(s, c) for s, c, _ in results] == [("ok", c) for _, c, _ in results], results
+    assert not list(d.glob(".verify-release-*"))      # the extracted image is cleaned up
+
+
+def test_release_files_on_read_only_media_are_extracted_to_the_temp_dir(tmp_path, monkeypatch):
+    d = release_dir(tmp_path)
+    image_tar(d / "good-oci.tar", ["wd2l-oci/index.json"])
+    real = vr.tempfile.TemporaryDirectory
+
+    def read_only(*args, **kwargs):
+        if kwargs.get("dir") is not None:
+            raise PermissionError(13, "Read-only file system", kwargs["dir"])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(vr.tempfile, "TemporaryDirectory", read_only)
+    r = by_check(vr.verify(str(d), "k", "good-oci.tar", cosign=fake_cosign(tmp_path)))
+    assert r["image"][0] == "ok", r["image"]
+
+
 def test_cli_prints_one_line_per_check_and_fails_on_any_failure(tmp_path, capsys):
     d = release_dir(tmp_path)
     assert vr.main(["--dir", str(d), "--skip-signature"]) == 0
