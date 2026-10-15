@@ -112,7 +112,7 @@ Every minute (`--stats-interval`) it logs its stream id, last sequence number an
 | `--listen` | `127.0.0.1:10070` | Where the log aggregator connects. Keep it on localhost |
 | `--bind` | none | Egress NIC's IP, optionally with a fixed UDP source port. `sender.env` uses `10.255.255.1:5514`, so the flow is the same after every restart (firewall, tap filter, ICD). Without a port the kernel picks a new one at each start |
 | `--dst` | `10.255.255.2:5514` | Black-hole IP:port |
-| `--max-datagram` | `1472` | `8972` if MTU 9000 end to end |
+| `--max-datagram` | `1472` | `8972` if MTU 9000 end to end. 69 to 65,507, and big enough to carry `--max-event` in 65,535 packets: otherwise the sender won't start |
 | `--max-event` | `262144` | Bigger events are truncated and flagged |
 | `--rate-pps` | `20000` | Packet rate cap, smooths bursts. 0 = off |
 | `--heartbeat` | `1` s | Seconds between heartbeats |

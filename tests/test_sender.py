@@ -64,6 +64,38 @@ def test_oversize_metadata_falls_back_to_minimal_event():
     assert evt == {"_raw": "", "_time": 5, "fields": {"wd2l_truncated": 1}}
 
 
+def test_the_fallback_keeps_time_only_if_it_is_a_number():
+    """#137: a huge string _time made the fallback body ~1 MB, which the receiver dropped as
+    event_too_big (the ICD's limit is --max-event)."""
+    snd, sock = sender(max_event=1024)
+    snd.send_event({"_raw": "r", "host": "h" * 5000, "_time": "9" * 1000000})
+    body = b"".join(f.payload for f in decode_all(sock))
+    assert len(body) <= 1024
+    assert wire.parse_event(body) == {"_raw": "", "fields": {"wd2l_truncated": 1}}
+
+
+@pytest.mark.parametrize("max_datagram", [68, 65508])
+def test_max_datagram_outside_what_udp_and_the_header_allow_is_refused(max_datagram):
+    """#137: below 69 (68 bytes of header and CRC) encode_event raised after the event had its
+    sequence number, and the aggregator connection dropped."""
+    with pytest.raises(ValueError, match="max_datagram must be 69 to 65507"):
+        sender(max_datagram=max_datagram)
+    sender(max_datagram=69, max_event=1024)
+    sender(max_datagram=65507)
+
+
+def test_max_datagram_too_small_for_max_event_in_65535_chunks_is_refused():
+    with pytest.raises(ValueError, match="65535"):
+        sender(max_datagram=69)              # 1 byte a chunk, 262,144 bytes an event
+
+
+def test_a_bad_limit_is_a_usage_error_not_a_traceback(capsys):
+    from wd2l import sender as sender_mod
+    with pytest.raises(SystemExit) as e:
+        sender_mod.main(["--max-datagram", "50"])
+    assert e.value.code == 2 and "max_datagram must be 69 to 65507" in capsys.readouterr().err
+
+
 def test_pacing_limits_rate():
     snd, sock = sender(rate_pps=500)
     t0 = time.monotonic()

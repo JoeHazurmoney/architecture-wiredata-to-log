@@ -130,6 +130,45 @@ def test_records_stream_is_routed_by_the_flag(tmp_path):
     assert json.loads(audit_evt["_raw"])["event"] == "start"
 
 
+def outputs(tmp_path, *extra):
+    tok = tmp_path / "token"
+    tok.write_text("t")
+    a = receiver.build_parser().parse_args(
+        ["--pcap", "x.pcap", "--hec-url", "https://siem:8088", "--hec-token-file", str(tok),
+         "--spool-dir", str(tmp_path / "spool")] + list(extra))
+    return receiver.build_outputs(a)
+
+
+def test_without_an_audit_token_enclave_1_audit_records_go_to_the_files_only(tmp_path, caplog):
+    """#137: on the data token, whose index list leaves the audit index out, the SIEM refused
+    every one. A receiver without --audit-dir doesn't need the audit token, so this happened."""
+    from wd2l.outputs import HecOutput, MultiOutput
+    out, aout = outputs(tmp_path, "--out-dir", str(tmp_path / "out"))
+    assert isinstance(out, MultiOutput) and isinstance(aout, FileOutput)
+    assert any(isinstance(o, HecOutput) for o in out.outputs)
+    assert "go to --out-dir only" in caplog.text
+
+
+def test_with_no_file_output_either_they_are_counted_and_dropped(tmp_path, caplog):
+    from wd2l.outputs import NOWHERE
+    out, aout = outputs(tmp_path)
+    assert aout is NOWHERE and "are dropped and counted (records_unrouted)" in caplog.text
+    r = Receiver(MemOutput(), dst_ip="10.255.255.2", dst_port=5514, audit_output=aout,
+                 health_interval=1e9)
+    feed(r, rec_frames(1, {"event": "start", "enclave": 1, "component": "sender", "n": 1}))
+    feed(r, rec_frames(2, {"type": "health", "enclave": 1, "component": "sender"}, kind="health"))
+    assert r.counters["records_unrouted"] == 1 and r.counters["records_delivered"] == 1
+    assert r.emit_health(1)["records_unrouted"] == 1
+
+
+def test_an_audit_token_still_routes_them_to_the_siem(tmp_path, caplog):
+    from wd2l.outputs import HecOutput
+    tok = tmp_path / "audit-token"
+    tok.write_text("a")
+    out, aout = outputs(tmp_path, "--hec-audit-token-file", str(tok))
+    assert isinstance(aout, HecOutput) and aout is not out and "records_unrouted" not in caplog.text
+
+
 def test_aggregator_event_claiming_audit_sourcetype_stays_data():
     """Review focus 4: routing is by the flag, never by sourcetype."""
     r, out, aout = rx()

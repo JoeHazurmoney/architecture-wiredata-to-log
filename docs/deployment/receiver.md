@@ -110,7 +110,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--stream-retention` | 7 days | How long finished sender runs with nothing open stay fully tracked. Keep it at least as long as the pcap archive |
 | `--audit-dir` | none | `receiver.env` uses `/var/log/wd2l`. Hash-chained audit records, see [the audit design](../audit-and-health.md) and **Audit files** below |
 | `--audit-min-free-mb` | `256` | Free space the audit directory must keep. Below it, nothing more goes in the audit files: records are still forwarded, counted as missed, and `audit_ok` is false until there is space again |
-| `--hec-audit-token-file` | none | Token for the audit index. `receiver.env` uses `/etc/wd2l/hec-audit.token`. Required when `--audit-dir` and `--hec-url` are both given; if the site uses one token for both, name the `--hec-token-file` file again |
+| `--hec-audit-token-file` | none | Token for the audit index. `receiver.env` uses `/etc/wd2l/hec-audit.token`. Required when `--audit-dir` and `--hec-url` are both given; if the site uses one token for both, name the `--hec-token-file` file again. Without it, Enclave 1's audit records go to `--out-dir` only, or are dropped and counted (`records_unrouted`) with no `--out-dir`; a warning at start says which |
 | `--audit-index` | `wd2l_audit` | Index that receives audit records |
 | `--pcap-dir` | none | Capture archive directory, to check that tcpdump is writing it. `receiver.env` uses `/var/lib/wd2l/pcap` |
 | `--capture-iface` | the `--live` NIC | NIC whose carrier and receive counters go into the health record |

@@ -251,7 +251,8 @@ a missing file or directory, or one it may not read (run it as `wd2l`, or join `
 * **SIEM.** The `wd2l_audit` index, kept 366 days, on its own collector token, readable only by an
   auditor role (e.g. NIST AU-9(4); SOC 2 CC6.3). `--force-index` never moves audit records. With
   `--audit-dir` and `--hec-url`, the receiver won't start without `--hec-audit-token-file` (the
-  data token can't write `wd2l_audit`); a site with one token names the same file twice.
+  data token can't write `wd2l_audit`); a site with one token names the same file twice. Without
+  that token, it passes Enclave 1's audit records only to `--out-dir`, if it has one.
 * **Host auditd rules** (`deploy/*/wd2l.rules`) watch wd2l's code, settings and units, and, for
   changes from a login session (`auid` set), its state and audit directories.
 * **Failure response** (e.g. AU-5). If the audit file can't be written, the process **keeps
