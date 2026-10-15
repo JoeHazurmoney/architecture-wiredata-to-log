@@ -138,32 +138,40 @@ work had merged. It's linked from that PR's description and dated by the PR's me
 
 ## Cutting a release
 
-1. Set `__version__` in `wd2l/__init__.py`, and the `Image=` tag in both `.container` files
+1. Bring the pins up to date ([Keeping the pins current](#keeping-the-pins-current)). Merge any
+   open Dependabot PR for the base images, or say in the release's summary why it ships on an
+   older base. Then check that every pin still resolves:
+
+   ```bash
+   packaging/ci/pin-images.sh --check packaging/container/Containerfile packaging/ci/tools.Containerfile
+   ```
+
+2. Set `__version__` in `wd2l/__init__.py`, and the `Image=` tag in both `.container` files
    (`tests/test_deploy.py` keeps them equal). Write the release's summary in
    `docs/releases/<version>.md`: what changed, and how to upgrade. It heads the notes and the
    manifest. A tag without it stops in the first job, and the version bump's PR fails its tests
    first.
-2. Merge to `main` through a PR, with CI green.
-3. Tag `main` and push the tag:
+3. Merge to `main` through a PR, with CI green.
+4. Tag `main` and push the tag:
 
    ```bash
    git tag -a vX.Y.Z -m "wd2l X.Y.Z"
    git push origin vX.Y.Z
    ```
 
-4. Watch `release.yml`. It waits twice for your approval (the `release` environment): before
+5. Watch `release.yml`. It waits twice for your approval (the `release` environment): before
    `publish` signs the image, and before `release` signs `SHA256SUMS` and drafts the release.
    Approve on the run's page with **Review deployments**.
-5. Open **the draft the workflow made**: Releases, the draft named "wd2l X.Y.Z" (by
+6. Open **the draft the workflow made**: Releases, the draft named "wd2l X.Y.Z" (by
    github-actions), **Edit**. Never use **Draft a new release**: that makes a second release on
    the tag, with none of the files. Once published it's immutable, so files can't be added to
    it, and deleting it retires the tag name for good (0.3.0rc6, #27).
-6. Review the draft:
+7. Review the draft:
    * the assets list, and the notes;
    * the `vuln-scan` gate summary, the `hardening` result and the `reproducible` result in the
      run.
-7. **Publish release**. The notes are complete as generated, so there's nothing to paste.
-8. Check that what was published is the draft: `gh release view vX.Y.Z --json assets,author`
+8. **Publish release**. The notes are complete as generated, so there's nothing to paste.
+9. Check that what was published is the draft: `gh release view vX.Y.Z --json assets,author`
    shows every file, and github-actions as the author.
 
 Pre-releases are `X.Y.ZrcN` (tag `vX.Y.ZrcN`). Their RPMs sort before the release
@@ -371,16 +379,79 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
   The SBOM and the scan summary are on each platform's image; the provenance and the base record
   are on those and on the index.
 
-## After a release
+## Keeping the pins current
 
-* **Weekly rescan.** [`image-rescan.yml`](../.github/workflows/image-rescan.yml) rescans the three
-  latest full releases (not pre-releases) with fresh vulnerability data, and opens an issue for a new fixable High or
-  Critical. Then rebuild on a newer base, as a patch release.
-* **Dependabot** PRs move the base, tool and action pins. Merge them when the pipeline is green.
-* **Vulnerability exceptions** are in
-  [`packaging/container/vuln-exceptions.json`](../packaging/container/vuln-exceptions.json).
-  Only the security owner approves one, and its `expires` is at most 90 days out. The gate fails
-  on an expired exception, used or not.
+Every image is pinned by digest and every action by commit, so nothing changes until a PR moves
+a pin. The pins differ in what they reach:
+
+| Pin | Where | What it does |
+|---|---|---|
+| Base images | `packaging/container/Containerfile` | Ship in every image. Most of what the scans find is the base's packages |
+| Release tools: `cosign`, `oras`, `syft`, `grype`, `trivy`, `git-cliff` | `packaging/ci/tools.Containerfile` | Sign, attach, describe, scan and write the changelog of each release. They never ship, but they make what the release says about itself |
+| Test images: `hadolint`, `ubi9`, `ubi10`, `alma10` | `packaging/ci/tools.Containerfile` | Lint and test, in CI only |
+| Actions | `.github/workflows/`, by commit SHA | Run the pipeline, including the jobs that hold the signing key |
+
+### When to move them
+
+* **Weekly.** Dependabot opens a PR for each pin with a newer digest or version. Merge each one
+  when its pipeline is green, including a new base with no security fix in it: small, regular
+  moves keep each one reviewable, and keep a fix one step away when it's needed.
+* **A fixable High or Critical in a released image.** The weekly rescan
+  ([`image-rescan.yml`](../.github/workflows/image-rescan.yml)) rescans the three latest full
+  releases (not pre-releases) with fresh vulnerability data, and opens an issue for each new one.
+  Ship a patch release on a base with the fix **within 7 days for a Critical, and 30 days for a
+  High**, counted from the later of the issue and that base's publication. Until the base exists,
+  the finding needs an exception (below).
+* **The `vuln-scan` gate fails because of the base, not the change.** A CVE published since the
+  base last moved fails every PR. Move the base first, in its own PR. If no newer base has the
+  fix yet, the security owner records an exception so other work can merge.
+* **Before every release** ([Cutting a release](#cutting-a-release), step 1): the base is the
+  newest that passes the pipeline, or the release's summary says why not, and every pin resolves.
+* **A pin is gone.** The rescan's `pins` job checks each week that every pinned digest still
+  resolves, and opens "Pinned image digests no longer resolve" for any that doesn't. Re-pin that
+  line.
+
+### How to judge a new digest
+
+The PR's pipeline does the checking. Read its results rather than trusting the tag:
+
+* `base-verify`: Red Hat's signature, provenance and SBOM, for the new digest.
+* `vuln-scan`: compare its gate summary with the last one on `main`. A new base must add no
+  fixable High or Critical, and should remove the ones it was taken for. Name those CVEs in the
+  PR, so the release's summary can.
+* `reproducible`, `hardening` and the functional tests: green, as for any change.
+* **A new version, not just a new digest** (e.g. `trivy:0.75.0` → `0.76.0`, or a new major such
+  as `almalinux:10` → `11`): read its release notes for changes in behavior or output first.
+* **`cosign` and `oras`** sign and attach the release, and only a real release exercises that: a
+  dry run signs nothing. Move them early in a cycle, so that an rc is the first release they
+  sign, and run `verify-release` on that rc's files.
+
+### How to move them
+
+* **Dependabot's PR** is the usual way (`build(deps): bump …`).
+* **By hand**, for a fix that can't wait for Dependabot, or a pin that's gone:
+
+  ```bash
+  packaging/ci/pin-images.sh packaging/container/Containerfile
+  ```
+
+  This moves every `FROM` in the file to its tag's current digest (the multi-arch index's).
+  Keep only the lines you mean to move, and open a PR as for any change.
+* **Check** that every pin resolves, at any time:
+
+  ```bash
+  packaging/ci/pin-images.sh --check packaging/container/Containerfile packaging/ci/tools.Containerfile
+  ```
+
+* **Pin only from a registry that keeps retired digests.** quay.io deletes each `fedora:44`
+  digest when Fedora's daily rebuild re-tags it, so a pin there broke within a day (#97). Before
+  pinning a new image, check that one of its months-old digests still resolves.
+
+### Vulnerability exceptions
+
+[`packaging/container/vuln-exceptions.json`](../packaging/container/vuln-exceptions.json) lets
+one fixable High or Critical through the gate. Only the security owner approves one, and its
+`expires` is at most 90 days out. The gate fails on an expired exception, used or not.
 
 ## Keys
 
