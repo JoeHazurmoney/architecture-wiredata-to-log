@@ -243,3 +243,39 @@ def test_stream_end_record_is_written_when_the_final_cut_was_compared_before_the
     recs = [x for x in read_audit(a.dir) if x["event"] == "reconcile"]
     assert [(x["balanced"], x["cut"]) for x in recs] == [(True, 20)]
     assert [(h["balanced"], h["cut"]) for h in out.kinds("reconcile")] == [(True, 20)]
+
+
+def finals_of(sent):
+    return [i for i, d in enumerate(sent) if wire.decode(d).type == wire.TYPE_HEARTBEAT
+            and json.loads(wire.decode(d).payload).get("final") is True]
+
+
+def test_a_lost_final_heartbeat_still_ends_the_stream_with_its_reconcile_record():
+    """#74: under --loss 1 the only final heartbeat was sometimes dropped, and the run ended
+    with no stream_end and no reconcile record."""
+    sock = FakeSock()
+    s = Sender(("10.255.255.2", 5514), sock=sock, rate_pps=0)
+    for i in range(20):
+        s.send_event({"_raw": "event %d" % i})
+    s.send_heartbeat(final=True)
+    first = finals_of(sock.sent)[0]
+    r, out = rx()
+    feed(r, sock.sent[:first] + sock.sent[first + 1:], 0)     # the first copy is lost
+    r.tick(1)
+    assert len(out.kinds("stream_end")) == 1
+    [rec] = out.kinds("reconcile")
+    assert (rec["cut"], rec["balanced"]) == (20, True)
+
+
+def test_every_final_copy_arriving_gives_one_end_and_one_reconcile_record():
+    sock = FakeSock()
+    s = Sender(("10.255.255.2", 5514), sock=sock, rate_pps=0)
+    for i in range(5):
+        s.send_event({"_raw": "event %d" % i})
+    s.send_heartbeat(final=True)
+    assert len(finals_of(sock.sent)) == 3
+    r, out = rx()
+    feed(r, sock.sent, 0)
+    r.tick(1)
+    r.tick(2)
+    assert len(out.kinds("stream_end")) == 1 and len(out.kinds("reconcile")) == 1

@@ -225,6 +225,10 @@ Sent every second (`--heartbeat`) and once more on clean shutdown. One packet, `
 `seq` in the header is the last DATA `seq` sent. That's how the receiver notices events lost at
 the very end of a burst, when nothing newer arrives to show the gap.
 
+The shutdown heartbeat (`final`) is sent three times, as identical copies 50 ms apart, because
+nothing acknowledges it and one lost copy would leave Enclave 2 without the end of the run. The
+receiver acts on the first copy it gets and ignores the others.
+
 The body is compact UTF-8 JSON with **keys in sorted order**, about 600–800 bytes with
 the deployed unit, so the datagram is about 670–870 bytes. It is always one packet: if the
 snapshot keys would not fit `--max-datagram`, they are left out of that heartbeat and
@@ -244,7 +248,7 @@ cumulative for this sender run unless noted.
 | `events_hash` | string, 64 hex digits | | always (wd2l ≥ 0.2.0) | Set hash of this run's events 1 … `seq` (the heartbeat's `seq` is the cut; all zeros before the first event): the sum modulo 2²⁵⁶ of SHA-256(`seq` as 8 bytes big-endian ‖ the event's SHA-256 `digest`). Enclave 2 compares it with its own value to prove it delivered exactly these events ([audit design §7](audit-and-health.md#7-reconciliation)). Never dropped from a trimmed heartbeat. |
 | `events_in` | integer | lines | always | Input lines that were events or were rejected |
 | `events_sent` | integer | events | always | Events numbered and sent |
-| `final` | `true` | | last heartbeat only | Clean shutdown. Always the last frame of a run |
+| `final` | `true` | | last heartbeat only | Clean shutdown. Always the last frames of a run: three identical copies |
 | `heartbeat_trimmed` | integer | heartbeats | always | Heartbeats sent without the snapshot because it wouldn't fit |
 | `input_backlog_bytes` | integer | bytes | always | Handed over by the aggregator, not yet read |
 | `nic_carrier` | boolean |  | with `--egress-iface` | The egress NIC has link |
@@ -278,7 +282,7 @@ Same frame, with `flags` bit 0 set. Sent every second and once more at shutdown.
 | `outbox_dropped` | integer | Records not queued for sending because more than 10,000 were waiting |
 | `sender_time` | number, 3 decimals | Sender's clock, seconds since 1970-01-01 UTC |
 | `uptime` | number, 1 decimal | Seconds since this run started |
-| `final` | `true` | Last heartbeat only. Clean shutdown |
+| `final` | `true` | Last heartbeat only. Clean shutdown. Three identical copies, like the data stream's |
 
 There is no `boot` and there are no `prev_*` keys. Records streams aren't linked across runs.
 
