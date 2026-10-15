@@ -251,7 +251,26 @@ names as served.
 * `cosign.pub`, from a trusted channel (the repository at the release tag, or the security
   owner), not only the copy attached to the release;
 * cosign itself: `registry.access.redhat.com/hi/cosign` saved with `podman save`, or the binary
-  from your approved software source.
+  from your approved software source;
+* for `verify-release`, `git` from the host's own repositories. A minimal install has none;
+  `git-core` is enough (one package).
+
+**cosign from the saved image.** Load it, then put a `cosign` script on your `PATH`. It runs
+with no network, and mounts the current directory and the temporary directory at their own
+paths, because `verify-release` gives cosign absolute paths (#109):
+
+```bash
+podman load -i cosign.tar                      # prints the image's name, or its ID
+podman tag <that name or ID> localhost/cosign
+mkdir -p ~/bin && cat > ~/bin/cosign <<'EOF'
+#!/bin/sh
+T=${TMPDIR:-/tmp}
+exec podman run --rm --network none --userns=keep-id --user "$(id -u):$(id -g)" \
+  --security-opt label=disable --tmpfs /cosign-home:rw,mode=1777 -e HOME=/cosign-home \
+  -v "$PWD:$PWD" -v "$T:$T" -w "$PWD" localhost/cosign "$@"
+EOF
+chmod +x ~/bin/cosign
+```
 
 **The commands:**
 
@@ -266,7 +285,7 @@ sudo dnf install ./wd2l-<version>-1.el10.noarch.rpm ./wd2l-receiver-<version>-1.
 ```
 
 **Or in one step**, with the script every release ships (Python 3, standard library only, plus
-`cosign` and `git`):
+`cosign` and `git`). With cosign from the image, add `--cosign ~/bin/cosign`:
 
 ```bash
 python3 wd2l-<version>-verify-release.py --key cosign.pub --image-tar wd2l-<version>-image-<arch>-oci.tar
@@ -280,7 +299,8 @@ It checks five things and prints one line for each, exiting 0 only if none fail:
 * the image tar's signature.
 
 **The source, with its full history,** comes from the bundle, so it can be retrieved without
-the forge (e.g. GitHub, GitLab) that built it. The changelog is regenerated from it with
+the forge (e.g. GitHub, GitLab) that built it. The release ships its changelog
+(`wd2l-<version>-changelog.md`); regenerating it from the bundle needs git-cliff as well, with
 `cliff.toml`:
 
 ```bash

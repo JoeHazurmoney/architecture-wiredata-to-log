@@ -30,10 +30,13 @@ Use the container or the native unit on a host, never both. Both read the same o
 ## Bring the image in (offline)
 
 Verify the release and load your platform's image as [releasing.md](../releasing.md#bringing-a-release-into-an-enclave)
-says. Then check that the loaded image is your platform's image in the release notes:
+says. Then check that the loaded image is your platform's image in the release manifest, which
+`verify-release` has checked (the release notes list the same digests, but aren't among the
+files):
 
 ```bash
 sudo podman image inspect --format '{{.Digest}}' ghcr.io/joehazurmoney/wd2l:<version>
+jq -r '.image.platforms.<arch>' wd2l-<version>-release-manifest.json     # the same digest
 ```
 
 ## Or pull it (online)
@@ -77,8 +80,8 @@ checks this policy on both platforms (`import-check`); it was also checked on Al
 ```bash
 sudo systemctl disable --now wd2l-receiver.service 2>/dev/null   # the native unit, if it was on
 sudo cp /usr/share/wd2l/quadlet/wd2l-receiver.container /etc/containers/systemd/
-# strict change control: name your platform's digest from the release notes instead of the tag
-sudo sed -i 's|^Image=.*|Image=ghcr.io/joehazurmoney/wd2l@sha256:<digest from the release notes>|' \
+# strict change control: name your platform's digest (above) instead of the tag
+sudo sed -i 's|^Image=.*|Image=ghcr.io/joehazurmoney/wd2l@<that digest, sha256:…>|' \
   /etc/containers/systemd/wd2l-receiver.container
 # auditd: who changes the Quadlet unit. A file of its own, because the watch needs Podman's
 # /etc/containers/systemd; on a host without it, auditd would stop loading rules there.
