@@ -150,6 +150,14 @@ def test_asset_names_are_what_github_serves_before_sha256sums_lists_them():
     assert rename < job.index("manifest.py generate") < job.index("sha256sum -- *")
 
 
+def test_changelog_range_follows_double_dash():
+    # git-cliff's --repository takes several paths, so a range after it is read as a second
+    # repository ("No such file or directory"). 1.0.1 was the first release with a range (#105).
+    cmd = workflow("release.yml").split("packaging/ci/tool git-cliff", 1)[1].split("\n          #", 1)[0]
+    assert cmd.rstrip().endswith('-- ${prev:+"$prev..HEAD"}')
+    assert cmd.index("--repository /work") < cmd.index("--output") < cmd.index(" -- ")
+
+
 def test_signing_jobs_use_the_release_environment():
     rel, pub = workflow("release.yml"), workflow("publish.yml")
     assert "environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}" in rel
