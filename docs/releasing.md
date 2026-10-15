@@ -105,6 +105,12 @@ proves:
 a branch push that changes it. A dry run builds and checks everything, but pushes, signs,
 attests and releases nothing. The assets and notes are in the run's `release-assets` artifact.
 
+**When CI runs.** `tests.yml` runs once for each commit on a PR, and for each push to `main`.
+To run it on a branch with no PR: `gh workflow run tests.yml --ref <branch>`. A newer commit
+on a PR cancels its older run, and a newer dry run of a branch cancels the older one. Runs on
+`main` and tag runs are never cancelled; a second run of the same tag waits for the first. Every
+job has a time limit well above its usual time: 30 minutes for the lab, which takes about 11.
+
 ## Conventions
 
 Every change reaches `main` as one squash commit, and that commit is what a release's history
@@ -191,6 +197,7 @@ names as served.
   completed; a re-run before that is refused. Then use **Re-run failed jobs**.
 * **The code has to change:**
   * **Before `publish` has run,** delete the tag, fix the code through a PR, and tag again.
+    Cancel the old run if it's still going: the new tag's run waits until it ends.
   * **After `publish` has run,** cut a new version. A new run of the same version can't
     succeed: the build is reproducible, so it pushes the same image digests, which already
     carry the first run's signatures. The older-format `.sig` among them would then break the

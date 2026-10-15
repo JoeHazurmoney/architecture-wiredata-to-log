@@ -2,7 +2,9 @@
 
 * only attest.yml may get an OIDC token, so build steps can't reach what signs the provenance;
 * nothing shared between runs on the release path, and only GitHub-hosted runners;
-* attestation runs only for a v* tag, and only in this repository."""
+* attestation runs only for a v* tag, and only in this repository;
+* every job has a time limit, and a newer commit cancels only a PR's or a dry run's older run,
+  never a run on main or a tag's (docs/releasing.md, "When CI runs")."""
 
 import glob
 import os
@@ -24,6 +26,11 @@ THIS_REPO_AND_A_TAG = ("if: ${{ github.repository == 'JoeHazurmoney/architecture
 def read(name: str) -> str:
     with open(os.path.join(WORKFLOWS, name), encoding="utf-8") as f:
         return f.read()
+
+
+def header(text: str) -> str:
+    """A workflow file's lines above jobs: (its name, triggers, concurrency and permissions)."""
+    return text.split("\njobs:\n", 1)[0]
 
 
 def jobs(text: str) -> Dict[str, str]:
@@ -225,6 +232,54 @@ def test_assets_makes_the_manifest_with_reads_only_before_sha256sums():
 def test_a_tag_without_its_summary_stops_before_anything_is_built():
     v = jobs(read("release.yml"))["version"]
     assert "docs/releases/$(python3 packaging/release/versions.py --get pep440).md" in v
+
+
+def test_every_job_has_a_time_limit():
+    # Otherwise a hung step holds its runner for GitHub's default of 360 minutes.
+    for path in glob.glob(os.path.join(WORKFLOWS, "*.yml")):
+        name = os.path.basename(path)
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        for job, body in jobs(text).items():
+            if "runs-on:" not in body:
+                continue                      # a call: the called workflow's jobs set their own
+            m = re.search(r"^    timeout-minutes: (\d+)(?:\s+#.*)?$", body, re.M)
+            assert m and 1 <= int(m.group(1)) <= 60, (name, job)
+
+
+def test_each_pr_commit_runs_the_tests_once():
+    # A push to any branch and the PR each ran tests.yml for the same commit, the whole image
+    # pipeline twice (#116). A branch with no PR runs it by hand, from workflow_dispatch.
+    on = header(read("tests.yml"))
+    assert re.search(r"^  push:\n(?:    #.*\n)*    branches: \[main\]$", on, re.M)
+    assert "\n  pull_request:\n" in on and "\n  workflow_dispatch:\n" in on
+
+
+def test_only_a_prs_or_a_dry_runs_older_run_is_cancelled():
+    t = header(read("tests.yml"))
+    # A run on main, a manual run and a run release.yml calls (its event is release.yml's)
+    # each get a group of their own, so nothing cancels them.
+    assert ("group: tests-${{ github.event_name == 'pull_request' && github.ref"
+            " || github.run_id }}") in t
+    assert "cancel-in-progress: true" in t
+    rel = header(read("release.yml"))
+    assert "group: release-${{ github.ref }}" in rel
+    assert "cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}" in rel
+    # One rescan at a time: two could both find no open issue and file the same one twice.
+    resc = header(read("image-rescan.yml"))
+    assert "group: image-rescan\n" in resc and "cancel-in-progress: false" in resc
+
+
+def test_called_workflows_set_no_concurrency_of_their_own():
+    # A group matching the caller's would deadlock the run, and GitHub cancels it.
+    for name in ("image.yml", "rpm.yml", "publish.yml", "attest.yml"):
+        assert "concurrency:" not in read(name), name
+
+
+def test_compare_bases_runs_for_branches_only():
+    # GitHub doesn't apply a push: paths: filter to tags, so every release tag ran it (#116).
+    on = header(read("compare-bases.yml"))
+    assert re.search(r'^  push:\n(?:    #.*\n)*    branches: \["\*\*"\]\n    paths:\n', on, re.M)
 
 
 def test_the_tests_install_the_manifest_requirements():

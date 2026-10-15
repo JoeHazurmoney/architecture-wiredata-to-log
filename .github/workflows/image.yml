@@ -1,8 +1,8 @@
 name: image
-# The container image's checks (docs/decisions/0004-container-base-image.md): every push and PR
-# via tests.yml, and every release via release.yml, which then runs publish.yml. The image is
-# built for linux/amd64 and linux/arm64, each natively on its own runner, and every check runs
-# for both.
+# The container image's checks (docs/decisions/0004-container-base-image.md): every PR and every
+# push to main via tests.yml, and every release via release.yml, which then runs publish.yml. The
+# image is built for linux/amd64 and linux/arm64, each natively on its own runner, and every check
+# runs for both.
 on:
   workflow_call:
   workflow_dispatch:
@@ -14,6 +14,7 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Every FROM pinned, a Hardened Image, a FIPS variant
@@ -25,6 +26,7 @@ jobs:
 
   base-verify:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Collect each base image's signature, provenance, index, and each platform's config and SBOM
@@ -57,6 +59,7 @@ jobs:
 
   wheel:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -83,6 +86,7 @@ jobs:
           - {arch: amd64, runner: ubuntu-24.04}
           - {arch: arm64, runner: ubuntu-24.04-arm}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -123,6 +127,7 @@ jobs:
           - {arch: amd64, runner: ubuntu-24.04}
           - {arch: arm64, runner: ubuntu-24.04-arm}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     continue-on-error: true      # report-only until it has matched on 10 pushes in a row
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -173,6 +178,7 @@ jobs:
           - {arch: amd64, runner: ubuntu-24.04}
           - {arch: arm64, runner: ubuntu-24.04-arm}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -213,6 +219,7 @@ jobs:
           - {arch: amd64}
           - {arch: arm64}
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -253,6 +260,7 @@ jobs:
           - {arch: amd64}
           - {arch: arm64}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -282,6 +290,7 @@ jobs:
           - {arch: amd64, runner: ubuntu-24.04, uname: x86_64}
           - {arch: arm64, runner: ubuntu-24.04-arm, uname: aarch64}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -316,6 +325,7 @@ jobs:
           - {arch: amd64, runner: ubuntu-24.04}
           - {arch: arm64, runner: ubuntu-24.04-arm}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: |

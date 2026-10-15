@@ -29,6 +29,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     # Only v* tags may use it, and a person approves each run before anything is signed.
     environment: release
     permissions:
@@ -191,6 +192,7 @@ jobs:
   verify-published:
     needs: [publish]
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: read
@@ -237,6 +239,7 @@ jobs:
           - {arch: amd64, runner: ubuntu-24.04, uname: x86_64}
           - {arch: arm64, runner: ubuntu-24.04-arm, uname: aarch64}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: read
