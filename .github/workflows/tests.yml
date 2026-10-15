@@ -41,8 +41,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      # The test runner and the release manifest's schema validator, both hash-pinned.
-      - run: python -m pip install --require-hashes -r packaging/ci/test-requirements.txt -r packaging/release/requirements.txt
+      # The test runner and the release manifest's schema validator, both hash-pinned. pytest 9
+      # needs Python 3.10, so the floor's leg has its own pins (#139).
+      - run: python -m pip install --require-hashes -r "$TEST_REQS" -r packaging/release/requirements.txt
+        env:
+          TEST_REQS: ${{ matrix.python-version == '3.9' && 'packaging/ci/py39/test-requirements.txt' || 'packaging/ci/test-requirements.txt' }}
       - run: python -m pytest -q
         env:
           WD2L_NO_SKIPS: "1"        # a skipped test fails the run (tests/conftest.py)
