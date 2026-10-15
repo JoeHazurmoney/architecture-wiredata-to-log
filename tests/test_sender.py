@@ -345,6 +345,32 @@ def test_fixed_source_port_is_used_and_held():
         snd.sock.close()
 
 
+def test_the_per_minute_work_keeps_its_own_timer(caplog):
+    """#135: periodic() ran only when the --stats-interval log line was due, so raising it to
+    quiet the journal slowed the health records, audit summaries and checks as much."""
+    import logging
+    from wd2l import sender as sender_mod
+    from wd2l.sender import _heartbeat_loop
+    assert sender_mod.PERIODIC_EVERY == 60
+    snd, sock = sender()
+    calls = []
+    snd.periodic = lambda: calls.append(1)
+    stop = threading.Event()
+    caplog.set_level(logging.INFO, logger="wd2l.sender")
+    t = threading.Thread(target=_heartbeat_loop, args=(snd, 0.01, stop, 3600),
+                         kwargs={"periodic_every": 0.02}, daemon=True)
+    t.start()
+    try:
+        end = time.time() + 5
+        while len(calls) < 3 and time.time() < end:
+            time.sleep(0.01)
+        assert len(calls) >= 3
+    finally:
+        stop.set()
+        t.join(2)
+    assert not any("last_seq=" in r.getMessage() for r in caplog.records)   # not due for an hour
+
+
 def test_an_error_in_the_heartbeat_loop_does_not_stop_heartbeats():
     """Uncaught, one exception ended heartbeats, the records stream and state saves for the
     life of the process, while data kept flowing."""
@@ -359,7 +385,8 @@ def test_an_error_in_the_heartbeat_loop_does_not_stop_heartbeats():
 
     snd.periodic = flaky
     stop = threading.Event()
-    t = threading.Thread(target=_heartbeat_loop, args=(snd, 0.01, stop, 0.01), daemon=True)
+    t = threading.Thread(target=_heartbeat_loop, args=(snd, 0.01, stop, 0.01),
+                         kwargs={"periodic_every": 0.01}, daemon=True)
     t.start()
     try:
         end = time.time() + 5
