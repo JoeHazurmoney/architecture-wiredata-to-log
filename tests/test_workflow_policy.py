@@ -137,6 +137,25 @@ def test_assets_are_made_once_without_secrets_or_a_token():
     assert "secrets." not in a and "id-token" not in a and "environment:" not in a
 
 
+def test_no_workflow_hands_its_secrets_on():
+    # The signing key lives only in the `release` environment, which publish.yml's job names
+    # itself (docs/releasing.md, one-time setup). Inheriting would also pass any repository
+    # secret to the called workflow's jobs that run outside that environment.
+    for path in glob.glob(os.path.join(WORKFLOWS, "*.yml")):
+        with open(path, encoding="utf-8") as f:
+            assert "secrets: inherit" not in f.read(), os.path.basename(path)
+
+
+def test_main_fails_if_the_signing_key_is_a_repository_secret():
+    t = jobs(read("tests.yml"))
+    job = t["signing-key-scope"]
+    assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in job
+    # Outside an environment, secrets.* holds only repository and organization secrets.
+    assert "environment:" not in job
+    assert "${{ secrets.COSIGN_PRIVATE_KEY != '' }}" in job
+    assert "signing-key-scope" not in t["ci-ok"]      # on main only, like landed-title
+
+
 def test_attest_signs_the_image_keylessly_and_checks_the_identity():
     att = jobs(read("attest.yml"))["attest"]
     assert "TOOL_ENV: ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN" in att

@@ -65,9 +65,8 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     needs: [version, tests, image, rpm]
     uses: ./.github/workflows/publish.yml
-    # publish.yml's job runs in the `release` environment, whose secrets it then reads;
-    # repository secrets come through inherit until they move there (docs/releasing.md).
-    secrets: inherit
+    # No secrets are passed: publish.yml's job runs in the `release` environment and reads the
+    # signing key from there (docs/releasing.md, one-time setup).
     permissions:
       contents: read
       packages: write
