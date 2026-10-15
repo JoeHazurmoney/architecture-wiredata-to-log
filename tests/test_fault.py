@@ -39,6 +39,15 @@ def test_each_rule(kw, want):
     assert (f.status, f.segment, f.rule) == want and f.detail
 
 
+def test_rule_9_names_the_receivers_own_downtime_too():
+    """#133: events sent while the receiver was down (capture still running) are not_received
+    gaps after its restart, and a replay fills them. The rule still fires: a gap is real until
+    then."""
+    f = ev(gaps_not_received=5)
+    assert f.detail == ("5 events lost, no NIC errors or kernel drops: loss on the path, "
+                        "or the receiver was down")
+
+
 def test_first_match_wins_but_every_match_colors_its_segment():
     f = ev(carrier=False, packet_age=30, frame_age=30, output_dropped=1)
     assert f.rule == 1

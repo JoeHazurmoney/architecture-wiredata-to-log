@@ -104,8 +104,11 @@ def evaluate(s: Signals) -> Fault:
                 hit(8, "red", "e2-capture", ("e2-capture", "e2-receiver"),
                     "%d events lost with kernel drops: receiver host capacity" % n)
             else:
+                # Also what the receiver's own downtime looks like, capture still running: the
+                # gaps are real until a replay fills them, so the rule still fires (#133).
                 hit(9, "amber", "boundary", ("boundary",),
-                    "%d events lost, no NIC errors or kernel drops: loss on the path" % n)
+                    "%d events lost, no NIC errors or kernel drops: loss on the path, or the "
+                    "receiver was down" % n)
     dropped = s.output_dropped or s.gaps_output_dropped
     if dropped or s.spool_growing or s.hec_errors:
         hit(10, "red" if dropped else "amber", "e2-siem", ("e2-siem",),

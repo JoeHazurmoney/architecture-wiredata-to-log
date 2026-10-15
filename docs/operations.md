@@ -56,7 +56,7 @@ carry `records: true`. The `health` counters, cumulative since the receiver star
 
 | `reason` | Meaning | What to do |
 |---|---|---|
-| `not_received` | The packets never reached the capture NIC | [Events lost](#alert-events-lost-typegap) |
+| `not_received` | The packets never reached the capture NIC, or the receiver was down when they arrived | [Events lost](#alert-events-lost-typegap) |
 | `receiver_restart` | Unresolved when the receiver last stopped, or received but not confirmed before a crash | Replay the archive |
 | `output_dropped` | Received, but the output gave up (queue or spool full) | Fix the SIEM or disk, then replay the archive |
 
