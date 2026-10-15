@@ -20,7 +20,7 @@ import os
 import sys
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-from .audit import GENESIS, audit_files, record_hash, split_lines, verify_dir
+from .audit import GENESIS, audit_files, dir_problem, record_hash, split_lines, verify_dir
 
 RECONCILE_COLUMNS = ("day", "stream", "sender_cut", "events_in", "events_sent", "sender_hash",
                      "receiver_cut", "events_delivered", "gaps_open", "gaps_filled",
@@ -237,13 +237,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if len(a.dir) != 1 or a.export:
                 print("verify takes one --dir (one chain) or --export", file=sys.stderr)
                 return 2
-            if not os.path.isdir(a.dir[0]):
-                print("no such directory: %s" % a.dir[0], file=sys.stderr)
+            why = dir_problem(a.dir[0])
+            if why:
+                print(why, file=sys.stderr)
                 return 2
             try:
                 verify_result = verify_dir(a.dir[0], a.upto, a.upto_hash)
             except (OSError, IOError) as e:
-                print("no such directory: %s" % a.dir[0], file=sys.stderr)
+                print("can't read %s: %s" % (a.dir[0], e), file=sys.stderr)
                 return 2
             if verify_result.records == 0:
                 verify_result.problems.append("no audit records found")
@@ -274,10 +275,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print("nothing to verify", file=sys.stderr)
         return 1 if bad else 0
 
-    # Check directories exist for reconcile/events
+    # Check directories exist and can be read, for reconcile/events
     for d in a.dir:
-        if not os.path.isdir(d):
-            print("no such directory: %s" % d, file=sys.stderr)
+        why = dir_problem(d)
+        if why:
+            print(why, file=sys.stderr)
             return 2
     for path in a.export:
         if not os.path.exists(path):

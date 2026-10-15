@@ -195,6 +195,40 @@ def test_verify_dir_no_records(tmp_path, capsys):
     assert code == 1 and any("no audit records found" in p for p in res["problems"])
 
 
+def test_verify_dir_says_when_the_directory_is_missing_or_unreadable(tmp_path, capsys, monkeypatch):
+    """#131: the runbook's command, run outside wd2l-audit, reported a "failed" chain (exit 1):
+    glob returns [] for a directory it can't read. Now exit 2 and why. CI runs as root, so
+    os.access is mocked."""
+    code = audit_report.main(["verify", "--dir", str(tmp_path / "gone")])
+    assert code == 2 and "no such directory: %s" % (tmp_path / "gone") in capsys.readouterr().err
+    e1, _ = make(tmp_path)
+    monkeypatch.setattr(auditlog.os, "access", lambda path, mode: False)
+    assert audit_report.main(["verify", "--dir", e1]) == 2
+    cap = capsys.readouterr()
+    assert cap.out == "" and \
+        "can't read %s: permission denied (run as wd2l, or join wd2l-audit)" % e1 in cap.err
+
+
+def test_reconcile_and_events_say_when_a_directory_is_unreadable(tmp_path, capsys, monkeypatch):
+    """#131: they read --dir the same way, and printed nothing for a directory they couldn't read."""
+    e1, e2 = make(tmp_path)
+    monkeypatch.setattr(auditlog.os, "access", lambda path, mode: False)
+    for cmd in ("reconcile", "events"):
+        assert audit_report.main([cmd, "--dir", e1, "--dir", e2]) == 2
+        assert "can't read %s: permission denied" % e1 in capsys.readouterr().err
+
+
+def test_verify_dir_says_when_a_file_is_unreadable(tmp_path, capsys, monkeypatch):
+    e1, _ = make(tmp_path)
+
+    def denied(*a, **kw):
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr(auditlog, "open", denied, raising=False)
+    assert audit_report.main(["verify", "--dir", e1]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("can't read %s: " % e1) and "no such directory" not in err
+
+
 def test_events_with_unreadable_lines(tmp_path, capsys):
     e1, _ = make(tmp_path)
     [path] = auditlog.audit_files(e1)

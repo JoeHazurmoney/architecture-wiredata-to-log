@@ -178,7 +178,7 @@ def verify_lines(files: Iterable[Tuple[str, List[bytes]]], upto: Optional[int] =
         if res.last_n != upto:
             res.problems.append("chain ends at n=%s, expected n=%d (records cut from the end)"
                                 % (res.last_n, upto))
-        elif upto_hash and res.last_hash != upto_hash:
+        elif upto_hash is not None and res.last_hash != upto_hash:
             res.problems.append("n=%d has hash %s, expected %s" % (upto, res.last_hash, upto_hash))
     return res
 
@@ -186,6 +186,16 @@ def verify_lines(files: Iterable[Tuple[str, List[bytes]]], upto: Optional[int] =
 def audit_files(directory: str) -> List[str]:
     """This directory's audit files, oldest first (names sort by start time)."""
     return sorted(glob.glob(os.path.join(directory, FILE_GLOB)))
+
+
+def dir_problem(directory: str) -> Optional[str]:
+    """Why this directory can't be checked as an audit trail, or None. glob returns nothing for a
+    directory it can't read, which would look like an empty trail, not a permission problem."""
+    if not os.path.isdir(directory):
+        return "no such directory: %s" % directory
+    if not os.access(directory, os.R_OK | os.X_OK):
+        return "can't read %s: permission denied (run as wd2l, or join wd2l-audit)" % directory
+    return None
 
 
 def verify_dir(directory: str, upto: Optional[int] = None,
@@ -683,7 +693,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     v.add_argument("--upto", type=int, help="stop at this record and require it")
     v.add_argument("--upto-hash", help="the hash record --upto must have")
     a = p.parse_args(argv)
-    res = verify_dir(a.directory, a.upto, a.upto_hash)
+    why = dir_problem(a.directory)
+    if why is None:
+        try:
+            res = verify_dir(a.directory, a.upto, a.upto_hash)
+        except OSError as e:
+            why = "can't read %s: %s" % (a.directory, e)
+    if why is not None:
+        # Exit 2, not 1: nothing was checked. Still a JSON result, which the self-check records.
+        res = VerifyResult()
+        res.problems.append(why)
+        print(json.dumps(res.to_json(), sort_keys=True))
+        return 2
     if res.records == 0 and a.upto is None:
         # An empty or wiped directory proves nothing (same wording as wd2l-audit-report).
         res.problems.append("no audit records found")
