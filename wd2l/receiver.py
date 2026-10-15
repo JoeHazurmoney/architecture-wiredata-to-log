@@ -253,7 +253,8 @@ class StreamTracker:
         t.last_seen = float(d.get("last_seen", 0))
         t.final = bool(d.get("final", False))
         t.lost_reported = bool(d.get("lost_reported", False))
-        t.hb = d.get("hb", {}) if isinstance(d.get("hb"), dict) else {}
+        # A state file written before NaN and Infinity were refused may hold them.
+        t.hb = wire.drop_non_finite(d["hb"]) if isinstance(d.get("hb"), dict) else {}
         lh = d.get("last_hb")
         if isinstance(lh, (int, float)) and not isinstance(lh, bool):
             t.last_hb = float(lh)
@@ -631,7 +632,7 @@ class Receiver:
 
     def _heartbeat(self, t: StreamTracker, f: wire.Frame, now: float) -> None:
         try:
-            info = json.loads(f.payload.decode("utf-8"))
+            info = wire.loads_json(f.payload)       # NaN and Infinity are refused
         except (UnicodeDecodeError, ValueError, RecursionError):  # Recursion: too deeply nested
             info = None
         if not isinstance(info, dict):
@@ -639,8 +640,9 @@ class Receiver:
             self._bump(self.bad_reasons, "bad heartbeat json")
             return
         eh = info.get("events_hash")
+        # Booleans and finite numbers only: 1e999 parses as inf, which int() can't take.
         info = {k: v for k, v in info.items()
-                if isinstance(k, str) and isinstance(v, (int, float, bool))}
+                if isinstance(k, str) and (isinstance(v, bool) or wire.finite_number(v))}
         if isinstance(eh, str) and HEX64.fullmatch(eh) and not t.records:
             info["events_hash"] = eh
             t.rc.cut(f.seq, eh)

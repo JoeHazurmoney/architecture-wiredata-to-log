@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import struct
 import zlib
 from typing import Any, Dict, List, NamedTuple, Optional
@@ -96,8 +97,33 @@ def encode_event(stream_id: int, seq: int, event: bytes,
     ]
 
 
+def _no_constant(name: str) -> Any:
+    raise ValueError("%s is not JSON" % name)
+
+
+def loads_json(data: bytes) -> Any:
+    """Parse a body from the wire: UTF-8 JSON (RFC 8259) only. Python's parser also accepts
+    NaN, Infinity and -Infinity; here they raise ValueError like any other bad JSON."""
+    return json.loads(data.decode("utf-8"), parse_constant=_no_constant)
+
+
+def finite_number(v: Any) -> bool:
+    """An int or a finite float, never a bool. JSON's 1e999 parses as inf, and int() or "%d"
+    on that raises."""
+    if isinstance(v, bool):
+        return False
+    return isinstance(v, int) or (isinstance(v, float) and math.isfinite(v))
+
+
+def drop_non_finite(info: Dict[str, Any]) -> Dict[str, Any]:
+    """`info` without the float values that aren't finite (NaN, inf)."""
+    return {k: v for k, v in info.items() if not isinstance(v, float) or math.isfinite(v)}
+
+
 def encode_heartbeat(stream_id: int, last_seq: int, info: Dict[str, Any], flags: int = 0) -> bytes:
-    payload = json.dumps(info, separators=(",", ":"), sort_keys=True).encode()
+    # The receiver refuses a heartbeat holding NaN or Infinity, so never send one.
+    payload = json.dumps(drop_non_finite(info), separators=(",", ":"), sort_keys=True,
+                         allow_nan=False).encode()
     return _pack(TYPE_HEARTBEAT, stream_id, last_seq, 0, 1, len(payload),
                  hashlib.sha256(payload).digest(), payload, flags)
 
@@ -143,14 +169,14 @@ def serialize_event(event: Dict[str, Any], extra_fields: tuple = ()) -> bytes:
 def parse_event(data: bytes) -> Dict[str, Any]:
     """Decode a reassembled event. Only accepts the shape serialize_event produces."""
     try:
-        obj = json.loads(data.decode("utf-8"))
+        obj = loads_json(data)
     except (UnicodeDecodeError, ValueError, RecursionError) as e:  # Recursion: too deeply nested
         raise FrameError("event is not JSON: %s" % e)
     if not isinstance(obj, dict) or not isinstance(obj.get("_raw"), str):
         raise FrameError("event has no _raw string")
     out: Dict[str, Any] = {"_raw": obj["_raw"]}
     t = obj.get("_time")
-    if isinstance(t, (int, float)) and not isinstance(t, bool):
+    if finite_number(t):
         out["_time"] = t
     for k in ("host", "source", "sourcetype", "index"):
         v = obj.get(k)
@@ -159,7 +185,7 @@ def parse_event(data: bytes) -> Dict[str, Any]:
     fields = obj.get("fields")
     if isinstance(fields, dict):
         clean = {k: v for k, v in fields.items()
-                 if isinstance(k, str) and isinstance(v, (str, int, float)) and not isinstance(v, bool)}
+                 if isinstance(k, str) and (isinstance(v, str) or finite_number(v))}
         if clean:
             out["fields"] = clean
     return out
