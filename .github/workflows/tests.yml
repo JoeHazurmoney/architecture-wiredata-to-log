@@ -61,7 +61,7 @@ jobs:
       - run: sudo lab/run-lab.sh --fault clock
       - run: sudo lab/run-lab.sh --chrony-udp
       - name: --chrony-addr against a real chronyd, not the lab's stand-in
-        run: podman run --rm -v "$PWD:/src:ro" "$(packaging/ci/tool --ref fedora)" bash /src/packaging/ci/chrony-smoke.sh
+        run: podman run --rm -v "$PWD:/src:ro" "$(packaging/ci/tool --ref alma10)" bash /src/packaging/ci/chrony-smoke.sh
       - name: The key-generation command in docs/releasing.md works (a throwaway key)
         run: |
           COSIGN_PASSWORD=throwaway TOOL_ENV=COSIGN_PASSWORD \
