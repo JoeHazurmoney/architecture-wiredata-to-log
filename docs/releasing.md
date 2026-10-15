@@ -334,7 +334,10 @@ the index signature is for hosts that pull from a registry.
 
 `--insecure-ignore-tlog` is expected: signatures made with our key don't go to a public
 transparency log (`packaging/release/signing-config.json` names none), so there is no log entry
-to check.
+to check. So cosign's "Skipping tlog verification" warning is expected, and `cosign verify` lists
+"Existence of the claims in the transparency log was verified offline" either way. What counts
+is the key check ("verified against the specified public key", or `verify-blob`'s `Verified OK`)
+and exit status 0.
 
 The RPMs aren't GPG-signed. `SHA256SUMS`, signed, covers them
 ([ADR-0006](decisions/0006-release-artifacts-and-signing.md)). On a host that sets

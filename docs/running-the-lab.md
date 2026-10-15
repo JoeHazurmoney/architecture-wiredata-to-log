@@ -19,12 +19,10 @@ checks what comes out the other side. No network gear is needed. Commands are fo
 ## 2. Install the tools
 
 ```bash
-sudo dnf install -y git python3 python3-pip iproute iproute-tc nftables tcpdump
-python3 -m pip install --user pytest
+sudo dnf install -y git python3 iproute iproute-tc nftables tcpdump
 ```
 
-Ubuntu/Debian: `sudo apt update && sudo apt install -y git python3 python3-pytest iproute2 nftables tcpdump`
-(on Ubuntu 24.04 `pip install pytest` is blocked by default).
+Ubuntu/Debian: `sudo apt update && sudo apt install -y git python3 python3-venv iproute2 nftables tcpdump`.
 
 ## 3. Get the code
 
@@ -35,7 +33,17 @@ cd architecture-wiredata-to-log
 
 ## 4. Optional: run the unit tests first
 
-`python3 -m pytest` runs without root in under a minute; every test should pass.
+In a virtual environment, which works where `pip install` is refused (Ubuntu 24.04, Debian 12).
+`requirements.txt` is hash-pinned, so it's an install of its own:
+
+```bash
+python3 -m venv ~/wd2l-venv && . ~/wd2l-venv/bin/activate
+pip install pytest
+pip install --require-hashes -r packaging/release/requirements.txt
+python3 -m pytest
+```
+
+It runs without root in under a minute; every test should pass, none skipped.
 
 ## 5. Run the lab
 

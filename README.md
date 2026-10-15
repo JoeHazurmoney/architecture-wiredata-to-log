@@ -97,7 +97,10 @@ for each, are recorded as Architecture Decision Records (ADRs) in
 ## Try it
 
 ```bash
-pip install pytest && python3 -m pytest          # no root needed
+python3 -m venv ~/wd2l-venv && . ~/wd2l-venv/bin/activate   # works where pip install is refused
+pip install pytest
+pip install --require-hashes -r packaging/release/requirements.txt   # hash-pinned: its own install
+python3 -m pytest                                 # no root needed; nothing skips
 
 sudo lab/run-lab.sh                               # full path in network namespaces
 sudo lab/run-lab.sh --loss 1                      # 1% wire loss: every loss reported exactly
@@ -110,8 +113,10 @@ sudo lab/run-lab.sh --files samples/logs/messages samples/logs/secure samples/lo
 sudo lab/run-lab.sh --image localhost/wd2l:dev    # the same path, from the container image
 ```
 
-The lab needs root, `iproute2`, `nftables` (kernel ≥ 5.16), `tcpdump` and `python3`. The
-step-by-step guide, with what each run proves: [docs/running-the-lab.md](docs/running-the-lab.md).
+The lab needs root and kernel ≥ 5.16 (the nftables egress hook). On the RHEL family:
+`sudo dnf install git python3 iproute iproute-tc nftables tcpdump`; on Ubuntu or Debian:
+`sudo apt install git python3 python3-venv iproute2 nftables tcpdump`. The step-by-step guide,
+with what each run proves: [docs/running-the-lab.md](docs/running-the-lab.md).
 
 ## Deploying
 
@@ -151,7 +156,9 @@ again offline. [docs/releasing.md](docs/releasing.md) has the details and the co
 | **A guarded release path** | Rulesets on `main` (a pull request with passing CI, no force-push) and on version tags (admins only), the owner's approval before anything is signed, actions pinned to commits, and Dependabot for the pins | A branch, a pull request or a dependency update can't get anything signed on its own: signing needs a version tag on `main` and the owner's approval. (A compromised owner account still could; a second approver would close that.) |
 
 Changing one byte of a downloaded RPM is enough to see it work: `sha256sum -c` reports it
-`FAILED`, `gh attestation verify` refuses it, and `rpm -K` reports `DIGESTS NOT OK`.
+`FAILED` and `gh attestation verify` refuses it. `rpm -K` alone isn't enough: it reports
+`DIGESTS NOT OK` for a byte in the header or payload, but `digests OK` for one in the signature
+header's reserved space, which only the signed `SHA256SUMS` covers.
 
 ## Status
 
