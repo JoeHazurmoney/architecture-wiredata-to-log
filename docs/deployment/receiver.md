@@ -156,7 +156,7 @@ Check the chain:
 
 ```bash
 sudo -u wd2l python3 -m wd2l.audit verify /var/log/wd2l
-wd2l-audit-report verify --dir /var/log/wd2l
+sudo -u wd2l wd2l-audit-report verify --dir /var/log/wd2l
 ```
 
 To turn debug logging on or off so that the audit record names you, signal the receiver from your

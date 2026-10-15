@@ -59,8 +59,10 @@ sender runs, 0 bytes unread, 0 gaps, no replay, every event byte for byte.
 ## Full procedure (both sides, or link work)
 
 The commands are the same on RHEL and Ubuntu, and for the container units
-([containers.md](deployment/containers.md)): `systemctl stop` stops a container cleanly. The NIC
-names are the defaults (`ens224` on the log server, `ens256` on the receiver).
+([containers.md](deployment/containers.md)): `systemctl stop` stops a container cleanly. Only
+keeping a unit from starting at boot differs: Quadlet generates the container units, so
+`systemctl disable` changes nothing and `enable` fails. Use `mask` and `unmask` (steps 2 and 7).
+The NIC names are the defaults (`ens224` on the log server, `ens256` on the receiver).
 
 ### Stop
 
@@ -91,7 +93,8 @@ journalctl -u wd2l-sender -n 50 -o cat | grep -o 'shutdown_unread_bytes[^,]*'   
 Note `last_seq` and tell Enclave 2. If `shutdown_unread_bytes` isn't 0, input was still arriving:
 see [If something went wrong](#if-something-went-wrong). If the log server will **reboot while
 Enclave 2 is still down**, also `sudo systemctl disable wd2l-sender`, so it doesn't start at boot
-and send while nothing captures.
+and send while nothing captures. With the container unit, `sudo systemctl mask wd2l-sender`
+instead.
 
 **3. Enclave 2: confirm the clean end.** In the SIEM:
 
@@ -142,7 +145,7 @@ outage), each start waits that long, then starts anyway, and the time tile shows
 systemctl is-active wd2l-egress-nic
 ip neigh show dev ens224                # 10.255.255.2 lladdr 02:00:00:00:00:02 PERMANENT
 sudo nft list table inet wd2l | head    # the egress firewall is loaded
-sudo systemctl enable --now wd2l-sender
+sudo systemctl enable --now wd2l-sender   # container unit: unmask it if step 2 masked it, then start
 journalctl -u wd2l-sender -n 5 --no-pager
 ```
 
