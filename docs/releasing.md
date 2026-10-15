@@ -270,8 +270,9 @@ names as served.
   `git-core` is enough (one package).
 
 **cosign from the saved image.** Load it, then put a `cosign` script on your `PATH`. It runs
-with no network, and mounts the current directory and the temporary directory at their own
-paths, because `verify-release` gives cosign absolute paths (#109):
+with no network and mounts the current directory at its own path, so run it from the directory
+of release files. The temporary directory's mount is for the `verify-release` of 1.0.1 and
+earlier, which extracts the image there (#109):
 
 ```bash
 podman load -i cosign.tar                      # prints the image's name, or its ID
