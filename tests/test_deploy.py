@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+from helpers import assert_rules_load_silently, audit_watch as watch
 from wd2l import receiver, sender
 
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -132,13 +133,18 @@ def test_seal_script_makes_files_append_only_and_deletes_after_a_year(tmp_path):
     assert "-a %s" % old in log and "+a %s" % new in log and not any("notes" in x for x in log)
 
 
+def audit_rules(path):
+    with open(path) as f:
+        return [x for x in f.read().splitlines() if x.strip() and not x.startswith("#")]
+
+
 def test_auditd_rules_are_well_formed():
     for side in ("log-server", "receiver"):
-        with open(os.path.join(REPO, "deploy", side, "wd2l.rules")) as f:
-            rules = [x for x in f.read().splitlines() if x.strip() and not x.startswith("#")]
-        assert rules
-        for r in rules:
-            assert r.startswith(("-w ", "-a always,exit ")) and " -k wd2l-" in r, r
+        for name in ("wd2l.rules", "wd2l-quadlet.rules"):
+            assert_rules_load_silently(audit_rules(os.path.join(REPO, "deploy", side, name)))
+        rules = audit_rules(os.path.join(REPO, "deploy", side, "wd2l.rules"))
+        for line in watch("dir", "/opt/wd2l", "wd2l-code") + watch("dir", "/etc/wd2l", "wd2l-config"):
+            assert line in rules, line
         assert any("dir=/var/log/wd2l" in r and "auid!=unset" in r for r in rules)
 
 
@@ -151,9 +157,8 @@ def test_host_rules_load_without_podman():
     for side, unit in (("log-server", "wd2l-sender"), ("receiver", "wd2l-receiver")):
         with open(os.path.join(REPO, "deploy", side, "wd2l.rules")) as f:
             assert "/etc/containers" not in f.read()
-        with open(os.path.join(REPO, "deploy", side, "wd2l-quadlet.rules")) as f:
-            rules = [x for x in f.read().splitlines() if x.strip() and not x.startswith("#")]
-        assert rules == ["-w /etc/containers/systemd/%s.container -p wa -k wd2l-units" % unit]
+        rules = audit_rules(os.path.join(REPO, "deploy", side, "wd2l-quadlet.rules"))
+        assert rules == watch("path", "/etc/containers/systemd/%s.container" % unit, "wd2l-units")
         assert "/usr/share/wd2l/audit/%s-quadlet.rules" % side in guide
 
 
@@ -212,8 +217,9 @@ def test_arp_watch_runs_whenever_the_egress_nic_does():
     # in 10 s), and not spin.
     assert arp["StartLimitIntervalSec"] == ["0"] and arp["RestartSec"] == ["5"]
     assert "WantedBy" not in arp          # started by wd2l-egress-nic's Wants=, never enabled alone
-    with open(os.path.join(REPO, "deploy", "log-server", "wd2l.rules")) as f:
-        assert "-w /etc/systemd/system/wd2l-egress-arp.service -p wa -k wd2l-units" in f.read().splitlines()
+    rules = audit_rules(os.path.join(REPO, "deploy", "log-server", "wd2l.rules"))
+    for line in watch("path", "/etc/systemd/system/wd2l-egress-arp.service", "wd2l-units"):
+        assert line in rules, line
 
 
 @pytest.mark.parametrize("path", [SENDER_UNIT, RECEIVER_UNIT])

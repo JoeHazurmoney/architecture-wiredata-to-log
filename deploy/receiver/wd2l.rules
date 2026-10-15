@@ -1,16 +1,29 @@
 ## wd2l host audit rules, Enclave 2 receiver host (docs/audit-and-health.md section 8).
 ## Copy to /etc/audit/rules.d/wd2l.rules, then: sudo augenrules --load
+## Each watch is a syscall rule for 64- and 32-bit syscalls, which augenrules loads without
+## warnings (#110). A dir= rule needs its directory; a path= rule needs the file's directory.
 ## Who changes wd2l's programs, settings and units:
--w /opt/wd2l/ -p wa -k wd2l-code
--w /etc/wd2l/ -p wa -k wd2l-config
--w /etc/systemd/system/wd2l-receiver.service -p wa -k wd2l-units
--w /etc/systemd/system/wd2l-capture.service -p wa -k wd2l-units
--w /etc/systemd/system/wd2l-capture-nic.service -p wa -k wd2l-units
--w /etc/systemd/system/wd2l-pcap-prune.service -p wa -k wd2l-units
--w /etc/systemd/system/wd2l-pcap-prune.timer -p wa -k wd2l-units
--w /etc/systemd/system/wd2l-audit-seal.service -p wa -k wd2l-units
--w /etc/systemd/system/wd2l-audit-seal.timer -p wa -k wd2l-units
+-a always,exit -F arch=b64 -F dir=/opt/wd2l -F perm=wa -k wd2l-code
+-a always,exit -F arch=b32 -F dir=/opt/wd2l -F perm=wa -k wd2l-code
+-a always,exit -F arch=b64 -F dir=/etc/wd2l -F perm=wa -k wd2l-config
+-a always,exit -F arch=b32 -F dir=/etc/wd2l -F perm=wa -k wd2l-config
+-a always,exit -F arch=b64 -F path=/etc/systemd/system/wd2l-receiver.service -F perm=wa -k wd2l-units
+-a always,exit -F arch=b32 -F path=/etc/systemd/system/wd2l-receiver.service -F perm=wa -k wd2l-units
+-a always,exit -F arch=b64 -F path=/etc/systemd/system/wd2l-capture.service -F perm=wa -k wd2l-units
+-a always,exit -F arch=b32 -F path=/etc/systemd/system/wd2l-capture.service -F perm=wa -k wd2l-units
+-a always,exit -F arch=b64 -F path=/etc/systemd/system/wd2l-capture-nic.service -F perm=wa -k wd2l-units
+-a always,exit -F arch=b32 -F path=/etc/systemd/system/wd2l-capture-nic.service -F perm=wa -k wd2l-units
+-a always,exit -F arch=b64 -F path=/etc/systemd/system/wd2l-pcap-prune.service -F perm=wa -k wd2l-units
+-a always,exit -F arch=b32 -F path=/etc/systemd/system/wd2l-pcap-prune.service -F perm=wa -k wd2l-units
+-a always,exit -F arch=b64 -F path=/etc/systemd/system/wd2l-pcap-prune.timer -F perm=wa -k wd2l-units
+-a always,exit -F arch=b32 -F path=/etc/systemd/system/wd2l-pcap-prune.timer -F perm=wa -k wd2l-units
+-a always,exit -F arch=b64 -F path=/etc/systemd/system/wd2l-audit-seal.service -F perm=wa -k wd2l-units
+-a always,exit -F arch=b32 -F path=/etc/systemd/system/wd2l-audit-seal.service -F perm=wa -k wd2l-units
+-a always,exit -F arch=b64 -F path=/etc/systemd/system/wd2l-audit-seal.timer -F perm=wa -k wd2l-units
+-a always,exit -F arch=b32 -F path=/etc/systemd/system/wd2l-audit-seal.timer -F perm=wa -k wd2l-units
 ## State and audit files: only changes made from a login session (auid set). The daemons write
 ## there all the time.
--a always,exit -F dir=/var/lib/wd2l -F perm=wa -F auid!=unset -k wd2l-state
--a always,exit -F dir=/var/log/wd2l -F perm=wa -F auid!=unset -k wd2l-audit-files
+-a always,exit -F arch=b64 -F dir=/var/lib/wd2l -F perm=wa -F auid!=unset -k wd2l-state
+-a always,exit -F arch=b32 -F dir=/var/lib/wd2l -F perm=wa -F auid!=unset -k wd2l-state
+-a always,exit -F arch=b64 -F dir=/var/log/wd2l -F perm=wa -F auid!=unset -k wd2l-audit-files
+-a always,exit -F arch=b32 -F dir=/var/log/wd2l -F perm=wa -F auid!=unset -k wd2l-audit-files

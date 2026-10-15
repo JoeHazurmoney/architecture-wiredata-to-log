@@ -4,7 +4,7 @@ import re
 import tarfile
 import zipfile
 
-from helpers import load_script
+from helpers import assert_rules_load_silently, audit_watch, load_script
 
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 check_dist = load_script("packaging/check_dist.py")
@@ -240,14 +240,18 @@ def test_units_lose_pythonpath_and_point_at_libexec():
 
 def test_rules_watch_the_rpm_paths_too():
     t = rpmify.rewrite_rules(read("deploy/receiver/wd2l.rules"), SITE, LIBEXEC, UNITDIR)
-    for line in ("-w /usr/lib/python3.9/site-packages/wd2l/ -p wa -k wd2l-code",
-                 "-w /usr/libexec/wd2l/ -p wa -k wd2l-code",
-                 "-w /etc/systemd/system/wd2l-receiver.service -p wa -k wd2l-units",
-                 "-w /usr/lib/systemd/system/wd2l-receiver.service -p wa -k wd2l-units",
-                 "-w /etc/systemd/system/wd2l-receiver.service.d/ -p wa -k wd2l-units"):
-        assert line in t.splitlines(), line
+    lines = t.splitlines()
+    for kind, path, key in (("dir", "/usr/lib/python3.9/site-packages/wd2l", "wd2l-code"),
+                            ("dir", "/usr/libexec/wd2l", "wd2l-code"),
+                            ("path", "/etc/systemd/system/wd2l-receiver.service", "wd2l-units"),
+                            ("path", "/usr/lib/systemd/system/wd2l-receiver.service", "wd2l-units"),
+                            ("dir", "/etc/systemd/system/wd2l-receiver.service.d", "wd2l-units")):
+        for line in audit_watch(kind, path, key):
+            assert line in lines, line
     assert "/opt/wd2l" not in t
-    assert "/etc/systemd/system/wd2l-pcap-prune.timer.d" in rpmify.drop_in_dirs(t)
+    assert_rules_load_silently([x for x in lines if x.strip() and not x.startswith("#")])
+    dirs = rpmify.drop_in_dirs(t)
+    assert "/etc/systemd/system/wd2l-pcap-prune.timer.d" in dirs and len(dirs) == len(set(dirs))
 
 
 def test_rpmify_copies_the_whole_tree(tmp_path):
@@ -288,7 +292,9 @@ def test_drop_in_dirs_the_rules_watch_are_owned():
     s = spec()
     for side in ("log-server", "receiver"):
         rules = rpmify.rewrite_rules(read("deploy/%s/wd2l.rules" % side), SITE, LIBEXEC, UNITDIR)
-        for d in rpmify.drop_in_dirs(rules):
+        dirs = rpmify.drop_in_dirs(rules)
+        assert dirs, side             # a -F dir= rule fails to load if its directory is missing
+        for d in dirs:
             assert "%%dir %%{_sysconfdir}/systemd/system/%s" % os.path.basename(d) in s, d
 
 
