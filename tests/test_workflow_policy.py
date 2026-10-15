@@ -14,7 +14,7 @@ from typing import Dict
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 WORKFLOWS = os.path.join(REPO, ".github", "workflows")
 RELEASE_PATH = ("tests.yml", "image.yml", "rpm.yml", "publish.yml", "release.yml", "attest.yml")
-GITHUB_HOSTED = ("ubuntu-24.04", "ubuntu-latest", "ubuntu-24.04-arm")
+GITHUB_HOSTED = ("ubuntu-24.04", "ubuntu-24.04-arm")
 # The arm64 runner only where the image is built or run natively for arm64.
 ARM_JOBS = {("image.yml", "build"), ("image.yml", "reproducible"), ("image.yml", "hardening"),
             ("image.yml", "functional"), ("image.yml", "fips-tests"), ("publish.yml", "import-check")}
@@ -90,6 +90,16 @@ def test_release_path_runs_on_github_hosted_runners():
                 assert label in GITHUB_HOSTED, (name, job, label)
                 if label.endswith("-arm"):
                     assert (name, job) in ARM_JOBS, (name, job)
+
+
+def test_no_job_runs_on_a_moving_runner_label():
+    # ubuntu-latest moves to a new Ubuntu when GitHub decides, and Python 3.9, the floor, has no
+    # build for 26.04 (#118). The release manifest also lists these labels as pinned.
+    for path in glob.glob(os.path.join(WORKFLOWS, "*.yml")):
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        for label in re.findall(r"(?:runs-on|runner):\s*([^\s,}]+)", text):
+            assert not label.endswith("-latest"), (os.path.basename(path), label)
 
 
 def test_every_image_check_runs_for_both_architectures():

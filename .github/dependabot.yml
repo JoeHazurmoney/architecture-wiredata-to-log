@@ -10,6 +10,15 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
+    ignore:
+      # The base's Python is a decision (ADR-0004), not a bump: 3.12-fips -> 3.13-fips changes
+      # the runtime. Only its digests move. (Closing #14, a 3.14 bump, had stopped those too.)
+      - dependency-name: "hi/python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    groups:
+      # The builder and the runtime come from one Python release: one PR moves both.
+      base-image:
+        patterns: ["hi/python"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

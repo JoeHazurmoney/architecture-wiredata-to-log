@@ -24,6 +24,24 @@ def test_version_has_one_source():
     assert check_dist.repo_version() == __import__("wd2l").__version__
 
 
+def test_the_python_floor_is_the_same_everywhere():
+    # The oldest Python wd2l supports (#118): the wheel's and the RPM's requirement, the lowest
+    # CI leg, which also byte-compiles everything on it, the README, and the reason the manifest
+    # validator is held back.
+    floor = re.search(r'^requires-python = ">=(\d+\.\d+)"$', read("pyproject.toml"), re.M).group(1)
+    assert "\nRequires:       python3 >= %s\n" % floor in read("packaging/rpm/wd2l.spec")
+    tests = read(".github/workflows/tests.yml")
+    pytest_job = tests.split("\n  pytest:\n", 1)[1].split("\n  lab:\n", 1)[0]
+    legs = re.search(r"python-version: \[(.+)\]", pytest_job).group(1)
+    legs = [v.strip(' "') for v in legs.split(",")]
+    assert min(legs, key=lambda v: tuple(map(int, v.split(".")))) == floor
+    assert "python -m compileall -q wd2l lab tests packaging" in pytest_job
+    with open(os.path.join(REPO, "README.md"), encoding="utf-8") as f:
+        assert "(Python ≥ %s)" % floor in f.read()
+    assert "wd2l supports %s (pyproject.toml)" % floor in read(".github/dependabot.yml")
+    assert "the last version for Python %s" % floor in read("packaging/release/requirements.txt")
+
+
 def test_license_is_mit():
     assert read("LICENSE").startswith("MIT License\n\nCopyright (c) 2026 ")
     py = read("pyproject.toml")
@@ -128,6 +146,22 @@ def tool_refs():
 def test_every_tool_is_pinned_by_digest():
     assert set(tool_refs()) == {"cosign", "grype", "oras", "syft", "trivy", "hadolint", "git-cliff",
                                 "ubi9", "ubi10", "alma10"}
+
+
+def test_dependabot_moves_the_base_by_digest_only():
+    # Closing #14 (3.12-fips -> 3.14-fips) stopped every hi/python update, digests too (#120).
+    # The base's Python is ADR-0004's decision, so Dependabot takes new digests only, and the
+    # builder and the runtime move in one PR.
+    cfg = read(".github/dependabot.yml")
+    docker = cfg.split("package-ecosystem: docker", 1)[1].split("package-ecosystem:", 1)[0]
+    assert '"/packaging/container"' in docker
+    assert ('      - dependency-name: "hi/python"\n'
+            '        update-types: ["version-update:semver-major", "version-update:semver-minor"]\n'
+            ) in docker
+    assert 'patterns: ["hi/python"]' in docker
+    froms = re.findall(r"^FROM registry\.access\.redhat\.com/hi/python:(\S+)@sha256:[0-9a-f]{64}",
+                       read("packaging/container/Containerfile"), re.M)
+    assert froms == ["3.12-fips-builder", "3.12-fips"]
 
 
 def test_tool_runs_the_pinned_image_with_the_work_tree(tmp_path):

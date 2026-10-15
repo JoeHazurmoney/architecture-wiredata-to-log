@@ -447,7 +447,10 @@ a pin. The pins differ in what they reach:
 
 * **Weekly.** Dependabot opens a PR for each pin with a newer digest or version. Merge each one
   when its pipeline is green, including a new base with no security fix in it: small, regular
-  moves keep each one reviewable, and keep a fix one step away when it's needed.
+  moves keep each one reviewable, and keep a fix one step away when it's needed. The base moves
+  by digest only, the builder and the runtime in one PR: its Python version is a decision
+  ([ADR-0004](decisions/0004-container-base-image.md)), so `dependabot.yml` ignores new minor
+  and major versions of `hi/python`.
 * **A fixable High or Critical in a released image.** The weekly rescan
   ([`image-rescan.yml`](../.github/workflows/image-rescan.yml)) rescans the three latest full
   releases (not pre-releases) with fresh vulnerability data, and opens an issue for each new one.
