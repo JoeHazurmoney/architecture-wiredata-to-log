@@ -153,14 +153,31 @@ def test_asset_names_are_what_github_serves_before_sha256sums_lists_them():
 def test_signing_jobs_use_the_release_environment():
     rel, pub = workflow("release.yml"), workflow("publish.yml")
     assert "environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}" in rel
-    # Nothing passes the key to publish.yml: its job reads it from the environment it names.
-    assert "secrets: inherit" not in rel and "COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}\n      COSIGN_PASSWORD" not in rel
+    # A reusable workflow's job gets an environment secret only if the caller passes it, by name
+    # or with inherit; otherwise it's silently empty (#103). By name: nothing else is passed.
+    call = rel.split("\n  publish:\n", 1)[1].split("\n  assets:\n", 1)[0]
+    assert "secrets: inherit" not in rel
+    assert ("    secrets:\n      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}\n"
+            "      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}\n") in call
+    # ...and publish.yml requires both, so a call without them fails to start.
+    declared = pub.split("  workflow_call:\n", 1)[1].split("    outputs:\n", 1)[0]
+    for name in ("COSIGN_PRIVATE_KEY", "COSIGN_PASSWORD"):
+        assert "      %s:\n        required: true\n" % name in declared
     publish_job = pub.split("\n  publish:\n", 1)[1].split("\n  verify-published:\n", 1)[0]
     assert "    environment: release\n" in publish_job
     # tests.yml's code-scanning job asks for security-events: write; a caller must grant it,
     # or the whole release run fails to start.
     tests_job = rel.split("\n  tests:\n", 1)[1].split("\n  image:\n", 1)[0]
     assert "security-events: write" in tests_job
+
+
+def test_publish_checks_the_signing_key_before_it_pushes_anything():
+    # An empty, malformed or wrong key, or a wrong password, used to surface only at signing,
+    # after the images were pushed (#103). The key's public half must be cosign.pub first.
+    job = workflow("publish.yml").split("\n  publish:\n", 1)[1].split("\n  verify-published:\n", 1)[0]
+    check = job.index("cosign public-key --key env://COSIGN_PRIVATE_KEY")
+    assert "cosign.pub" in job[check:job.index("\n      - ", check)]
+    assert check < job.index("podman login ghcr.io")
 
 
 def test_notes_show_how_to_verify_the_github_attestations():
