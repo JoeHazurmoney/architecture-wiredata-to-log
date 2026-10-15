@@ -127,7 +127,7 @@ def tool_refs():
 
 def test_every_tool_is_pinned_by_digest():
     assert set(tool_refs()) == {"cosign", "grype", "oras", "syft", "trivy", "hadolint", "git-cliff",
-                                "ubi9", "ubi10", "fedora"}
+                                "ubi9", "ubi10", "alma10"}
 
 
 def test_tool_runs_the_pinned_image_with_the_work_tree(tmp_path):
