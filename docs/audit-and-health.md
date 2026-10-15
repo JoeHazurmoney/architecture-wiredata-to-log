@@ -317,7 +317,7 @@ in the lab (`lab/run-lab.sh --fault NAME`).
 | 6 | Sender drops or send errors, or an input backlog over 1 MiB and growing | `e1-sender` | amber |
 | 7 | New `not_received` gaps with capture NIC receive or CRC errors | `boundary`: fiber or optic | red |
 | 8 | New gaps with kernel drops, no NIC errors | `e2-capture` (colours `e2-capture` and `e2-receiver`): host capacity | red |
-| 9 | New gaps with neither | `boundary`: loss on the path | amber |
+| 9 | New gaps with neither | `boundary`: loss on the path, or the receiver was down (capture still running; a replay fills those) | amber |
 | 10 | `output_dropped` gaps, spool growing, collector errors or rejections | `e2-siem` | amber; red if events were dropped |
 | 11 | `archive_stale` (section 6) | `e2-capture`: a replay would have nothing | amber |
 | — | Time alarm or clock skew | Shown apart, as `time_status` | |
