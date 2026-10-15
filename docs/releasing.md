@@ -195,6 +195,20 @@ names as served.
     succeed: the build is reproducible, so it pushes the same image digests, which already
     carry the first run's signatures. The older-format `.sig` among them would then break the
     offline tar.
+  * **Unless `publish` ran but signed nothing** (1.0.1's second run: the key reached it empty,
+    #103). Check that none of the three digests it pushed has a tag of its own. cosign keeps
+    what it signs under `sha256-<digest>` tags (and `.sig`, `.att`). The registry's referrers
+    API returns nothing on GHCR even for a signed image, so it proves nothing:
+
+    ```bash
+    docker buildx imagetools inspect ghcr.io/joehazurmoney/wd2l:X.Y.Z   # the index and both platform images
+    gh api --paginate "/users/JoeHazurmoney/packages/container/wd2l/versions?per_page=100" \
+      --jq '.[].metadata.container.tags[]' | grep -E '^sha256-(<index hex>|<amd64 hex>|<arm64 hex>)'
+    ```
+
+    If it finds nothing, delete the tag, fix the code through a PR, and tag the new commit.
+    The image records its commit, so the new run pushes new digests. The first run's images
+    lose their tag; delete them from the package if you like.
 
 ## One-time setup
 
