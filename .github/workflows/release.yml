@@ -128,10 +128,11 @@ jobs:
         run: |
           # git-cliff (cliff.toml): the changes since the previous final release, or all of
           # history when there's none. On a tag the release's own tag is at HEAD; a dry run's
-          # commits come out as "Unreleased".
+          # commits come out as "Unreleased". The range goes after "--": --repository takes
+          # several paths, and would read it as a second one (#105).
           prev=$(python packaging/release/manifest.py previous-release)
           packaging/ci/tool git-cliff --config /work/cliff.toml --repository /work \
-            ${prev:+"$prev..HEAD"} --output "/work/assets/wd2l-$V-changelog.md"
+            --output "/work/assets/wd2l-$V-changelog.md" -- ${prev:+"$prev..HEAD"}
           # The source with its full history and every version tag.
           mapfile -t tags < <(git tag --merged HEAD --list 'v*')
           git bundle create "assets/wd2l-$V-source.bundle" HEAD "${tags[@]}"
