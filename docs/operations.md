@@ -44,7 +44,7 @@ carry `records: true`. The `health` counters, cumulative since the receiver star
 | `reasm_expired`, `reasm_evicted`, `event_too_big` | Split events that never completed | 0 |
 | `sender_drops`, `sender_truncated`, `sender_bad_input`, `sender_unread_bytes`, `sender_opaque_events`, `sender_events_in` | From the sender's heartbeat | 0; truncated and opaque at your sources' usual level; `sender_events_in` grows with `events_delivered` |
 | `hec_*` (`events_sent`, `spool_files`, `spool_bytes`, `posts_failed`, `rejected_events`, `queue_overflow_events`, `thread_errors`) | SIEM delivery; `audit_hec_*` for the audit output. `thread_errors`: unexpected errors in delivery, which goes on (the journal has the traceback) | spool, rejected, overflow, thread errors 0 |
-| `records_delivered`, `records_bad` | Enclave 1 records passed on, and refused | growing; 0 |
+| `records_delivered`, `records_bad`, `records_unrouted` | Enclave 1 records passed on; refused; and audit records with nowhere to go (no `--hec-audit-token-file`, no `--out-dir`) | growing; 0; 0 |
 | `fault_*`, `seg_*` | The receiver's verdict, and each segment's colour | `ok` (`unknown` while unseen) |
 | `time_status`, `time_reason`, `time_quality` | The time check and chrony's numbers | `ok`; synced, stratum 3 |
 | `audit_ok`, `audit_n`, `audit_hash`, `audit_verify` | This host's audit trail | `true`, growing, a hash, `ok` (empty until the first check) |

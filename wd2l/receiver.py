@@ -27,7 +27,7 @@ from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Sequenc
 from . import __version__, fault, hostinfo, logsetup, packets, wire
 from . import audit as auditlog
 from .audit import Summarizer
-from .outputs import FileOutput, HecOutput, MultiOutput, Output
+from .outputs import NOWHERE, FileOutput, HecOutput, MultiOutput, Output
 from .reconcile import StreamReconciler
 
 log = logging.getLogger("wd2l.receiver")
@@ -437,7 +437,7 @@ class Receiver:
                          "gap_events": 0, "heartbeats": 0, "kernel_drops": 0,
                          "capture_down_errors": 0,
                          "uncommitted_at_start": 0, "output_dropped": 0,
-                         "records_delivered": 0, "records_bad": 0}
+                         "records_delivered": 0, "records_bad": 0, "records_unrouted": 0}
         self.other_reasons: Dict[str, int] = {}
         self.bad_reasons: Dict[str, int] = {}
         self.last_hb: Optional[float] = None
@@ -604,6 +604,9 @@ class Receiver:
             self.counters["records_bad"] += 1
             return
         kind = "audit" if evt.get("sourcetype") == "wd2l:sender:audit" else "health"
+        if kind == "audit" and self.audit_out is NOWHERE:
+            self.counters["records_unrouted"] += 1      # no audit token and no --out-dir (#137)
+            return
         (self.audit_out if kind == "audit" else self.out).forwarded(dict(evt, _raw=raw), sid, seq, kind)
         self.counters["records_delivered"] += 1
 
@@ -1315,9 +1318,19 @@ def build_outputs(a: argparse.Namespace) -> Tuple[Output, Output]:
     if not outs:
         raise SystemExit("need at least one output: --out-dir and/or --hec-url")
     out = outs[0] if len(outs) == 1 else MultiOutput(outs)
-    if audit_hec is None:
+    if audit_hec is not None:
+        return out, (MultiOutput([file_out, audit_hec]) if file_out else audit_hec)
+    if hec is None:
         return out, out
-    return out, (MultiOutput([file_out, audit_hec]) if file_out else audit_hec)
+    # The data token can't write the audit index, so the SIEM would refuse every Enclave 1 audit
+    # record the sender forwards (#137). The files take them, or nothing does.
+    if file_out is not None:
+        log.warning("no --hec-audit-token-file: Enclave 1's audit records, if the sender forwards "
+                    "any, go to --out-dir only")
+        return out, file_out
+    log.warning("no --hec-audit-token-file and no --out-dir: Enclave 1's audit records, if the "
+                "sender forwards any, are dropped and counted (records_unrouted)")
+    return out, NOWHERE
 
 
 def rcvbuf_warning(got: int, wanted: int) -> Optional[str]:

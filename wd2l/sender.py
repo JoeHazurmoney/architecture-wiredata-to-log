@@ -48,6 +48,7 @@ MAX_LINE = 16 * 1024 * 1024
 ERROR_LOG_EVERY = 10.0
 # Sender.periodic(): the per-minute health record, audit summaries and checks the docs promise.
 PERIODIC_EVERY = 60.0
+MAX_UDP_PAYLOAD = 65507     # 65,535 less the IPv4 and UDP headers
 # The final heartbeat ends a run, and nothing acknowledges it: lost, Enclave 2 sees stream_lost
 # instead of stream_end and has no reconcile record until its hourly pass. So it goes out this
 # many times, identical, this far apart; the receiver acts on the first (ICD §8).
@@ -68,6 +69,18 @@ def _key(v: Any) -> Optional[str]:
     return None if v is None else str(v)[:256]
 
 
+def check_limits(max_datagram: int, max_event: int) -> None:
+    """Refuse at start what the wire format can't carry (ICD), rather than at the first event,
+    after it already has its sequence number (#137)."""
+    if max_event < 1024:
+        raise ValueError("max_event must be at least 1024")
+    if not wire.OVERHEAD + 1 <= max_datagram <= MAX_UDP_PAYLOAD:
+        raise ValueError("max_datagram must be %d to %d" % (wire.OVERHEAD + 1, MAX_UDP_PAYLOAD))
+    if -(-max_event // (max_datagram - wire.OVERHEAD)) > wire.MAX_CHUNKS:
+        raise ValueError("max_datagram %d is too small for max_event %d: an event would need "
+                         "more than %d chunks" % (max_datagram, max_event, wire.MAX_CHUNKS))
+
+
 class Sender:
     def __init__(self, dst: Tuple[str, int], bind_ip: Optional[str] = None,
                  max_datagram: int = wire.DEFAULT_MAX_DATAGRAM,
@@ -79,8 +92,7 @@ class Sender:
                  audit: Optional[auditlog.AuditLog] = None,
                  config_sha256: Optional[str] = None, time_quality: Any = None,
                  egress_iface: Optional[str] = None):
-        if max_event < 1024:
-            raise ValueError("max_event must be at least 1024")
+        check_limits(max_datagram, max_event)
         self.dst = dst
         self.max_datagram = max_datagram
         self.max_event = max_event
@@ -279,9 +291,12 @@ class Sender:
         keep = len(raw_bytes)
         while len(data) > self.max_event:
             if keep <= 0:
-                # Metadata alone is too big: keep only time and the truncation marker.
-                trimmed = {"_raw": "", "_time": event.get("_time"),
-                           "wd2l_truncated": len(raw_bytes)}
+                # Metadata alone is too big: keep only time and the truncation marker. Time only
+                # if it is a number: a string could be any size (#137).
+                trimmed = {"_raw": "", "wd2l_truncated": len(raw_bytes)}
+                t = event.get("_time")
+                if isinstance(t, (int, float)) and not isinstance(t, bool):
+                    trimmed["_time"] = t
                 data = wire.serialize_event(trimmed, ("wd2l_truncated",))
                 break
             keep -= max(1, len(data) - self.max_event)
@@ -803,7 +818,12 @@ def config_settings(a: argparse.Namespace) -> Dict[str, Any]:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    a = build_parser().parse_args(argv)
+    p = build_parser()
+    a = p.parse_args(argv)
+    try:
+        check_limits(a.max_datagram, a.max_event)
+    except ValueError as e:
+        p.error(str(e))
     logsetup.setup(a.log_format, a.verbose)
     settings = config_settings(a)
     cfg_sha = auditlog.sha256_hex(auditlog.canonical(settings))

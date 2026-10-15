@@ -67,6 +67,21 @@ class Output:
         self.flush()
 
 
+class Nowhere(Output):
+    """The route for Enclave 1's audit records when the receiver has nowhere to send them: no
+    audit token (the data token can't write the audit index) and no --out-dir. The receiver
+    counts what it would have sent (records_unrouted) instead of handing it here (#137)."""
+
+    def audit(self, rec: Dict[str, Any]) -> None:
+        pass    # never called: --audit-dir with --hec-url needs the audit token
+
+    def forwarded(self, evt: Dict[str, Any], stream_id: int, seq: int, kind: str) -> None:
+        pass
+
+
+NOWHERE = Nowhere()
+
+
 def _merge(into: Dict[int, Set[int]], more: Dict[int, Set[int]]) -> None:
     for sid, seqs in more.items():
         into.setdefault(sid, set()).update(seqs)

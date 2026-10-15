@@ -219,7 +219,8 @@ The whole body is at most 262,144 bytes (`--max-event`). If an event is bigger, 
 2. adds `wd2l_truncated` with the original size of `_raw`, and counts it (`truncated` in the
    heartbeat).
 
-If the metadata alone is too big, the body becomes `{"_time":…,"_raw":"","fields":{"wd2l_truncated":…}}`.
+If the metadata alone is too big, the body becomes `{"_time":…,"_raw":"","fields":{"wd2l_truncated":…}}`
+(`_time` only if it is a number).
 
 ## 8. HEARTBEAT message
 
