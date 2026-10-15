@@ -318,6 +318,8 @@ jobs:
   fips-tests:
     # The whole test suite under the OpenSSL FIPS provider (the builder has the same Python and
     # crypto policy as the runtime image, plus a shell and dnf for pytest), on each platform.
+    # No test may skip (WD2L_NO_SKIPS): git, which the release-tool tests need and the builder
+    # lacks, is added in a throwaway image that ends as the builder's own user.
     strategy:
       fail-fast: false
       matrix:
@@ -330,6 +332,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: |
           B=$(python3 packaging/container/check_containerfile.py --json | jq -r '.[] | select(.tag | endswith("-builder")) | .ref')
-          podman run --rm --userns=keep-id -v "$PWD:/src" -w /src "$B" bash -c \
+          printf 'FROM %s\nUSER 0\nRUN dnf -y -q install git-core && dnf clean all\nUSER 65532\n' "$B" \
+            | podman build -q -t localhost/fips-tests -f - "$(mktemp -d)"
+          podman run --rm --userns=keep-id -e WD2L_NO_SKIPS=1 -v "$PWD:/src" -w /src localhost/fips-tests bash -c \
             'python3 -c "import _hashlib; assert _hashlib.get_fips_mode() == 1, \"not FIPS\"" &&
-             python3 -m pip install -q --user pytest && python3 -m pytest -q -p no:cacheprovider'
+             python3 -m pip install -q --user --require-hashes -r packaging/ci/test-requirements.txt -r packaging/release/requirements.txt &&
+             python3 -m pytest -q -p no:cacheprovider'

@@ -29,3 +29,20 @@ updates:
       # 2.22 needs Python 3.10; wd2l supports 3.9 (pyproject.toml), and the tests run on it.
       - dependency-name: fastjsonschema
         versions: [">=2.22"]
+  # CI's test runner (packaging/ci/test-requirements.txt, hash-pinned).
+  - package-ecosystem: pip
+    directory: "/packaging/ci"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    ignore:
+      # These need Python 3.10, and the tests run on 3.9. A new release that drops 3.9 fails
+      # its PR's 3.9 job: add it here.
+      - dependency-name: pytest
+        versions: [">=9"]
+      - dependency-name: pluggy
+        versions: [">=1.7"]
+      - dependency-name: iniconfig
+        versions: [">=2.2"]

@@ -34,7 +34,10 @@ check below runs for both. What each job
 proves:
 
 * **tests** ([`tests.yml`](../.github/workflows/tests.yml)): the unit tests pass on Python 3.9
-  and 3.12, and the namespace lab passes ([running-the-lab.md](running-the-lab.md)).
+  and 3.12, and the namespace lab passes ([running-the-lab.md](running-the-lab.md)). A skipped
+  test fails the run (`WD2L_NO_SKIPS=1`, [`tests/conftest.py`](../tests/conftest.py)), so a
+  missing tool or package can't turn tests off. The test runner is hash-pinned
+  ([`packaging/ci/test-requirements.txt`](../packaging/ci/test-requirements.txt)).
 * **lint**: hadolint and Trivy accept the Containerfile, and every `FROM` is a Hardened Image,
   a FIPS variant, pinned by digest
   ([`check_containerfile.py`](../packaging/container/check_containerfile.py)).
@@ -53,7 +56,8 @@ proves:
 * **sbom**: the image's SBOM is the base's, plus wd2l, less pip
   ([`sbom_diff.py`](../packaging/container/sbom_diff.py)).
 * **functional**: the lab passes with the sender and receiver running from the image.
-* **fips-tests**: the whole test suite passes in the FIPS builder image.
+* **fips-tests**: the whole test suite passes in the FIPS builder image, again with none
+  skipped.
 * **rpm** ([`rpm.yml`](../.github/workflows/rpm.yml)): the RPMs build on UBI 9 and UBI 10
   ([`build-rpms.sh`](../packaging/rpm/build-rpms.sh)), and install cleanly on a fresh system,
   over a manual install, and as an upgrade ([`install-test.sh`](../packaging/rpm/install-test.sh)).
