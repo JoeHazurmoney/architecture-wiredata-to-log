@@ -3,8 +3,9 @@
 In production, files like `messages`, `secure` and `audit.log` are written continuously. A
 forwarding agent tails them and sends new lines to the log aggregator within seconds, so lines
 from all the files reach `wd2l-sender` **interleaved**, roughly in the order they were written.
-This page explains how wd2l tracks what was sent and received, and how Enclave 2 separates the
-stream back into files.
+This page explains how wd2l tracks what was sent and received, and how the files can be rebuilt
+from the events. The receiver itself never writes files: it sends each event to the SIEM.
+Rebuilding a file is a separate check, which `lab/rebuild_files.py` runs in the lab.
 
 ```mermaid
 flowchart LR
@@ -15,7 +16,7 @@ flowchart LR
   AGG -- "one interleaved stream" --> SND["wd2l-sender<br/>seq 1,2,3… overall<br/>wd2l_src_seq 1,2,3… per file"]
   SND == "one-way" ==> RCV["wd2l-receiver<br/>gaps by seq"]
   RCV --> SIEM[SIEM]
-  RCV -.-> RB["rebuild by<br/>(host, source, wd2l_src_seq)"]
+  SIEM -.-> RB["file rebuild, a check outside wd2l<br/>by (host, source, wd2l_src_seq)"]
 ```
 
 ## What each side tracks
@@ -34,6 +35,8 @@ keeps its original `host`, `source`, `sourcetype`, `index` and time.
 
 ## Rebuilding several files from one stream
 
+From the events (the SIEM's copy, or the receiver's JSONL output in the lab):
+
 1. **Separate:** take the events whose `host` and `source` match the file.
 2. **Order:** sort them by `wd2l_src_seq`. Line *N* of the file is the event with
    `wd2l_src_seq` = *N*.
@@ -51,7 +54,7 @@ instead).
 
 Nothing in wd2l changes when hosts or logs are added. The sender creates a counter the first time
 a (`host`, `source`) pair appears, starting at 1 in the same run; the receiver doesn't track
-sources; the rebuild picks files from the data. Only the upstream steps change, as for any new
+sources; a rebuild picks files from the data. Only the upstream steps change, as for any new
 log: the forwarder collects the file and the aggregator sets `host` and `source`.
 
 * **Names must stay the same:** `web01` one day and `web01.example.org` the next are two files,
@@ -81,12 +84,12 @@ the receiver's gaps imply.
 
 ## What it takes in the real pipeline
 
-The lab carries each line exactly. In production, byte-for-byte rebuilds also depend on the
-forwarder and aggregator:
+The lab carries each line exactly. In production, rebuilding a file byte for byte from the SIEM's
+events also depends on the forwarder and aggregator:
 
 * **One event per line.** Event breaking must split on every newline and never merge lines (no
   stack-trace joining for these sources).
-* **Line endings.** Event breaking normally removes the newline, so the rebuild adds `\n` after
+* **Line endings.** Event breaking normally removes the newline, so a rebuild adds `\n` after
   every line. That restores LF files exactly, but not CRLF endings or a missing final newline,
   both rare in Linux logs.
 * **Order per file.** The aggregator must keep each file's lines in order, as it does when one

@@ -20,8 +20,6 @@ def test_every_alert_the_docs_name_exists():
     names = set(conf("savedsearches.conf").sections())
     named = set()
     for path in glob.glob(os.path.join(REPO, "docs", "**", "*.md"), recursive=True):
-        if os.sep + "superpowers" + os.sep in path:
-            continue    # implementation plans, not user docs
         with open(path, encoding="utf-8") as f:
             named |= set(re.findall(r'"(WD2L - [^"]+)"', f.read()))
     assert named and not named - names, sorted(named - names)

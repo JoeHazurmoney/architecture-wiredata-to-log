@@ -62,5 +62,9 @@ def test_lab_names_its_packages_for_both_families():
         text = f.read()
     assert "dnf install iproute iproute-tc nftables tcpdump" in text
     assert "apt install iproute2 nftables tcpdump" in text
-    with open(os.path.join(REPO, "docs", "running-the-lab.md"), encoding="utf-8") as f:
-        assert "iproute iproute-tc nftables tcpdump" in f.read()
+    for doc in ("docs/running-the-lab.md", "README.md"):     # README "Try it" left out tc (#114)
+        with open(os.path.join(REPO, doc), encoding="utf-8") as f:
+            text = f.read()
+        assert "iproute iproute-tc nftables tcpdump" in text, doc
+        assert "python3-venv iproute2 nftables tcpdump" in text, doc
+        assert "--require-hashes -r packaging/release/requirements.txt" in text, doc

@@ -108,8 +108,9 @@ Rejected.
   `v*` tags; `main` takes changes only through PRs with green CI, with no bypass
   ([releasing.md](../releasing.md#one-time-setup)).
 * **Rotation:** a new pair, a new `cosign.pub` committed, and the old one moved to
-  `keys/retired/cosign-<from>-<to>.pub`. Releases signed with the old key stay verifiable with
-  it.
+  `keys/retired/cosign-<from>-<to>.pub` at the repository's root, beside `cosign.pub` (not
+  `packaging/container/keys/`, which holds the base images' keys; the first rotation creates the
+  directory). Releases signed with the old key stay verifiable with it.
 * **Compromise:**
   1. Remove the secrets.
   2. Publish a notice that names the window.
@@ -122,8 +123,8 @@ Rejected.
   signature before anything is installed proves the files are the ones this repository's workflow
   built.
 * **Provenance** (e.g. NIST SR-4, SR-11). The provenance names the commit, and the base-image
-  record names the exact Red Hat image. That record carries the base's own signature, provenance,
-  SBOM and sources.
+  record names the exact Red Hat image. That record carries the hashes of the evidence checked
+  for the base: its signature, provenance, SBOM and sources.
 * **Offline first.** Everything an enclave needs to verify is in the release: the files, the
   signatures and `cosign.pub`.
 

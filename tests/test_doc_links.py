@@ -1,5 +1,5 @@
 """Every relative link in the user docs points at a file that exists, and every #anchor at a
-heading in it (GitHub's slugs). docs/superpowers (working plans) is left out."""
+heading in it (GitHub's slugs)."""
 import os
 import re
 
@@ -7,7 +7,7 @@ REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 LINK = re.compile(r"\]\(([^)\s]+)\)")
 HEADING = re.compile(r"^#{1,6} +(.+?) *#*$", re.M)
 FENCE = re.compile(r"^```.*?^```", re.M | re.S)
-SKIP_DIRS = {".git", "superpowers", ".superpowers", "node_modules", "dist", "build", "out"}
+SKIP_DIRS = {".git", ".superpowers", "node_modules", "dist", "build", "out"}
 
 
 def docs():
