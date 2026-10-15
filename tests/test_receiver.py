@@ -334,6 +334,35 @@ def test_rangeset():
     assert rs.remove(1) and rs.remove(7) and rs.r == [[2, 3], [5, 6]]
 
 
+def test_gap_ranges_past_the_cap_are_counted_saved_and_reported_once(tmp_path, monkeypatch):
+    """#129: past MAX_GAP_RANGES a stream drops its oldest gap ranges. The events in them are
+    counted per stream and in total, the count survives a restart, and the first drop is
+    reported once, as a health and an audit record."""
+    from wd2l import audit as auditlog, receiver
+    from helpers import read_audit
+    monkeypatch.setattr(receiver, "MAX_GAP_RANGES", 3)
+    state = str(tmp_path / "state.json")
+    a = auditlog.AuditLog(str(tmp_path / "audit"), "receiver", 2, host="rx", actor="me", build="b")
+    r, out = rx(gap_window=1, state_path=state, audit=a)
+    feed(r, sum((ev(s) for s in (1, 3, 5, 7, 9, 11)), []), 0)
+    r.tick(5)                                   # gaps 2, 4, 6, 8, 10: five ranges, cap 3
+    t = r.streams[SID]
+    assert t.gaps.r == [[6, 6], [8, 8], [10, 10]] and t.gaps.forgotten == 2
+    (rec,) = out.kinds("gaps_forgotten")
+    assert (rec["stream"], rec["forgotten_gap_events"], rec["max_gap_ranges"]) == \
+        ("%016x" % SID, 2, 3)
+    feed(r, ev(13), 6)
+    r.tick(10)                                  # gap 12 drops one more: counted, not re-reported
+    h = r.emit_health(10)
+    assert h["streams"]["%016x" % SID]["forgotten_gap_events"] == 3
+    assert h["forgotten_gap_events"] == 3 and len(out.kinds("gaps_forgotten")) == 1
+    r.save_state()
+    r2, out2 = rx(gap_window=1, state_path=state)
+    assert r2.streams[SID].gaps.forgotten == 3 and out2.kinds("gaps_forgotten") == []
+    audited = [x for x in read_audit(a.dir) if x["event"] == "gaps_forgotten"]
+    assert [(x["outcome"], x["forgotten_gap_events"]) for x in audited] == [("failure", 2)]
+
+
 # ---------------------------------------------------------------- durability across crashes
 
 

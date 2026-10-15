@@ -102,6 +102,42 @@ def test_events_the_output_dropped_unbalance_until_replayed():
     assert last(r, s)["balanced"] is True
 
 
+def test_an_event_delivered_again_after_the_output_gave_up_counts_once():
+    """#129: the replay operations.md prescribes after output_dropped delivers seq 7 a second
+    time. The stream's events_delivered (reconcile) still says 20, so "in_siem should equal
+    events_delivered" holds. The global counter stays a count of events handed to the output."""
+    s, data, hb = run()
+    out = SlowOutput()
+    r, _ = rx(out)
+    feed(r, data + hb, 0)
+    out.fail(s.stream_id, 7)
+    out.commit()
+    r.tick(1)
+    assert r.streams[s.stream_id].delivered == 19
+    feed(r, data[6:7], 2)
+    out.commit()
+    r.tick(3)
+    assert r.streams[s.stream_id].delivered == 20 and last(r, s)["balanced"] is True
+    assert out.kinds("reconcile")[-1]["events_delivered"] == 20
+    assert r.counters["events_delivered"] == 21
+
+
+def test_reconcile_records_count_the_gap_events_past_the_cap(tmp_path, monkeypatch):
+    """#129: an unbalanced stream whose oldest gaps were dropped past the cap says so, so the
+    reconciliation alert doesn't take it for one with nothing to explain it."""
+    from wd2l import receiver
+    monkeypatch.setattr(receiver, "MAX_GAP_RANGES", 1)
+    a = auditlog.AuditLog(str(tmp_path / "audit"), "receiver", 2, host="rx", actor="me", build="b")
+    s, data, hb = run()
+    r, out = rx(audit=a)
+    feed(r, data[:2] + data[3:4] + data[5:] + hb, 0)     # seq 3 and 5 lost: two ranges, cap 1
+    r.tick(3)
+    h = out.kinds("reconcile")[-1]
+    assert (h["balanced"], h["gaps_open"], h["gaps_forgotten"]) == (False, 1, 1)
+    rec = [x for x in read_audit(a.dir) if x["event"] == "reconcile"][-1]
+    assert (rec["gaps_open"], rec["gaps_forgotten"]) == (1, 1)
+
+
 def test_crash_replay_restores_the_balance(tmp_path):
     """Review focus 5: the hash survives a crash; the replay fills the gap; each event counts once."""
     s, data, hb = run()
@@ -122,6 +158,7 @@ def test_crash_replay_restores_the_balance(tmp_path):
     assert [e[1] for e in out2.events] == list(range(11, 21))
     assert last(r2, s) == {"cut": 20, "sender_hash": s.events_hash.hex(),
                            "receiver_hash": s.events_hash.hex(), "balanced": True}
+    assert r2.streams[s.stream_id].delivered == 20      # 11..20 once, not twice (#129)
 
 
 def test_a_bad_events_hash_is_ignored():

@@ -45,7 +45,8 @@ HEX64 = re.compile(r"[0-9a-f]{64}")
 # write one audit record per gap.
 AUDITED_HEALTH = {"stream_start": "info", "stream_end": "success",
                   "stream_lost": "failure", "stream_missing": "failure",
-                  "sender_boot_reset": "failure", "stream_evicted": "failure"}
+                  "sender_boot_reset": "failure", "stream_evicted": "failure",
+                  "gaps_forgotten": "failure"}
 SUMMARY_OUTCOME = {"gap": "failure", "gap_filled": "success"}
 # Counters whose growth is written once a minute as boundary_anomaly / output_failure.
 BOUNDARY_COUNTERS = ("other_packets", "bad_frames", "bad_events", "digest_mismatch",
@@ -141,6 +142,7 @@ class StreamTracker:
         self.lost_reported = False
         self.hb: Dict[str, Any] = {}
         self.delivered = 0
+        self.forgotten_reported = False   # its first gap range dropped past MAX_GAP_RANGES
         self.boot: Optional[int] = None   # sender restart count, if the sender reports one
         self.linked = False               # its link to the previous stream has been checked
         self.records = False   # the sender's records stream (flags bit 0)
@@ -193,14 +195,18 @@ class StreamTracker:
         """Events counted as delivered that the output never made durable: make them needed again.
 
         Those below lo become gaps right away (returned, so they can be reported). Those at or
-        above lo become ordinary holes again and are declared by the usual gap window."""
-        lost: List[int] = []
+        above lo become ordinary holes again and are declared by the usual gap window. Either
+        way they no longer count as delivered, so a replay that delivers them again counts each
+        once (#129)."""
+        lost: set = set()
         for s in seqs:
             if s < self.lo:
                 if s not in self.gaps:
-                    lost.append(s)
-            else:
+                    lost.add(s)
+            elif s in self.above:
                 self.above.discard(s)
+                self.delivered -= 1
+        self.delivered -= len(lost)
         ranges = [(a, b) for a, b in to_ranges(lost)]
         for a, b in ranges:
             self.gaps.add(a, b)
@@ -235,7 +241,9 @@ class StreamTracker:
 
     def to_json(self) -> Dict[str, Any]:
         return {"lo": self.lo, "above": sorted(self.above), "known": self.known,
-                "marks": list(self.marks), "gaps": self.gaps.r, "first_seen": self.first_seen,
+                "marks": list(self.marks), "gaps": self.gaps.r,
+                "gaps_forgotten": self.gaps.forgotten, "forgotten_reported": self.forgotten_reported,
+                "first_seen": self.first_seen,
                 "last_seen": self.last_seen, "last_hb": self.last_hb, "final": self.final,
                 "lost_reported": self.lost_reported, "hb": self.hb,
                 "delivered": self.delivered, "boot": self.boot, "linked": self.linked,
@@ -251,6 +259,8 @@ class StreamTracker:
         # their times came from another run's clock. Time 0 makes them due right away.
         t.marks = deque((int(a), 0.0) for a, _ in d.get("marks", []))
         t.gaps = RangeSet(d.get("gaps", []))
+        t.gaps.forgotten = int(d.get("gaps_forgotten", 0))
+        t.forgotten_reported = bool(d.get("forgotten_reported", False))
         t.last_seen = float(d.get("last_seen", 0))
         t.final = bool(d.get("final", False))
         t.lost_reported = bool(d.get("lost_reported", False))
@@ -822,13 +832,14 @@ class Receiver:
         sid = "%016x" % t.stream_id
         self._health_record("reconcile", now, stream=sid, cut=res["cut"],
                             balanced=res["balanced"], gaps_open=t.gaps.count(),
-                            events_delivered=t.delivered)
+                            gaps_forgotten=t.gaps.forgotten, events_delivered=t.delivered)
         if self.audit is not None:
             self.audit.write(
                 "reconcile", "success" if res["balanced"] else "failure",
                 stream=sid, cut=res["cut"], events_in=t.hb.get("events_in"),
                 events_sent=t.hb.get("events_sent"), events_delivered=t.delivered,
-                gaps_open=t.gaps.count(), gaps_filled=t.rc.filled, last_seq=t.known,
+                gaps_open=t.gaps.count(), gaps_filled=t.rc.filled,
+                gaps_forgotten=t.gaps.forgotten, last_seq=t.known,
                 sender_hash=res["sender_hash"], receiver_hash=res["receiver_hash"],
                 balanced=res["balanced"])
         t.rc.written = (res["cut"], res["balanced"])
@@ -939,6 +950,17 @@ class Receiver:
                                                "reason": reason}, **self._flag(t)),
                                   count=n, seq_first=a, seq_last=b, gaps=1)
             self.dirty = True
+        if t.gaps.forgotten and not t.forgotten_reported:
+            # Past MAX_GAP_RANGES the oldest ranges are dropped (RangeSet.add). Said once; the
+            # health map and the reconcile records keep the count (#129).
+            t.forgotten_reported = True
+            log.warning("stream %016x has over %d open gap ranges: the oldest are no longer "
+                        "tracked, and a replay can't fill them (%d events so far)",
+                        t.stream_id, MAX_GAP_RANGES, t.gaps.forgotten)
+            self._health_record("gaps_forgotten", now, stream="%016x" % t.stream_id,
+                                forgotten_gap_events=t.gaps.forgotten,
+                                max_gap_ranges=MAX_GAP_RANGES, **self._flag(t))
+            self.dirty = True
 
     def _wall(self, now: float) -> float:
         """Wall-clock time for records: the live clock, or the packet time during replay."""
@@ -967,7 +989,7 @@ class Receiver:
                 continue
             streams["%016x" % t.stream_id] = {
                 "next_seq": t.lo, "known_seq": t.known, "open_gap_events": t.gaps.count(),
-                "final": t.final, "idle_s": round(now - t.last_seen, 1), "boot": t.boot,
+                "forgotten_gap_events": t.gaps.forgotten, "final": t.final, "idle_s": round(now - t.last_seen, 1), "boot": t.boot,
                 "clock_offset_s": t.clock_offset, "sender": t.hb,
                 "reconcile": ({"cut": t.rc.last["cut"], "balanced": t.rc.last["balanced"]}
                               if t.rc.last else None), **self._flag(t)}
@@ -977,6 +999,7 @@ class Receiver:
         live = [t for t in self.streams.values()
                 if "%016x" % t.stream_id in streams and not t.records]
         rec.update(open_gap_events=sum(t.gaps.count() for t in self.streams.values()),
+                   forgotten_gap_events=sum(t.gaps.forgotten for t in self.streams.values()),
                    sender_drops=sum(int(t.hb.get("sender_drops", 0)) for t in live),
                    sender_truncated=sum(int(t.hb.get("truncated", 0)) for t in live),
                    sender_opaque_events=sum(int(t.hb.get("opaque_events", 0)) for t in live),

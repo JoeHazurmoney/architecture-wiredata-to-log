@@ -94,6 +94,7 @@ Every audit record, on both sides:
 | `stream_start` / `stream_end` / `stream_lost` / `stream_missing` | receiver | A sender run seen, ended, vanished, never seen | Stream, boot |
 | `sender_boot_reset` | receiver | The sender's boot counter went back. Evidence about completeness | Stream, `boot`, `previous_boot` |
 | `stream_evicted` | receiver | A stream with open gaps dropped from tracking (too many streams). Evidence about completeness | Stream, `open_gap_events`, `gaps` |
+| `gaps_forgotten` | receiver | A stream passed 100,000 open gap ranges, so its oldest are dropped from tracking; once per stream. Evidence about completeness | Stream, `forgotten_gap_events`, `max_gap_ranges` |
 | `output_failure` | receiver | Once a minute, from counter growth, for example `output_dropped`, `hec_rejected_events`, the HEC queue and spool overflows and `hec_records_lost` (and the same for the audit HEC) | Count, reason |
 | `replay_run` | replay | `phase` `start` (the files) and `finish` (each file's SHA-256 and size, events filled, duplicates skipped, open gaps) | Actor |
 | `debug_toggled` | both | `SIGUSR1` | Who sent it, the new level |
@@ -195,17 +196,19 @@ frame's `digest`.
 in the last hour or not balanced, one when a stream ends and is resolved, and one whenever an
 ended stream's cut or balance changes (for example after a replay fills its gaps); the end record
 is skipped when the last one already states the same cut and balance. A stream with open gaps is
-not retired (unless `stream_evicted`), so while it is unbalanced it keeps its hourly record. It has the
-sender's counters, `events_delivered`, `gaps_open`, `gaps_filled`, `last_seq`, both hashes and
-`balanced` (values agree at the cut and no gap at or below it is open). Each result is also a
+not retired (unless `stream_evicted`), so while it is unbalanced it keeps its hourly record. A
+stream tracks at most 100,000 open gap ranges; past that the oldest are dropped and counted
+(`gaps_forgotten`). The record has the sender's counters, `events_delivered`, `gaps_open`,
+`gaps_filled`, `gaps_forgotten`, `last_seq`, both hashes and `balanced` (values agree at the cut
+and no gap at or below it is open). Each result is also a
 `type=reconcile` health record, and every summary has `reconcile_unbalanced`, because operators
 can't read the audit index.
 
 **Permanent gaps.** An archive replay fills gaps whose packets reached the capture NIC, and the
 stream balances again. Events re-sent from Enclave 1 come back with new numbers in the sender's
 current run, so a stream with `not_received` loss stays unbalanced for good. The reconciliation
-alert therefore fires only for an unbalanced stream with no open gaps; how to close a permanent
-gap is open item 7 in the accreditation notes.
+alert therefore fires only for an unbalanced stream with no open or dropped gaps; how to close a
+permanent gap is open item 7 in the accreditation notes.
 
 **The SIEM's own completeness** (from its collector on) is a search in
 [operations.md](operations.md#alert-reconciliation-not-balanced).
