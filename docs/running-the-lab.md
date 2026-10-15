@@ -77,8 +77,10 @@ planted on purpose (random, gzip, PGP), which the sender must flag
 | `--receiver-crash` | The same, with the receiver killed. Nothing is lost; some logs arrive twice (the `duplicates` line), allowed because they are identical and carry the same number |
 | `--maintenance` | The [planned-downtime](planned-downtime.md) order: half the logs, everything stopped, everything started in reverse, the rest. Two sender runs, each with `input unread at stop: 0`; no gaps, no replay |
 
-Every run also checks that nothing came back ("frames sent back toward Enclave 1 from Enclave 2"
-reads 0) and that only log traffic crossed ("other packets on the tapped cable: 0").
+Every run also checks that Enclave 2 sent nothing: "frames Enclave 2 tried to send" counts what
+the lab's drop rule on the capture NIC stopped, and "frames sent back toward Enclave 1 from
+Enclave 2" what got past it; both must read 0. And it checks that only log traffic crossed
+("other packets on the tapped cable: 0").
 
 ## 6. Look at the results
 

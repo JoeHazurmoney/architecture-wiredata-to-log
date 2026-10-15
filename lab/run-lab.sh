@@ -192,12 +192,13 @@ $BH tc qdisc add dev bh0 ingress
 $BH tc filter add dev bh0 parent ffff: protocol all u32 match u32 0 0 action mirred egress mirror dev tap0
 
 # Enclave 2: receive only. No IP, no ARP, and anything it tries to send is dropped
-# (stands in for the missing TX strand).
+# (stands in for the missing TX strand). The counter is the one-way check: a dropped frame
+# never reaches the tap port, so only this counter can see Enclave 2 trying to send.
 v6off wd2l-enc2 cap0
 $ENC2 ip link set cap0 arp off promisc on up
 $ENC2 nft -f - <<'EOF'
 table netdev notx {
-  chain out { type filter hook egress device "cap0" priority 0; policy drop; }
+  chain out { type filter hook egress device "cap0" priority 0; policy drop; counter; }
 }
 EOF
 
@@ -389,7 +390,10 @@ if [ "$OUTAGE" = 1 ]; then
     >"$OUT/replay.log" 2>&1
 fi
 
-# Proof Enclave 2 never transmitted: nothing came back into the tap port.
+# Proof Enclave 2 never transmitted: it tried to send nothing (the notx counter), and nothing
+# came back into the tap port (which also shows the drop rule held).
+TRIED=$($ENC2 nft list chain netdev notx out | sed -n 's/.*counter packets \([0-9]*\).*/\1/p')
+echo "== frames Enclave 2 tried to send: ${TRIED:-unreadable}"
 BACK=$($BH cat /sys/class/net/tap0/statistics/rx_packets)
 echo "== frames sent back toward Enclave 1 from Enclave 2: $BACK"
 
@@ -413,6 +417,7 @@ set -e
 if [ "$OUTAGE" = 1 ]; then
   echo "(during the outage the live receiver reported $(grep -c '"type": "gap"' "$OUT/received/health.jsonl" || true) gap record(s); the archive replay filled them)"
 fi
+[ "$TRIED" = 0 ] || { echo "FAIL: Enclave 2 tried to send ${TRIED:-an unknown number of} frames"; RC=1; }
 [ "$BACK" = 0 ] || { echo "FAIL: Enclave 2 transmitted $BACK frames"; RC=1; }
 if [ -n "$FAULT" ]; then
   echo "== checking where the receiver placed the fault"
