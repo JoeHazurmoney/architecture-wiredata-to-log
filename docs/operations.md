@@ -144,7 +144,8 @@ The transfer keeps going; the audit records are what is at risk.
   `--audit-min-free-mb` (256 MB). Records are still forwarded, and once writing works a new file
   starts with an `audit_failure` (`reason=recovered`) giving the number `missed`. Check free
   space and permissions on `/var/log/wd2l`; the `audit_failure` record gives the reason
-  (`low_space`, `torn_write`, …).
+  (`low_space`, `torn_write`, …). `open_failed`: the directory couldn't be opened at start, so
+  this run keeps no audit file until it is fixed and the service restarted.
 * **`audit_verify=failed`.** The daily self-check found the chain broken (a record changed,
   removed or reordered, or a file damaged), or couldn't run (it could not start, or was killed
   after 6 hours). On that host:

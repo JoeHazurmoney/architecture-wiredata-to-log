@@ -319,7 +319,6 @@ class AuditLog:
                  time_quality: Optional[Any] = None, forward: bool = True,
                  max_bytes: int = DEFAULT_MAX_BYTES, min_free_bytes: int = DEFAULT_MIN_FREE,
                  outbox_max: int = 10000, clock: Callable[[], float] = time.time):
-        os.makedirs(directory, exist_ok=True)
         self.dir = directory
         self.component = component
         self.enclave = enclave
@@ -352,10 +351,36 @@ class AuditLog:
         self.path: Optional[str] = None
         self.size = 0
         self.last_file_us = 0
-        self._lockfd: Optional[int] = self._take_lock()
-        self.n, self.last_hash, torn = self._recover()
+        self._lockfd: Optional[int] = None
+        # Set when the directory couldn't be opened at start: no file for this run.
+        self.unopened: Optional[str] = None
+        self.n, self.last_hash, torn = 0, GENESIS, None
+        try:
+            os.makedirs(directory, exist_ok=True)
+            self._lockfd = self._take_lock()     # AuditLocked (a second writer) still stops us
+            self.n, self.last_hash, torn = self._recover()
+        except OSError as e:
+            self._start_without_a_file(e)
         if torn:
             self.write("audit_failure", "failure", reason="torn_write", file=torn)
+
+    def _start_without_a_file(self, e: OSError) -> None:
+        """The directory can't be opened (read-only, I/O errors, wrong owner). Stopping would
+        stop the transfer, which audit trouble never does (§8): run without a file until a
+        restart, forward every record, and show audit_ok=false. Without the lock no file is
+        written later either, so another writer's chain can't be interleaved."""
+        if self._lockfd is not None:
+            os.close(self._lockfd)
+            self._lockfd = None
+        self.fd = self.path = None
+        self.n, self.last_hash = 0, GENESIS
+        self.unopened = self.error = str(e)
+        self.ok = False
+        log.error("can't open the audit directory %s (%s): this run keeps no audit file, its "
+                  "records are still forwarded; fix the directory and restart", self.dir, e)
+        fail = self._base("audit_failure", "failure")
+        fail.update(reason="open_failed", error=self.error, n=None, prev_hash=None, hash=None)
+        self._queue(fail)
 
     # -- setup
 
@@ -422,6 +447,9 @@ class AuditLog:
 
     def _append(self, rec: Dict[str, Any]) -> bool:
         """Chain the record and append it to the file. Returns False if it isn't in the file."""
+        if self.unopened is not None:
+            return self._failed(rec, OSError(errno.EIO, "audit directory not opened at start: "
+                                             + self.unopened))
         if self.low_space:
             self._close_file()      # resume in a new file once there is space again
             return self._failed(rec, OSError(errno.ENOSPC, "free space below the audit floor "
