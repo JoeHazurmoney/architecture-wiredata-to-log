@@ -148,6 +148,22 @@ def test_every_tool_is_pinned_by_digest():
                                 "ubi9", "ubi10", "alma10"}
 
 
+def test_dependabot_moves_the_base_by_digest_only():
+    # Closing #14 (3.12-fips -> 3.14-fips) stopped every hi/python update, digests too (#120).
+    # The base's Python is ADR-0004's decision, so Dependabot takes new digests only, and the
+    # builder and the runtime move in one PR.
+    cfg = read(".github/dependabot.yml")
+    docker = cfg.split("package-ecosystem: docker", 1)[1].split("package-ecosystem:", 1)[0]
+    assert '"/packaging/container"' in docker
+    assert ('      - dependency-name: "hi/python"\n'
+            '        update-types: ["version-update:semver-major", "version-update:semver-minor"]\n'
+            ) in docker
+    assert 'patterns: ["hi/python"]' in docker
+    froms = re.findall(r"^FROM registry\.access\.redhat\.com/hi/python:(\S+)@sha256:[0-9a-f]{64}",
+                       read("packaging/container/Containerfile"), re.M)
+    assert froms == ["3.12-fips-builder", "3.12-fips"]
+
+
 def test_tool_runs_the_pinned_image_with_the_work_tree(tmp_path):
     log = tmp_path / "args"
     fake = tmp_path / "podman"
