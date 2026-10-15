@@ -216,7 +216,10 @@ names as served.
   Keep `cosign.key` offline, or destroy it: the secret is then the only copy. Commit
   `cosign.pub` (`.gitignore` keeps `cosign.key` out). Don't keep the two as repository
   secrets: any workflow on any branch can read those. `tests.yml`'s `signing-key-scope` job
-  fails on `main` if the key is one.
+  fails on `main` if the key is one. `release.yml` still passes the two to `publish.yml` by
+  name: a reusable workflow's job gets an environment secret only if its caller passes it, and
+  an empty string otherwise, with no error (#103). Before it pushes anything, `publish` checks
+  that the key's public half is `cosign.pub`.
 * **Who can cause a signature.** These settings are in place:
   * **`main`:** a ruleset with no bypass, even for the owner. Every change goes through a PR
     whose `ci-ok` check passed (`tests.yml`); no force-push, no deletion.

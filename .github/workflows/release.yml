@@ -65,8 +65,12 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     needs: [version, tests, image, rpm]
     uses: ./.github/workflows/publish.yml
-    # No secrets are passed: publish.yml's job runs in the `release` environment and reads the
-    # signing key from there (docs/releasing.md, one-time setup).
+    # The signing key, by name and nothing else (no inherit). It exists only in the `release`
+    # environment, so only publish.yml's job that runs there gets it; but the caller must pass
+    # it, or that job gets an empty string, silently (#103).
+    secrets:
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
     permissions:
       contents: read
       packages: write
