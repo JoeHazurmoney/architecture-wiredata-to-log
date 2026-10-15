@@ -292,10 +292,20 @@ def test_compare_bases_runs_for_branches_only():
     assert re.search(r'^  push:\n(?:    #.*\n)*    branches: \["\*\*"\]\n    paths:\n', on, re.M)
 
 
-def test_the_tests_install_the_manifest_requirements():
-    # Otherwise the schema tests would skip silently in CI.
-    assert "python -m pip install --require-hashes -r packaging/release/requirements.txt" in \
-        jobs(read("tests.yml"))["pytest"]
+def test_ci_runs_every_test_with_hash_pinned_packages():
+    # A skip fails the run in CI (WD2L_NO_SKIPS, tests/conftest.py), so both test jobs install
+    # what the tests need: the runner and the manifest's validator, by hash, and in fips-tests
+    # git, which the builder lacks (#122). Without them, 29 tests skipped there with CI green.
+    both = "--require-hashes -r packaging/ci/test-requirements.txt -r packaging/release/requirements.txt"
+    pytest_job = jobs(read("tests.yml"))["pytest"]
+    assert "python -m pip install " + both in pytest_job
+    assert 'WD2L_NO_SKIPS: "1"' in pytest_job
+    fips = jobs(read("image.yml"))["fips-tests"]
+    assert "python3 -m pip install -q --user " + both in fips
+    assert "-e WD2L_NO_SKIPS=1" in fips and "dnf -y -q install git-core" in fips
+    for path in glob.glob(os.path.join(WORKFLOWS, "*.yml")):
+        with open(path, encoding="utf-8") as f:
+            assert not re.search(r"pip install (?:-\S+ )*pytest\b", f.read()), os.path.basename(path)
 
 
 def test_notes_get_the_manifest_and_the_attestation_pages():
