@@ -584,3 +584,36 @@ def test_summarizer_is_thread_safe():
     for t in threads:
         t.join()
     assert s.drain() == [("send_failure", {"error": "ENOBUFS", "count": 4000})]
+
+
+def test_a_directory_that_cant_be_opened_runs_without_a_file(tmp_path):
+    """Raising here stopped the sender or receiver at start, a crash loop under systemd, while
+    the same fault later only flags the trail. The transfer comes first (§8): no file for this
+    run, every record still forwarded, audit_ok false."""
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("")                  # a directory under a file fails even for root
+    a = audit.AuditLog(str(blocker / "audit"), "sender", 1, host="h", actor="a", build="b")
+    assert not a.ok and a.error and not a.status()["audit_ok"]
+    first = a.outbox[0]
+    assert (first["event"], first["outcome"], first["reason"]) == \
+        ("audit_failure", "failure", "open_failed")
+    assert first["error"] == a.error
+    rec = a.write("start", "success")
+    assert (rec["n"], rec["prev_hash"], rec["hash"]) == (None, None, None)
+    assert a.outbox[-1] is rec and a.missed == 1         # still queued for forwarding
+    a.write("stop", "success")
+    assert not a.ok and a.missed == 2                    # no file until a restart
+    a.check_space()
+    a.start_verify()
+    assert a.verify_proc is None and a.status()["audit_verify"] is None
+    a.close()
+    assert not os.path.exists(str(blocker / "audit"))
+
+
+def test_a_second_writer_still_stops_the_process(tmp_path):
+    held = audit.AuditLog(str(tmp_path), "receiver", 2, host="h", actor="a", build="b")
+    try:
+        with pytest.raises(audit.AuditLocked):
+            audit.AuditLog(str(tmp_path), "receiver", 2, host="h", actor="a", build="b")
+    finally:
+        held.close()

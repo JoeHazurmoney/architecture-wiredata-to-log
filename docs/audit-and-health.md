@@ -255,8 +255,9 @@ It exits 0 when all is well, 1 on a problem or nothing to verify, 2 for a missin
   unchained; health shows `audit_ok=false`; when writing works again an `audit_failure` with
   `reason=recovered` gives the number `missed`. Below `--audit-min-free-mb` (256 MB) every write
   counts as failed, so audit files never take the room the state file, spool and archive need;
-  the floor is checked at start and once a minute. The security owner confirms this choice (open
-  item 2).
+  the floor is checked at start and once a minute. The same holds at start: if the directory
+  can't be opened, the process runs without an audit file until restarted, forwarding every
+  record (`reason=open_failed`). The security owner confirms this choice (open item 2).
 * **Not built:** a keyed hash (HMAC) per record, or a separate backup copy (e.g. AU-9(2), AU-10).
   The design leaves room for them.
 

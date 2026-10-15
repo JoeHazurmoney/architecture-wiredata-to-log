@@ -197,3 +197,49 @@ def test_a_sender_run_leaves_a_verifiable_trail(tmp_path):
     lines = [json.loads(x) for x in err.decode().splitlines() if x.startswith("{")]
     assert any(x["msg"].startswith("final: last_seq=1 ") and x["segment"] == "e1-sender"
                for x in lines)
+
+
+def test_a_sender_whose_audit_directory_cant_be_opened_still_sends(tmp_path):
+    """It exited at start before: under Restart=always, no events crossed at all."""
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("")
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp.bind(("127.0.0.1", 0))
+    udp.settimeout(0.2)
+    port = free_port()
+    env = dict(os.environ, PYTHONPATH=REPO)
+    p = subprocess.Popen(
+        [sys.executable, "-m", "wd2l.sender", "--listen", "127.0.0.1:%d" % port,
+         "--dst", "127.0.0.1:%d" % udp.getsockname()[1], "--state", str(tmp_path / "s.json"),
+         "--audit-dir", str(blocker / "audit"), "--chronyc", "/bin/false",
+         "--log-format", "json", "--heartbeat", "0.2", "--drain-timeout", "0.5"],
+        stderr=subprocess.PIPE, env=env)
+    seen = {"data": False, "audit_ok": None, "open_failed": False}
+    try:
+        assert wait_for(lambda: p.poll() is not None
+                        or socket.socket().connect_ex(("127.0.0.1", port)) == 0)
+        assert p.poll() is None, "the sender stopped at start"
+        c = socket.create_connection(("127.0.0.1", port))
+        c.sendall(b'{"_raw":"hello","host":"h1"}\n')
+        c.close()
+
+        def look():
+            try:
+                f = wire.decode(udp.recv(65535))
+            except socket.timeout:
+                return False
+            if f.type == wire.TYPE_DATA and not f.flags & wire.FLAG_RECORDS:
+                seen["data"] = True
+            elif f.type == wire.TYPE_HEARTBEAT and not f.flags & wire.FLAG_RECORDS:
+                seen["audit_ok"] = json.loads(f.payload).get("audit_ok")
+            elif f.type == wire.TYPE_DATA:
+                rec = json.loads(wire.parse_event(f.payload)["_raw"])
+                seen["open_failed"] |= rec.get("reason") == "open_failed"
+            return seen["data"] and seen["audit_ok"] is False and seen["open_failed"]
+        assert wait_for(look), seen
+        p.send_signal(signal.SIGTERM)
+        _, err = p.communicate(timeout=30)
+    finally:
+        if p.poll() is None:
+            p.kill()
+    assert b"final: last_seq=1 " in err

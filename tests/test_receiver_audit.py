@@ -296,3 +296,29 @@ def test_health_records_say_who_wrote_them_and_where_the_chain_stands(tmp_path):
         (True, st["audit_n"], st["audit_hash"], None)
     start = out.kinds("stream_start")[0]
     assert start["enclave"] == 2 and start["component"] == "receiver"
+
+
+def test_a_replay_whose_audit_directory_cant_be_opened_still_delivers(tmp_path):
+    """receiver.main raised OSError here before: the live receiver crash-looped."""
+    p = replay_pcap(tmp_path)
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("")
+    out = str(tmp_path / "out")
+    receiver.main(["--pcap", p, "--out-dir", out, "--audit-dir", str(blocker / "audit"),
+                   "--chronyc", "/bin/false"])
+    with open(os.path.join(out, "events.jsonl")) as f:
+        assert sum(1 for _ in f) == 20
+
+
+def test_health_shows_audit_ok_false_when_the_directory_cant_be_opened(tmp_path):
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("")
+    a = auditlog.AuditLog(str(blocker / "audit"), "receiver", 2, host="rx01", actor="me",
+                          build="b")
+    out = MemOutput()
+    r = Receiver(out, dst_ip="10.255.255.2", dst_port=5514, audit=a, health_interval=10)
+    feed(r, ev(1) + [hb(1)], 0)
+    r.tick(0)
+    r.tick(11)
+    [h] = out.kinds("health")
+    assert h["audit_ok"] is False and out.seqs() == [1]
