@@ -404,6 +404,10 @@ VERIFY_ARGS=("$OUT/sent.jsonl" "$OUT/received" --max-event "$MAX_EVENT" "${SENDE
              --audit-dir "$OUT/audit-e1" --audit-dir "$OUT/audit-e2"
              --e1-audit-dir "$OUT/audit-e1" --reconcile-dir "$OUT/audit-e2")
 if [ -n "$LOSS" ]; then VERIFY_ARGS+=(--expect-gaps); fi
+# Generated events in one sender run: which are truncated and opaque is known up front (#151).
+if [ ${#FILES[@]} -eq 0 ] && [ "$MAINT" = 0 ] && [ "$FAULT" != sender-stop ]; then
+  VERIFY_ARGS+=(--generated "$EVENTS")
+fi
 if [ "$OUTAGE" = 1 ]; then VERIFY_ARGS+=(--state "$OUT/state.json"); fi
 if [ "$KILLSIG" = KILL ]; then VERIFY_ARGS+=(--allow-duplicates); fi
 if [ "$MAINT" = 1 ]; then VERIFY_ARGS+=(--sender-runs 2); fi
@@ -418,6 +422,20 @@ RC=$?
 set -e
 if [ "$OUTAGE" = 1 ]; then
   echo "(during the outage the live receiver reported $(grep -c '"type": "gap"' "$OUT/received/health.jsonl" || true) gap record(s); the archive replay filled them)"
+fi
+if [ "$MAINT" = 1 ]; then
+  # The lines docs/planned-downtime.md has operators look for, from this run's real logs (#151).
+  echo "== the planned-downtime log lines"
+  look() {
+    if grep -q "$2" "$OUT/$1"; then echo "$1: $(grep -o "$2" "$OUT/$1" | tail -1)"
+    else echo "FAIL: no line in $1 matches: $2"; RC=1; fi
+  }
+  look sender.log 'final: last_seq=[0-9][0-9]*'
+  look sender.log 'boot 2 after stream [0-9a-f]\{16\} (last seq [0-9][0-9]*)'
+  look receiver.log 'loaded state for [0-9][0-9]* streams'
+  if grep -q "were handed to the output but not confirmed before the last stop" "$OUT/receiver.log"; then
+    echo "FAIL: the receiver warns of an unclean stop"; RC=1
+  fi
 fi
 [ "$TRIED" = 0 ] || { echo "FAIL: Enclave 2 tried to send ${TRIED:-an unknown number of} frames"; RC=1; }
 [ "$BACK" = 0 ] || { echo "FAIL: Enclave 2 transmitted $BACK frames"; RC=1; }

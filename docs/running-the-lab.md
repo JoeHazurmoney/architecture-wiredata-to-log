@@ -166,7 +166,7 @@ It ends with `PASS: fault reported where expected, then cleared`, and the usual 
 | `wire-loss` | 20% of packets lost for 10 s | `boundary`, amber, rule 9 |
 | `receiver-slow` | A small capture buffer, the receiver frozen 4 s at 5,000 events/s | `e2-capture`, red, rule 8 |
 | `siem-down` | The stand-in SIEM down for 12 s | `e2-siem`, amber, rule 10 |
-| `clock` | The stand-in `chronyc` says "not synchronised" for 10 s | a time alarm |
+| `clock` | The stand-in `chronyc` says "not synchronised" for 10 s | a time alarm (`receiver: unsynced`) |
 
 ```bash
 sudo lab/run-lab.sh --fault tap-down
@@ -175,7 +175,8 @@ grep '"type": "fault"' lab/out/received/health.jsonl
 
 A fault run sends 20,000 events and can't be combined with `--loss`, `--receiver-outage`,
 `--maintenance` or `--files`. `--chrony-udp` has both sides ask a chronyd stand-in over UDP, as
-the containers do (`--fault clock --chrony-udp` checks the clock alarm that way).
+the containers do (`--fault clock --chrony-udp` checks the receiver's time check that way; the
+sender asks chrony once a minute, so a 10 s fault doesn't reach its heartbeat).
 
 ## 10. Run the container image through the lab
 

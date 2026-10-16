@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from wd2l import audit as auditlog  # noqa: E402
 from wd2l import wire  # noqa: E402
 from wd2l.sender import Sender  # noqa: E402
+from lab.gen_events import OPAQUE_AT  # noqa: E402
 
 logging.getLogger("wd2l.sender").setLevel(logging.ERROR)
 
@@ -52,6 +53,9 @@ def main():
     p.add_argument("--allow-other-packets", action="store_true",
                    help="foreign packets crossed the cable on purpose")
     p.add_argument("--expect-gaps", action="store_true", help="loss was injected on purpose")
+    p.add_argument("--generated", type=int, metavar="N",
+                   help="one sender run of gen_events.py's N events and its oversize one: those "
+                        "must be exactly the events truncated and flagged opaque")
     p.add_argument("--allow-duplicates", action="store_true",
                    help="identical copies of an event are fine (after a receiver crash)")
     p.add_argument("--source-seq", action="store_true",
@@ -191,8 +195,17 @@ def main():
             continue
         if last.get(k):
             problems.append("%s = %s" % (k, last[k]))
-    truncated = [s for s, e in seen.items() if "wd2l_truncated" in e.get("fields", {})]
+    truncated = sorted(s for s, e in seen.items() if "wd2l_truncated" in e.get("fields", {}))
     flagged = sorted(s for s, e in seen.items() if "wd2l_opaque" in e.get("fields", {}))
+    if a.generated is not None:
+        # An oracle of their own (#151): the generator's positions, not the sender's code, which
+        # the content check above shares with what it checks. Lost events can't be flagged.
+        want = [a.generated + 1] if a.generated + 1 in seen else []
+        if truncated != want:
+            problems.append("truncated: seq %s, expected %s" % (truncated, want))
+        want = [p + 1 for p in OPAQUE_AT if p < a.generated and p + 1 in seen]
+        if flagged != want:
+            problems.append("opaque content: seq %s, expected %s" % (flagged, want))
 
     for d in a.audit_dir:
         res = auditlog.verify_dir(d)
