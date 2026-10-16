@@ -207,7 +207,12 @@ names as served.
   re-run.
 * **A job failed for a reason outside the code** (a registry timeout, a forge outage): use
   **Re-run failed jobs** on the run's page. The re-run keeps the run's artifacts and the
-  outputs of the jobs that passed, so nothing is built or pushed twice.
+  outputs of the jobs that passed, so nothing is built or pushed twice. The exception is
+  `publish` failing after it signed something: its re-run stops at "Refuse to sign an image an
+  earlier run signed", since it would sign the same images twice. Cut a new version.
+* **`release` stops at "The tag has no release yet":** the tag already has a release. If it's
+  a leftover draft from an earlier attempt, delete it (Releases, the draft, **Delete**), then
+  **Re-run failed jobs**. If it's published, that version is out: cut a new one.
 * **The run stalls**, e.g. a job sits queued at an approval gate with no **Review
   deployments** button (0.3.0rc5, during a forge outage). Cancel it and wait until it shows
   completed; a re-run before that is refused. Then use **Re-run failed jobs**.

@@ -55,6 +55,40 @@ def test_the_schema_refuses_a_malformed_manifest(change):
     assert m.validate(d) is not None
 
 
+def _no_platform(arch):
+    def f(d):
+        del d["image"]["platforms"][arch]
+    return f
+
+
+@pytest.mark.parametrize("change", [
+    lambda d: d.update(image=None),
+    _no_platform("amd64"),
+    _no_platform("arm64"),
+    lambda d: d.update(changelog=None),
+    lambda d: d.update(summary=None),
+    lambda d: d.update(approvals=[]),
+    lambda d: d["approvals"][0].update(state="rejected"),
+    lambda d: d["approvals"][0].update(environment="staging"),
+])
+def test_a_real_release_must_name_its_image_changelog_summary_and_approval(change):
+    # These were each allowed whatever the run, so a publish output that came through empty on
+    # a tag made a valid manifest saying the image wasn't published (#161).
+    pytest.importorskip("fastjsonschema")
+    d = copy.deepcopy(example())
+    assert d["release"]["dry_run"] is False and m.validate(d) is None
+    change(d)
+    assert m.validate(d) is not None
+
+
+def test_a_dry_run_may_have_no_image_changelog_summary_or_approval():
+    pytest.importorskip("fastjsonschema")
+    d = copy.deepcopy(example())
+    d["release"]["dry_run"] = True
+    d.update(image=None, changelog=None, summary=None, approvals=[])
+    assert m.validate(d) is None
+
+
 def test_cli_validate_fails_an_invalid_file(tmp_path, capsys):
     pytest.importorskip("fastjsonschema")
     good, bad = tmp_path / "good.json", tmp_path / "bad.json"
@@ -280,10 +314,15 @@ def gen_args(tmp_path, dry_run=False, digests=True):
                                            "platforms": {"amd64": "sha256:" + "2" * 64},
                                            "release": "1", "source_image": "registry.example/python:1-source"}]}))
     d = "sha256:" + "3" * 64
+    changelog = None
+    if not dry_run:
+        changelog = assets / "wd2l-1.0.0rc1-changelog.md"
+        changelog.write_text("# Changelog\n")
     return argparse.Namespace(assets=str(assets), base_record=str(rec), dry_run=dry_run,
                               image_digest=d if digests else "",
                               platform_digest=(["amd64=sha256:" + "4" * 64, "arm64=sha256:" + "5" * 64]
-                                               if digests else ["amd64=", "arm64="]))
+                                               if digests else ["amd64=", "arm64="]),
+                              changelog=changelog and str(changelog))
 
 
 RUN_ENV = {"GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "123",
@@ -304,7 +343,8 @@ def test_a_tag_run_makes_a_valid_manifest_with_image_approvals_and_summary(tmp_p
     assert doc["approvals"][0]["user"] == "owner"
     assert doc["generated"]["run"]["attempt"] == 2
     assert doc["summary"]["file"] == "docs/releases/1.0.0rc1.md"
-    assert [d["name"] for d in doc["deliverables"]] == ["cosign.pub", "wd2l-1.0.0rc1-py3-none-any.whl"]
+    assert [d["name"] for d in doc["deliverables"]] == ["cosign.pub", "wd2l-1.0.0rc1-changelog.md",
+                                                      "wd2l-1.0.0rc1-py3-none-any.whl"]
     assert doc["verification"]["sealed_by"][-1] == "wd2l-1.0.0rc1-attestations.jsonl"
 
 
@@ -323,6 +363,33 @@ def test_a_tag_without_its_summary_is_refused_before_anything_else(tmp_path):
     r = make_repo(tmp_path, summary=False)
     with pytest.raises(SystemExit, match="docs/releases/1.0.0rc1.md"):
         m.generate(gen_args(tmp_path), RUN_ENV, forge_for_repo(), repo=str(r))
+
+
+def _empty_platform(arch):
+    def f(a, forge):
+        a.platform_digest = [x for x in a.platform_digest if not x.startswith(arch)] + [arch + "="]
+    return f
+
+
+@needs_git
+@pytest.mark.parametrize("change, missing", [
+    (lambda a, forge: setattr(a, "image_digest", ""), "the image index digest"),
+    (_empty_platform("amd64"), "the amd64 image digest"),
+    (_empty_platform("arm64"), "the arm64 image digest"),
+    (lambda a, forge: setattr(a, "changelog", None), "the changelog"),
+    (lambda a, forge: setattr(forge, "appr", []), "an approval of the release gate"),
+    (lambda a, forge: setattr(forge, "appr", [{"environment": "release", "user": "owner",
+                                               "state": "rejected", "comment": ""}]),
+     "an approval of the release gate"),
+])
+def test_a_tag_run_missing_what_publish_and_the_gate_give_is_refused(tmp_path, change, missing):
+    # publish's outputs were passed through unchecked: an empty one on a tag made a manifest
+    # that said the image wasn't published (#161).
+    r = make_repo(tmp_path)
+    a, forge = gen_args(tmp_path), forge_for_repo()
+    change(a, forge)
+    with pytest.raises(SystemExit, match="a release's manifest needs " + missing):
+        m.generate(a, RUN_ENV, forge, repo=str(r))
 
 
 # ---- the markdown view --------------------------------------------------------------------
