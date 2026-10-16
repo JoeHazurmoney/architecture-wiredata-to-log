@@ -5,13 +5,15 @@
 # The work tree ($PWD) is mounted at /work, the tool's working directory. The tool runs as the
 # caller's own user (--userns=keep-id --user), so it can read the caller's files and write to
 # /work: pass paths as /work/<relative path>. Registry logins made with `podman login` are passed
-# in read-only (/auth/config.json, also DOCKER_CONFIG). Environment:
+# in read-only (/auth/config.json, also DOCKER_CONFIG), to the tools that push or sign only
+# (PUSHERS): the scanners read public images, and needn't hold a token (#178). Environment:
 #   TOOL_ENV="A B"     pass these variables through (e.g. COSIGN_PRIVATE_KEY COSIGN_PASSWORD)
 #   TOOL_NETWORK=none  run with no network (offline verification)
 #   PODMAN=...         the podman command (tests)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 FILE="$HERE/tools.Containerfile"
+PUSHERS=" cosign oras "
 
 # Pure bash (no awk): it also runs inside the minimal images, e.g. the FIPS test job.
 ref_of() {
@@ -37,7 +39,7 @@ ref="$(ref_of "$name")" || { echo "tool: no stage named $name in $FILE" >&2; exi
 args=(run --rm --userns=keep-id --user "$(id -u):$(id -g)" --security-opt label=disable
       --tmpfs /tmp:rw,mode=1777 -v "$PWD:/work" -w /work -e HOME=/tmp)
 auth="${REGISTRY_AUTH_FILE:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/containers/auth.json}"
-if [ -f "$auth" ]; then
+if [ -f "$auth" ] && [[ "$PUSHERS" == *" $name "* ]]; then
   args+=(-v "$auth:/auth/config.json:ro" -e DOCKER_CONFIG=/auth -e REGISTRY_AUTH_FILE=/auth/config.json)
 fi
 for v in ${TOOL_ENV:-}; do args+=(-e "$v"); done
