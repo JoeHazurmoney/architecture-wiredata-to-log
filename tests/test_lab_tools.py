@@ -156,3 +156,22 @@ def test_check_fault_none_refuses_a_false_fault_or_time_alarm(tmp_path):
     skew = [{"type": "time_status", "time_status": "alarm", "time_reason": "clock skew 0.100 s"}]
     r = check_fault(tmp_path, skew, "--none", "--allow-rule", "9")
     assert r.returncode == 1 and "clock skew" in r.stdout
+
+
+import hashlib
+
+
+def test_the_sample_logs_match_their_sums():
+    # The lab rebuilds these byte for byte, and running-the-lab.md checks the copies against
+    # SHA256SUMS. A Windows checkout (core.autocrlf=true) wrote all four with CRLF (#163).
+    d = os.path.join(REPO, "samples", "logs")
+    with open(os.path.join(REPO, ".gitattributes"), encoding="utf-8") as f:
+        assert "samples/logs/** -text" in f.read().splitlines()
+    with open(os.path.join(d, "SHA256SUMS"), "rb") as f:
+        sums = f.read()
+    assert b"\r" not in sums
+    rows = [line.split("  ", 1) for line in sums.decode("ascii").splitlines()]
+    assert sorted(name for _, name in rows) == ["audit.log", "messages", "secure"]
+    for digest, name in rows:
+        with open(os.path.join(d, name), "rb") as f:
+            assert hashlib.sha256(f.read()).hexdigest() == digest, name

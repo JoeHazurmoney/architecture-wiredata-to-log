@@ -14,3 +14,5 @@ Containerfile text eol=lf
 *.spec text eol=lf
 *.sysusers text eol=lf
 *.tmpfiles text eol=lf
+# The lab's byte-exact inputs: their SHA256SUMS must hold in every checkout.
+samples/logs/** -text
