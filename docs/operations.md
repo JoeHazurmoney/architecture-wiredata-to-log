@@ -79,7 +79,7 @@ report reads `wd2l_audit`. The panels are those of [state-of-health.md](state-of
 | "WD2L - Fault segment" | The receiver's fault status moved away from `ok` (`type=fault`) | 1, 1b, 3, 13 |
 | "WD2L - Reconciliation not balanced" | A sender run with no open gaps hasn't balanced for an hour | 5, 12 |
 | "WD2L - Audit trail" | `audit_ok` false or `audit_verify` failed, on either side | 7 |
-| "WD2L - Time quality" | A clock unsynchronised, above stratum 3, more than 100 ms off or unreadable, or skew over 50 ms | 6, 10 |
+| "WD2L - Time quality" | A clock unsynchronised, above `--max-stratum` (3), more than 100 ms off or unreadable, or skew over 50 ms | 6, 10 |
 | "WD2L - Audit review (daily)" | A report, not an alert: each morning, the previous day's configuration changes, state resets, archive replays, debug toggles, audit failures, self-checks and time quality changes. Its owner needs the `wd2l_auditor` role | 20 |
 
 **Fault segment, heartbeat stale, time quality:** find the rule in the dashboard's

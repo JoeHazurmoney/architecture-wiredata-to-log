@@ -130,8 +130,9 @@ Every minute (`--stats-interval`) it logs its stream id, last sequence number an
 | `--egress-iface` | none | `sender.env` uses `ens224`. NIC carrier and transmit counters go into every heartbeat |
 | `--chronyc` | `chronyc` | The command that reports time quality (synced, stratum, offset) |
 | `--chrony-addr` | none | Ask chronyd over UDP (`HOST[:PORT]`, port 323) instead of running `chronyc`. The env file uses `127.0.0.1:323`, for the native and the container unit alike: nothing to run, and no SELinux denial (chronyc can't enter its domain under `NoNewPrivileges`). chronyd's default configuration answers it; `cmdport 0` turns it off |
-| `--max-stratum` | 3 | Time alarm above this chrony stratum. 3 suits a site with its own GPS time; a host on a public NTP pool may need 4 or 5 |
+| `--max-stratum` | 3 | Above this chrony stratum, the sender's own `time_quality` audit records say it's out of limits. 3 suits a site with its own GPS time; a host on a public NTP pool may need 4 or 5. The dashboard's time alarm uses the receiver's `--max-stratum`, for both sides: set it there too |
 | `--log-format` | text | `sender.env` uses `json`: one JSON object per log line |
+| `--verbose`, `-v` | off | Debug logging from the start. `SIGUSR1` switches it on and off while running ([operations.md](../operations.md)) |
 
 ### Audit files
 
