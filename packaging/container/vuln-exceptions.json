@@ -1,4 +1,4 @@
 {
   "_how": "An exception records the security owner's approval of one fixable High/Critical finding, so it doesn't pause a run for a security review again: the CVE (or Trivy secret rule) ID, the package it is in, why it is acceptable, who approved it (the security owner), and when it expires (YYYY-MM-DD, at most 90 days out). An expired exception needs a review again: every run pauses until it is renewed or removed.",
-  "exceptions": []
+  "exceptions": [{"id": "CVE-0000-DEMO", "package": "demo", "reason": "TEMPORARY: shows the security-review pause on #176; reverted next commit", "expires": "2026-01-01", "approved_by": "nobody"}]
 }
