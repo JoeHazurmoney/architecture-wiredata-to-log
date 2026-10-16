@@ -280,9 +280,10 @@ a missing file or directory, or one it may not read (run it as `wd2l`, or join `
   at stratum 3.
 * **Unreadable chrony** is an alarm too, on either side. The sender then sends
   `time_unavailable: true` in place of its time keys.
-* **Skew.** The receiver records `clock_offset_s` from each heartbeat's `sender_time`, minus the
-  sub-millisecond fiber delay. With both sides GPS-disciplined, skew over ~50 ms points at time
-  sync, not the network.
+* **Skew.** The receiver reads the offset from each heartbeat's `sender_time`. Any delay before it
+  reads one (the fiber, a busy host) only adds, so `clock_offset_s` is the lowest reading over the
+  last 10 heartbeats (about 10 s), and the skew is judged once 3 are in. With both sides
+  GPS-disciplined, skew over ~50 ms points at time sync, not the network.
 * The receiver works out `time_status` (`ok` or `alarm`, with `time_reason`) from both sides and
   the skew. It is in every summary, and each change is a `type=time_status` record, so "WD2L -
   Time quality" fires at once. Bad time doesn't lose events, so it is shown apart from the

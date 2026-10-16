@@ -37,7 +37,7 @@ carry `records: true`. The `health` counters, cumulative since the receiver star
 | `output_dropped` | Events the output gave up on (queue or spool full) | 0 |
 | `late_fills`, `duplicates` | Gaps filled later (replay); copies ignored | any |
 | `heartbeats`, `heartbeat_age_s`, `heartbeat_stale` | Sender liveness | age ≤ ~1 s |
-| `clock_offset_s` | Receiver clock minus sender clock at the last heartbeat (plus under 1 ms of fiber delay) | within a few ms of 0 |
+| `clock_offset_s` | Receiver clock minus sender clock: the lowest reading over the last 10 heartbeats, since any delay before the receiver reads one (the fiber, a busy host) only adds to it | within a few ms of 0 |
 | `other_packets`, `bad_frames`, `bad_events`, `digest_mismatch` (with `*_reasons`) | Traffic that isn't the log flow; corrupt or malformed input | 0 |
 | `kernel_drops` | Packets the kernel dropped before the receiver read them | 0 |
 | `capture_down_errors` | Reads that failed because the capture NIC went down, since the receiver started: usually one per outage (rule 1 says where and for how long) | 0 |

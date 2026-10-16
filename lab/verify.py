@@ -286,7 +286,7 @@ def main():
             return "%.1f" % (delays[int(q * (len(delays) - 1))] * 1000)
         print("link delay (wd2l_rx_time - wd2l_tx_time): median %s ms, p99 %s ms, max %s ms"
               % (ms(0.5), ms(0.99), ms(1.0)))
-    print("clock offset (last heartbeat): %s s" % last.get("clock_offset_s"))
+    print("clock offset (lowest of the last 10 heartbeats): %s s" % last.get("clock_offset_s"))
     if problems:
         print("\nFAIL")
         for pr in problems[:50]:
