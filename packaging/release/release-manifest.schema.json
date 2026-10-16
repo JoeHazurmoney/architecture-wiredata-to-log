@@ -8,6 +8,17 @@
   "required": ["schema_version", "release", "source", "generated", "summary", "changes", "known_issues",
                "deliverables", "image", "base_images", "build_environment", "changelog", "approvals",
                "verification"],
+  "if": {"properties": {"release": {"properties": {"dry_run": {"const": false}}}}},
+  "then": {
+    "description": "a real release: the image was published for both platforms, and its changelog, its summary and the release gate's approval are recorded",
+    "properties": {
+      "image": {"type": "object", "properties": {"platforms": {"required": ["amd64", "arm64"]}}},
+      "changelog": {"type": "object"},
+      "summary": {"type": "object"},
+      "approvals": {"contains": {"type": "object", "required": ["environment", "state"],
+                                 "properties": {"environment": {"const": "release"}, "state": {"const": "approved"}}}}
+    }
+  },
   "definitions": {
     "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},

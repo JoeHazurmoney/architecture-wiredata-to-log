@@ -119,7 +119,23 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
           # The other tags only once the index holds exactly the tested images.
           for t in "$@"; do packaging/ci/tool oras tag --registry-config /auth/config.json "$IMAGE@$D" "$t"; done
+          # Customers pull by tag: each one, read back, must serve this index (#161).
+          for t in ${{ steps.v.outputs.image_tags }}; do
+            got="sha256:$(skopeo inspect --raw "docker://$IMAGE:$t" | sha256sum | cut -d' ' -f1)"
+            [ "$got" = "$D" ] || { echo "::error::$IMAGE:$t serves $got, not the index $D"; exit 1; }
+          done
           echo "digest=$D" >> "$GITHUB_OUTPUT"
+      - name: Refuse to sign an image an earlier run signed (docs/releasing.md, "When a release run fails")
+        run: |
+          # A re-run pushes the same digests (the build is reproducible). Signing them again adds
+          # a second set of signatures to an image customers may already have, and the older
+          # .sig among them breaks the offline tar. Only a run that signed nothing may run again.
+          for d in ${{ steps.push.outputs.digest }} ${{ steps.push.outputs.digest_amd64 }} ${{ steps.push.outputs.digest_arm64 }}; do
+            if packaging/ci/tool cosign verify --key /work/cosign.pub --insecure-ignore-tlog "$IMAGE@$d" > /dev/null 2>&1; then
+              echo "::error::$IMAGE@$d is already signed by an earlier run: cut a new version"; exit 1
+            fi
+          done
+          echo "not signed yet: ok"
       - name: Mirror the base images, their records and the runtime base's sources
         run: |
           O() { packaging/ci/tool oras copy --from-registry-config /auth/config.json --to-registry-config /auth/config.json "$@"; }

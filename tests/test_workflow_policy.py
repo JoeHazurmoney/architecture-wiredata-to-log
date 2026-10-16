@@ -225,6 +225,38 @@ def test_extra_tags_point_at_the_index_only_after_it_is_checked():
     assert push.index("image_index.py") < push.index("oras tag")
 
 
+def test_every_pushed_tag_serves_the_index():
+    # Customers pull by tag, and nothing read the tags back (#161).
+    push = read("publish.yml").split("- id: push", 1)[1].split("- name:", 1)[0]
+    check = 'got="sha256:$(skopeo inspect --raw "docker://$IMAGE:$t" | sha256sum | cut -d\' \' -f1)"'
+    assert push.index("oras tag") < push.index(check) < push.index('echo "digest=$D" >> "$GITHUB_OUTPUT"')
+    loop = push[:push.index(check)].rsplit("for t in ", 1)[1].split("; do", 1)[0]
+    assert loop == "${{ steps.v.outputs.image_tags }}"           # every tag, the first included
+    assert '[ "$got" = "$D" ] || {' in push
+
+
+def test_publish_refuses_to_sign_an_image_an_earlier_run_signed():
+    # A re-run pushes the same digests (the build is reproducible), and signed them again: a
+    # second set of signatures on an image customers already have (#161).
+    pub = jobs(read("publish.yml"))["publish"]
+    guard = pub.index("is already signed by an earlier run")
+    assert pub.index("- id: push") < guard < pub.index("S sign --recursive")
+    step = pub[:guard].rsplit("- name:", 1)[1]
+    assert "for d in ${{ steps.push.outputs.digest }} ${{ steps.push.outputs.digest_amd64 }}" \
+           " ${{ steps.push.outputs.digest_arm64 }}; do" in step
+    assert 'if packaging/ci/tool cosign verify --key /work/cosign.pub --insecure-ignore-tlog "$IMAGE@$d"' in step
+
+
+def test_release_stops_before_signing_when_the_tag_already_has_a_release():
+    # gh release create ran last, after everything was signed, and a leftover draft for the
+    # tag broke it there (#161).
+    rel = jobs(read("release.yml"))["release"]
+    create = rel.index('gh release create "${{ needs.version.outputs.tag }}"')
+    assert rel.index('gh release view "$TAG"') < rel.index("cosign sign-blob") < create
+    step = rel[:rel.index('gh release view "$TAG"')].rsplit("- name:", 1)[1]
+    assert "if: ${{ env.REAL == 'true' }}" in step and "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in step
+
+
 def test_assets_makes_the_manifest_with_reads_only_before_sha256sums():
     # docs/decisions/0008-release-manifest.md: the manifest is a release file, so SHA256SUMS
     # (signed), the SLSA provenance and the release attestation all cover it.

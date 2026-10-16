@@ -219,6 +219,19 @@ jobs:
         with:
           name: attestations
           path: attestations
+      - name: The tag has no release yet (docs/releasing.md, "When a release run fails")
+        if: ${{ env.REAL == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          # Checked before signing: gh release create runs last, and a release already on the
+          # tag, a leftover draft from an earlier attempt included, broke it there (#161).
+          if gh release view "$TAG" --json url,isDraft > existing.json 2> /dev/null; then
+            echo "::error::$TAG already has a release: $(jq -r .url existing.json) (draft: $(jq -r .isDraft existing.json)). Delete it if it's a leftover draft, then re-run this job."
+            exit 1
+          fi
+          echo "no release on $TAG yet: ok"
       - name: Sign SHA256SUMS (our key, no public log)
         if: ${{ env.REAL == 'true' }}
         env:

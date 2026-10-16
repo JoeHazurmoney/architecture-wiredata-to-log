@@ -345,6 +345,18 @@ def generate(a: argparse.Namespace, env: Dict[str, str], forge: Any, repo: str =
                "url": "%s/%s/actions/runs/%s" % (server, slug, env["GITHUB_RUN_ID"]),
                "workflow_ref": env.get("GITHUB_WORKFLOW_REF", "")}
     platforms = dict(x.split("=", 1) for x in a.platform_digest if x.split("=", 1)[1])
+    changelog = getattr(a, "changelog", None)
+    approvals = forge.approvals(run["id"]) if run and not a.dry_run else []
+    if not a.dry_run:
+        # A tag: publish ran and the release gate was approved. Anything missing from them here
+        # would make a valid manifest saying the image wasn't published (#161).
+        missing = ([] if a.image_digest else ["the image index digest"]) + [
+            "the %s image digest" % arch for arch in ("amd64", "arm64") if arch not in platforms] + (
+            [] if changelog else ["the changelog"]) + (
+            [] if any(x["environment"] == "release" and x["state"] == "approved" for x in approvals)
+            else ["an approval of the release gate"])
+        if missing:
+            raise SystemExit("a release's manifest needs %s" % ", ".join(missing))
     with open(a.base_record) as f:
         record = json.load(f)
     with open(os.path.join(repo, "cosign.pub"), "rb") as f:
@@ -368,8 +380,8 @@ def generate(a: argparse.Namespace, env: Dict[str, str], forge: Any, repo: str =
                    "platforms": platforms} if a.image_digest else None),
         "base_images": base_images(record),
         "build_environment": build_environment(repo),
-        "changelog": changelog_record(a.changelog, repo) if getattr(a, "changelog", None) else None,
-        "approvals": forge.approvals(run["id"]) if run and not a.dry_run else [],
+        "changelog": changelog_record(changelog, repo) if changelog else None,
+        "approvals": approvals,
         "verification": {
             "public_key_sha256": key_sha,
             "signer_workflow": "%s/.github/workflows/attest.yml" % slug,

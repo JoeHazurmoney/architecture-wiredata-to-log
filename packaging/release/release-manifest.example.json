@@ -48,6 +48,8 @@
    "sha256": "e4a7b2c9d1f0a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b3"},
   {"name": "wd2l-1.1.0-image-amd64-oci.tar", "kind": "oci-image", "size": 41234567,
    "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"},
+  {"name": "wd2l-1.1.0-changelog.md", "kind": "changelog", "size": 6123,
+   "sha256": "5c9e1a7b3d2f4e6a8c0b1d3f5e7a9c2b4d6f8e0a1c3b5d7f9e2a4c6b8d0f1e3a"},
   {"name": "wd2l-1.1.0-image-amd64.spdx.json", "kind": "sbom", "size": 912034,
    "sha256": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}
  ],
@@ -66,7 +68,11 @@
   "tool_images": [{"name": "cosign", "ref": "registry.access.redhat.com/hi/cosign:latest@sha256:9d892a27d5ecc4235ce101798ea6d9f5f46221eb7447e309793db1c2450e384e"}],
   "runners": ["ubuntu-24.04", "ubuntu-24.04-arm"]
  },
- "changelog": null,
+ "changelog": {"file": "wd2l-1.1.0-changelog.md",
+               "sha256": "5c9e1a7b3d2f4e6a8c0b1d3f5e7a9c2b4d6f8e0a1c3b5d7f9e2a4c6b8d0f1e3a",
+               "tool": {"name": "git-cliff", "version": "2.14.2",
+                        "image": "docker.io/orhunp/git-cliff:2.14.2@sha256:1e696a381a1b0366bb6ccbb6bd4e50e73473fda88eab3a757b95e0d0d66c9531"},
+               "config_sha256": "8a3c5e7f9b1d2a4c6e8f0b2d4a6c8e0f1b3d5a7c9e2f4b6d8a0c1e3f5b7d9a2c"},
  "approvals": [{"environment": "release", "user": "JoeHazurmoney", "state": "approved", "comment": ""}],
  "verification": {
   "public_key_sha256": "7d4a8b2c9e1f0a3b5c7d9e1f3a5b7c9d1e3f5a7b9c1d3e5f7a9b1c3d5e7f9a1b",
