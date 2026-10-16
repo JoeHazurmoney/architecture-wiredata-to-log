@@ -37,6 +37,12 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {"amd64": {"$ref": "#/definitions/digest"}, "arm64": {"$ref": "#/definitions/digest"}}
+    },
+    "basePlatforms": {
+      "description": "every Linux platform in a base image's index: ours, and any others it ships (s390x, #171)",
+      "type": "object",
+      "required": ["amd64", "arm64"],
+      "additionalProperties": {"$ref": "#/definitions/digest"}
     }
   },
   "properties": {
@@ -222,7 +228,7 @@
           "stage": {"type": ["string", "null"]},
           "ref": {"type": "string"},
           "index_digest": {"$ref": "#/definitions/digest"},
-          "platforms": {"$ref": "#/definitions/platforms"},
+          "platforms": {"$ref": "#/definitions/basePlatforms"},
           "release": {"type": ["string", "null"]},
           "source_image": {"type": ["string", "null"]}
         }
