@@ -2,8 +2,9 @@
 """The SLSA v1 provenance predicate for a published image. `cosign attest --type slsaprovenance1`
 wraps it in an in-toto statement whose subject is the image digest. It names the commit, the
 workflow, the wheel and the exact base images, with their mirrored copies
-(docs/decisions/0006-release-artifacts-and-signing.md). While the repository is private this
-provenance is self-asserted: it is generated and signed in our own workflow.
+(docs/decisions/0006-release-artifacts-and-signing.md). It is self-asserted: made in the build
+workflow and signed with the release key. The SLSA Build L3 provenance is GitHub's attestation,
+made by attest.yml (docs/decisions/0007-slsa-build-l3.md).
 
     provenance.py --wheel WHL --froms froms.json --mirror REPO --started ISO > provenance.json"""
 

@@ -1,4 +1,4 @@
-"""Ethernet / IPv4 / UDP parsing and building, pcap files, and live AF_PACKET capture.
+"""Ethernet / IPv4 / UDP parsing, pcap files, and live AF_PACKET capture.
 
 Only what the receiver needs: pull the UDP payload out of an Ethernet frame. Anything
 that is not IPv4/UDP (or is an IP fragment) is reported as such and skipped.
@@ -20,7 +20,6 @@ VLAN_TPIDS = (0x8100, 0x88A8, 0x9100)
 IPPROTO_UDP = 17
 
 PCAP_GLOBAL = struct.Struct("IHHiIII")
-PCAP_RECORD = struct.Struct("IIII")
 LINKTYPE_ETHERNET = 1
 PCAP_MAGIC_US = 0xA1B2C3D4
 PCAP_MAGIC_NS = 0xA1B23C4D
@@ -80,27 +79,6 @@ def parse_udp(frame: bytes) -> Udp:
                bytes(frame[udp_off + 8:udp_off + ulen]))
 
 
-def _ip_checksum(header: bytes) -> int:
-    s = sum(struct.unpack("!%dH" % (len(header) // 2), header))
-    while s >> 16:
-        s = (s & 0xFFFF) + (s >> 16)
-    return ~s & 0xFFFF
-
-
-def mac_bytes(mac: str) -> bytes:
-    return bytes(int(x, 16) for x in mac.split(":"))
-
-
-def build_udp_frame(src_mac: str, dst_mac: str, src_ip: str, dst_ip: str,
-                    sport: int, dport: int, payload: bytes, ident: int = 0) -> bytes:
-    """Build an Ethernet/IPv4/UDP frame (UDP checksum 0). Used by tests and tools."""
-    udp = struct.pack("!HHHH", sport, dport, 8 + len(payload), 0) + payload
-    ip = struct.pack("!BBHHHBBH4s4s", 0x45, 0, 20 + len(udp), ident & 0xFFFF, 0x4000, 64,
-                     IPPROTO_UDP, 0, socket.inet_aton(src_ip), socket.inet_aton(dst_ip))
-    ip = ip[:10] + struct.pack("!H", _ip_checksum(ip)) + ip[12:]
-    return mac_bytes(dst_mac) + mac_bytes(src_mac) + struct.pack("!H", ETH_P_IP) + ip + udp
-
-
 # ---------------------------------------------------------------- pcap files
 
 def read_pcap(f: BinaryIO) -> Iterator[Tuple[float, bytes]]:
@@ -131,19 +109,6 @@ def read_pcap(f: BinaryIO) -> Iterator[Tuple[float, bytes]]:
         if len(data) < incl:
             return  # file still being written or truncated
         yield sec + frac / divisor, data
-
-
-class PcapWriter:
-    def __init__(self, f: BinaryIO, snaplen: int = 65535):
-        self.f = f
-        f.write(struct.pack("<IHHiIII", PCAP_MAGIC_US, 2, 4, 0, 0, snaplen, LINKTYPE_ETHERNET))
-
-    def write(self, ts: float, frame: bytes) -> None:
-        sec = int(ts)
-        usec = int(round((ts - sec) * 1e6))
-        if usec >= 1000000:
-            sec, usec = sec + 1, usec - 1000000
-        self.f.write(struct.pack("<IIII", sec, usec, len(frame), len(frame)) + frame)
 
 
 # ---------------------------------------------------------------- live capture

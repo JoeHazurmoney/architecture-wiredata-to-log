@@ -7,7 +7,8 @@ import pytest
 
 from wd2l import packets
 
-from helpers import DST_IP, DST_MAC, PORT, SRC_IP, SRC_MAC, eth
+from helpers import (DST_IP, DST_MAC, PORT, SRC_IP, SRC_MAC, PcapWriter, eth, ip_checksum,
+                     mac_bytes)
 
 
 def test_udp_roundtrip():
@@ -17,7 +18,7 @@ def test_udp_roundtrip():
 
 def test_ip_checksum_is_valid():
     ip = eth(b"x")[14:34]
-    assert packets._ip_checksum(ip) == 0
+    assert ip_checksum(ip) == 0
 
 
 def test_vlan_tagged():
@@ -60,7 +61,7 @@ def test_fuzz_parse_only_raises_notudp():
 
 def test_pcap_roundtrip():
     buf = io.BytesIO()
-    w = packets.PcapWriter(buf)
+    w = PcapWriter(buf)
     frames = [(1000.5 + i, eth(bytes([i]) * i)) for i in range(10)]
     for ts, f in frames:
         w.write(ts, f)
@@ -80,7 +81,7 @@ def test_pcap_big_endian_nanosecond():
 
 def test_pcap_truncated_tail_is_ignored():
     buf = io.BytesIO()
-    w = packets.PcapWriter(buf)
+    w = PcapWriter(buf)
     w.write(1, eth(b"a"))
     w.write(2, eth(b"b"))
     data = buf.getvalue()[:-5]
@@ -93,8 +94,8 @@ def test_pcap_rejects_other_formats():
 
 
 def test_mac_bytes():
-    assert packets.mac_bytes(DST_MAC) == b"\x02\x00\x00\x00\x00\x02"
-    assert packets.mac_bytes(SRC_MAC)[-1] == 1
+    assert mac_bytes(DST_MAC) == b"\x02\x00\x00\x00\x00\x02"
+    assert mac_bytes(SRC_MAC)[-1] == 1
 
 
 class FakeSock:

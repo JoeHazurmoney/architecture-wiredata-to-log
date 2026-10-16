@@ -1,5 +1,7 @@
 import random
 import re
+import socket
+import struct
 
 from wd2l import packets
 from wd2l.outputs import Output
@@ -11,8 +13,45 @@ DST_IP = "10.255.255.2"
 PORT = 5514
 
 
+def ip_checksum(header: bytes) -> int:
+    s = sum(struct.unpack("!%dH" % (len(header) // 2), header))
+    while s >> 16:
+        s = (s & 0xFFFF) + (s >> 16)
+    return ~s & 0xFFFF
+
+
+def mac_bytes(mac: str) -> bytes:
+    return bytes(int(x, 16) for x in mac.split(":"))
+
+
+def build_udp_frame(src_mac: str, dst_mac: str, src_ip: str, dst_ip: str,
+                    sport: int, dport: int, payload: bytes, ident: int = 0) -> bytes:
+    """An Ethernet/IPv4/UDP frame (UDP checksum 0), as the tap would deliver one."""
+    udp = struct.pack("!HHHH", sport, dport, 8 + len(payload), 0) + payload
+    ip = struct.pack("!BBHHHBBH4s4s", 0x45, 0, 20 + len(udp), ident & 0xFFFF, 0x4000, 64,
+                     packets.IPPROTO_UDP, 0, socket.inet_aton(src_ip), socket.inet_aton(dst_ip))
+    ip = ip[:10] + struct.pack("!H", ip_checksum(ip)) + ip[12:]
+    return mac_bytes(dst_mac) + mac_bytes(src_mac) + struct.pack("!H", packets.ETH_P_IP) + ip + udp
+
+
+class PcapWriter:
+    """A classic libpcap file, as tcpdump -w writes one, for packets.read_pcap to read."""
+
+    def __init__(self, f, snaplen: int = 65535):
+        self.f = f
+        f.write(struct.pack("<IHHiIII", packets.PCAP_MAGIC_US, 2, 4, 0, 0, snaplen,
+                            packets.LINKTYPE_ETHERNET))
+
+    def write(self, ts: float, frame: bytes) -> None:
+        sec = int(ts)
+        usec = int(round((ts - sec) * 1e6))
+        if usec >= 1000000:
+            sec, usec = sec + 1, usec - 1000000
+        self.f.write(struct.pack("<IIII", sec, usec, len(frame), len(frame)) + frame)
+
+
 def eth(datagram: bytes, ident: int = 0) -> bytes:
-    return packets.build_udp_frame(SRC_MAC, DST_MAC, SRC_IP, DST_IP, 40000, PORT, datagram, ident)
+    return build_udp_frame(SRC_MAC, DST_MAC, SRC_IP, DST_IP, 40000, PORT, datagram, ident)
 
 
 TIME_FIELDS = ("wd2l_tx_time", "wd2l_rx_time")
@@ -130,7 +169,7 @@ def read_audit(directory):
 
 def write_pcap(path, datagrams, t0=1000.0):
     with open(path, "wb") as f:
-        w = packets.PcapWriter(f)
+        w = PcapWriter(f)
         for i, d in enumerate(datagrams):
             w.write(t0 + i * 0.0005, eth(d, i))
 

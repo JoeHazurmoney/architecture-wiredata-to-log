@@ -7,6 +7,8 @@ sequence number and counters, so the receiver can tell "quiet" from "broken".
 
 With --state, the sender also counts its own restarts and tells the receiver which stream came
 before this one and how far it got, so the receiver can spot a lost tail or a whole missed run.
+
+Section numbers (§N) are docs/audit-and-health.md's; "ICD §N" is docs/interface-description.md's.
 """
 
 from __future__ import annotations
@@ -32,7 +34,7 @@ from typing import Any, Deque, Dict, List, Optional, Sequence, Set, Tuple
 
 from . import __version__
 from . import audit as auditlog
-from . import hostinfo, logsetup, opaque, wire
+from . import cli, hostinfo, logsetup, opaque, wire
 from .reconcile import SetHash
 
 log = logging.getLogger("wd2l.sender")
@@ -793,22 +795,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--input-rcvbuf", type=int, default=256 * 1024,
                    help="TCP receive buffer for aggregator connections (0 = system default)")
     p.add_argument("-v", "--verbose", action="store_true")
-    p.add_argument("--audit-dir", help="write hash-chained audit records here "
-                                       "(deployed: /var/log/wd2l)")
-    p.add_argument("--audit-min-free-mb", type=int, default=256,
-                   help="free space below this raises audit_failure")
+    cli.add_common_args(p)
     p.add_argument("--egress-iface", help="egress NIC whose carrier and transmit counters go in "
                                           "every heartbeat (deployed: ens224)")
-    p.add_argument("--chronyc", default="chronyc",
-                   help="chronyc command for time quality (\"-c tracking\" is added)")
-    p.add_argument("--chrony-addr", type=hostinfo.chrony_address, metavar="HOST[:PORT]",
-                   help="ask chronyd over UDP (its command port, 323) for time quality instead "
-                        "of running --chronyc; the container units use 127.0.0.1:323")
-    p.add_argument("--max-stratum", type=hostinfo.stratum, default=3, metavar="N",
-                   help="time alarm when chrony's stratum is above N (1 is a server with its own "
-                        "reference clock, e.g. GPS)")
-    p.add_argument("--log-format", choices=("text", "json"), default="text",
-                   help="operational log lines: text, or one JSON object per line")
     return p
 
 
