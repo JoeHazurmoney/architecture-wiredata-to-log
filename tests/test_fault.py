@@ -328,16 +328,56 @@ def test_the_final_heartbeats_copies_dont_move_the_clock_offset():
     assert r.streams[SID].clock_offset == 0.0 and r.last_clock_offset == 0.0
     assert [x for x in out.kinds("time_status") if x["time_status"] == "alarm"] == []
     assert len(out.kinds("stream_end")) == 1
-    wall[0] = 1001.5                                   # a new heartbeat still moves it
-    feed(r, hbf(2, sender_time=1001.0), 1.5)
-    assert r.streams[SID].clock_offset == 0.5
+    wall[0] = 1001.0                                   # a new, lower reading still moves it
+    feed(r, hbf(2, sender_time=1001.2), 1.5)
+    assert r.streams[SID].clock_offset == -0.2
 
 
-def test_skew_raises_the_time_alarm():
-    r, out = rxf(record_clock=lambda: 1000.5)
-    feed(r, hbf(0, sender_time=1000.0), 0)
-    r.tick(0)
-    assert "clock skew" in out.kinds("time_status")[0]["time_reason"]
+def skew_rx():
+    """A receiver whose wall clock the test sets, and a heartbeat sent at s, read at s + offset."""
+    wall = [0.0]
+    r, out = rxf(record_clock=lambda: wall[0])
+
+    def beat(seq, sent, offset):
+        wall[0] = sent + offset
+        feed(r, hbf(seq, sender_time=sent), seq)
+        r.tick(seq)
+    return r, out, beat
+
+
+def alarms(out):
+    return [x["time_reason"] for x in out.kinds("time_status") if x["time_status"] == "alarm"]
+
+
+def test_a_real_skew_raises_the_time_alarm_from_the_third_reading():
+    r, out, beat = skew_rx()
+    for seq in range(2):
+        beat(seq, 1000.0 + seq, 0.5)
+    assert alarms(out) == []                           # fewer than 3 readings: not judged
+    beat(2, 1002.0, 0.5)
+    assert alarms(out) == ["clock skew 0.500 s > 0.05 s"]
+
+
+def test_a_delayed_heartbeat_is_not_skew():
+    """#157: the receiver's own delay before reading a heartbeat (a busy host, a capture
+    backlog) only adds to the reading, so the lowest of the last 10 is the offset."""
+    r, out, beat = skew_rx()
+    for seq, offset in enumerate((0.236, 0.0, 0.0, 0.068, 0.3, 0.0)):   # start-up lag first
+        beat(seq, 1000.0 + seq, offset)
+    assert alarms(out) == [] and r.streams[SID].clock_offset == 0.0
+    assert r.emit_health(6)["clock_offset_s"] == 0.0
+
+
+def test_the_lowest_reading_ages_out_of_the_window():
+    """A clock that jumps ahead still shows, once the low readings are older than the window."""
+    from wd2l import receiver
+    r, out, beat = skew_rx()
+    beat(0, 1000.0, 0.0)
+    for seq in range(1, receiver.OFFSET_WINDOW):
+        beat(seq, 1000.0 + seq, 0.2)
+    assert alarms(out) == []
+    beat(receiver.OFFSET_WINDOW, 1000.0 + receiver.OFFSET_WINDOW, 0.2)
+    assert alarms(out) == ["clock skew 0.200 s > 0.05 s"]
 
 
 def test_summary_carries_the_answer_and_the_segment_colors():
