@@ -476,8 +476,10 @@ a pin. The pins differ in what they reach:
   and major versions of `hi/python`.
 * **A fixable High or Critical in a released image.** The weekly rescan
   ([`image-rescan.yml`](../.github/workflows/image-rescan.yml)) rescans the three latest full
-  releases (not pre-releases) with fresh vulnerability data, and opens an issue for each one
-  that needs a review (or comments on its open issue).
+  releases (not pre-releases) with fresh vulnerability data, each by the image digest its
+  manifest records, and opens an issue for each one that needs a review (or comments on its
+  open issue). The issue is labelled `security` and `bug`, so the next release's manifest lists
+  it under Known issues.
   Ship a patch release on a base with the fix **within 7 days for a Critical, and 30 days for a
   High**, counted from the later of the issue and that base's publication. Until the base exists,
   the finding needs an exception (below).
@@ -547,8 +549,9 @@ exception covers; so does an exception that has expired or lacks a field.
 [`packaging/container/vuln-exceptions.json`](../packaging/container/vuln-exceptions.json)
 records the security owner's approval of one fixable High or Critical, so that it doesn't pause
 a run for review again. Only the security owner approves one, and its `expires` is at most 90
-days out. An expired exception, used or not, needs a review again: every run pauses until it is
-renewed or removed.
+days out, counted from the scan: one that runs longer covers nothing and needs a review. An
+expired exception, used or not, needs a review again: every run pauses until it is renewed or
+removed.
 
 ## Keys
 
