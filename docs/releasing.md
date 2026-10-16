@@ -38,7 +38,7 @@ proves:
   test fails the run (`WD2L_NO_SKIPS=1`, [`tests/conftest.py`](../tests/conftest.py)), so a
   missing tool or package can't turn tests off. The test runner is hash-pinned
   ([`packaging/ci/test-requirements.txt`](../packaging/ci/test-requirements.txt); the 3.9 leg
-  uses [`packaging/ci/py39/`](../packaging/ci/py39/test-requirements.txt), since pytest 9 needs
+  uses [`packaging/ci-py39/`](../packaging/ci-py39/test-requirements.txt), since pytest 9 needs
   3.10).
 * **lint**: hadolint and Trivy accept the Containerfile, and every `FROM` is a Hardened Image,
   a FIPS variant, pinned by digest

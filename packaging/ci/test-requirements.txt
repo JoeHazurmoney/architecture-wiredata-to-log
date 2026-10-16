@@ -1,7 +1,7 @@
 # The test runner for CI (tests.yml's pytest job, image.yml's fips-tests), hash-pinned like the
 # other tools on the release path, for Python 3.10 and up. Install it with --require-hashes, in
-# its own install or with packaging/release/requirements.txt. The 3.9 leg uses py39/ instead:
-# pytest 9 needs 3.10 (#139). Developers can use any recent pytest.
+# its own install or with packaging/release/requirements.txt. The 3.9 leg uses ../ci-py39/
+# instead: pytest 9 needs 3.10 (#139). Developers can use any recent pytest.
 pytest==9.1.1 \
     --hash=sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c
 iniconfig==2.3.1 \

@@ -1,7 +1,8 @@
 # The test runner for tests.yml's Python 3.9 leg (the floor) only, hash-pinned. pytest 9, pluggy
 # 1.7 and iniconfig 2.2 need 3.10, so this keeps pytest 8.4.2, which lacks the tmpdir fix of
-# CVE-2025-71176 (9.0.3; #139). Its own directory, so Dependabot's ignore rules for those
-# versions apply here only (.github/dependabot.yml). Every other job: ../test-requirements.txt.
+# CVE-2025-71176 (9.0.3; #139). Its own directory, beside packaging/ci and not below it, so
+# Dependabot's ignore rules for those versions apply here only (#145). Every other job:
+# ../ci/test-requirements.txt.
 pytest==8.4.2 \
     --hash=sha256:872f880de3fc3a5bdc88a11b39c9710c3497a547cfa9320bc3c5e62fbf272e79
 iniconfig==2.1.0 \

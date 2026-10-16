@@ -46,10 +46,10 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
-  # The same for the 3.9 leg (packaging/ci/py39/), in its own directory because ignore rules
-  # hold for a whole directory (#139).
+  # The same for the 3.9 leg, with its own ignores (#139). A sibling of packaging/ci, not below
+  # it: the /packaging/ci entry reads the directories below it too (#145).
   - package-ecosystem: pip
-    directory: "/packaging/ci/py39"
+    directory: "/packaging/ci-py39"
     schedule:
       interval: weekly
     commit-message:
