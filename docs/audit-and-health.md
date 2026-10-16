@@ -286,8 +286,8 @@ a missing file or directory, or one it may not read (run it as `wd2l`, or join `
   GPS-disciplined, skew over ~50 ms points at time sync, not the network.
 * The receiver works out `time_status` (`ok` or `alarm`, with `time_reason`) from both sides and
   the skew. It is in every summary, and each change is a `type=time_status` record, so "WD2L -
-  Time quality" fires at once. Bad time doesn't lose events, so it is shown apart from the
-  transfer's fault status.
+  Time quality" fires at its next run (every 15 minutes). Bad time doesn't lose events, so it
+  is shown apart from the transfer's fault status.
 
 **Code:** `wd2l/hostinfo.py` (`TimeQuality`), `wd2l/fault.py` (`time_status`).
 
