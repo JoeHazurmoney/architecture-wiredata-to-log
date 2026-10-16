@@ -4,7 +4,9 @@
 * nothing shared between runs on the release path, and only GitHub-hosted runners;
 * attestation runs only for a v* tag, and only in this repository;
 * every job has a time limit, and a newer commit cancels only a PR's or a dry run's older run,
-  never a run on main or a tag's (docs/releasing.md, "When CI runs")."""
+  never a run on main or a tag's (docs/releasing.md, "When CI runs");
+* the wheel and the sdist are built one way, with hash-pinned tools, and a rebuild that
+  differs fails the run."""
 
 import glob
 import os
@@ -304,18 +306,37 @@ def test_only_the_floors_job_keeps_a_pytest_without_the_tmpdir_fix():
 def test_the_wheel_is_built_with_hash_pinned_tools_only():
     # The wheel is in every package. `pip install build` and an isolated build fetched whatever
     # build and setuptools PyPI served that minute, unhashed, into a signed release (#155).
-    install = "python -m pip install -q --require-hashes -r packaging/build-tools/requirements.txt"
-    builds = 0
+    # packaging/build-dist.sh is the one way to build it: the shipped build and the rebuild
+    # it's compared with take the same steps (#159).
+    with open(os.path.join(REPO, "packaging", "build-dist.sh"), encoding="utf-8") as f:
+        script = f.read()
+    install = '-m pip install -q --require-hashes -r "$REPO/packaging/build-tools/requirements.txt"'
+    builds = list(re.finditer(r"-m build\b.*", script))
+    assert len(builds) == 1 and "--no-isolation" in builds[0].group(0)
+    assert install in script[:builds[0].start()]
+    # setuptools gives the wheel's files the builder's umask: RHEL's 002 made another wheel.
+    assert re.search(r"^umask 022$", script[:builds[0].start()], re.M)
+    assert "normalize_sdist.py" in script[builds[0].end():]
     for name in RELEASE_PATH:
         for job, body in jobs(read(name)).items():
-            for m in re.finditer(r"python -m build\b.*", body):
-                builds += 1
-                assert "--no-isolation" in m.group(0), (name, job, m.group(0))
-                assert install in body[:m.start()], (name, job)
+            assert not re.search(r"-m build\b", body), (name, job)
             assert not re.search(r"pip install (?:-\S+ )*(?:build|setuptools)\b", body), (name, job)
-    assert builds == 2                               # image.yml's wheel and reproducible jobs
+    image = jobs(read("image.yml"))
+    assert "packaging/build-dist.sh dist\n" in image["wheel"]
+    assert "packaging/build-dist.sh dist2\n" in image["reproducible"]
     with open(os.path.join(REPO, ".github", "dependabot.yml"), encoding="utf-8") as f:
         assert 'directory: "/packaging/build-tools"' in f.read()
+
+
+def test_a_build_that_does_not_reproduce_fails():
+    # Report-only since it was added, and still after matching on every run, v1.0.0's
+    # included; a wheel mismatch only printed "wheel: DIFFERS" (#159).
+    for name in RELEASE_PATH:
+        assert "continue-on-error" not in read(name), name
+    rebuild = jobs(read("image.yml"))["reproducible"]
+    assert 'packaging/check_dist.py dist2 --commit "$(git rev-parse HEAD)" --same-as dist || rc=1' in rebuild
+    assert 'if [ "$want" = "$got" ]; then echo "image: identical"; exit $rc; fi' in rebuild
+    assert rebuild.rstrip().endswith("exit 1")       # an image that differs
 
 
 def test_called_workflows_set_no_concurrency_of_their_own():

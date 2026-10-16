@@ -203,15 +203,28 @@ def test_record_refuses_an_index_without_arm64(tmp_path):
 
 
 import stat
+import shutil
 import zipfile
 
 ci = load_script("packaging/container/check_image.py")
 SHA = "a" * 40
 
 
+COMMANDS = {"wd2l-sender": "wd2l.sender:main", "wd2l-receiver": "wd2l.receiver:main"}
+
+
+def wrapper(target, shebang="#!/usr/sbin/python3"):
+    """The console script pip writes for TARGET (pip 25's form, the builder's interpreter)."""
+    module, attr = target.split(":")
+    return ("%s\nimport sys\nfrom %s import %s\nif __name__ == '__main__':\n"
+            "    sys.argv[0] = sys.argv[0].removesuffix('.exe')\n    sys.exit(%s())\n"
+            % (shebang, module, attr, attr))
+
+
 def wheel_and_rootfs(tmp_path, build=SHA):
     """A wheel and a rootfs that installed it, plus a base rootfs with the same rpmdb."""
-    files = {"wd2l/__init__.py": b'__version__ = "0.3.0"\n', "wd2l/BUILD": (build + "\n").encode()}
+    files = {"wd2l/__init__.py": b'__version__ = "0.3.0"\n', "wd2l/sender.py": b"def main(): pass\n",
+             "wd2l/BUILD": (build + "\n").encode()}
     whl = tmp_path / "wd2l-0.3.0-py3-none-any.whl"
     with zipfile.ZipFile(str(whl), "w") as z:
         rec = []
@@ -219,6 +232,9 @@ def wheel_and_rootfs(tmp_path, build=SHA):
             z.writestr(name, data)
             h = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
             rec.append("%s,sha256=%s,%d" % (name, h, len(data)))
+        z.writestr("wd2l-0.3.0.dist-info/entry_points.txt", "[console_scripts]\n"
+                   + "".join("%s = %s\n" % kv for kv in COMMANDS.items()))
+        rec.append("wd2l-0.3.0.dist-info/entry_points.txt,,")
         rec.append("wd2l-0.3.0.dist-info/RECORD,,")
         z.writestr("wd2l-0.3.0.dist-info/RECORD", "\n".join(rec) + "\n")
     roots = []
@@ -230,11 +246,22 @@ def wheel_and_rootfs(tmp_path, build=SHA):
         (root / ci.RPMDB).write_bytes(b"the same rpmdb")
         (root / "tmp").mkdir()
         os.chmod(str(root / "tmp"), 0o1777)
+        (root / "usr/bin").mkdir()
+        (root / "usr/bin/python3.12").write_bytes(b"\x7fELF")
+        os.chmod(str(root / "usr/bin/python3.12"), 0o755)
+        os.symlink("python3.12", str(root / "usr/bin/python3"))
+        os.symlink("bin", str(root / "usr/sbin"))
         roots.append(root)
     site = roots[0] / "usr/lib/python3.12/site-packages"
     for name, data in files.items():
         (site / name).parent.mkdir(parents=True, exist_ok=True)
         (site / name).write_bytes(data)
+    (site / "wd2l/__pycache__").mkdir()
+    for stem in ("__init__", "sender"):
+        (site / "wd2l/__pycache__" / (stem + ".cpython-312.pyc")).write_bytes(b"pyc")
+    for command, target in COMMANDS.items():
+        (roots[0] / "usr/bin" / command).write_text(wrapper(target))
+        os.chmod(str(roots[0] / "usr/bin" / command), 0o755)
     return str(whl), str(roots[0]), str(roots[1])
 
 
@@ -324,6 +351,77 @@ def test_changed_wd2l_file_and_wrong_build_are_refused(tmp_path):
         f.write("# changed\n")
     text = "\n".join(ci.check_wheel_files(root, whl, "b" * 40))
     assert "changed: " in text and "wd2l/__init__.py" in text and "BUILD" in text
+
+
+def test_files_the_wheel_does_not_have_are_refused(tmp_path):
+    # Only the wheel's own rows were checked: anything added beside them passed (#159).
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    wd2l = os.path.join(root, "usr/lib/python3.12/site-packages/wd2l")
+    for rel in ("extra.py", "__pycache__/gone.cpython-312.pyc",
+                "__pycache__/sender.cpython-312.opt-1.pyc", "data/x.txt"):
+        os.makedirs(os.path.dirname(os.path.join(wd2l, rel)), exist_ok=True)
+        open(os.path.join(wd2l, rel), "w").close()
+    os.symlink("/etc", os.path.join(wd2l, "etc"))
+    # A wheel file swapped for a link to the same bytes passes the hash check, read through it.
+    shutil.move(os.path.join(wd2l, "sender.py"), os.path.join(root, "sender.py"))
+    os.symlink(os.path.join(root, "sender.py"), os.path.join(wd2l, "sender.py"))
+    probs = ci.check_wheel_files(root, whl, SHA)
+    shown = "not in the wheel: /usr/lib/python3.12/site-packages/wd2l/"
+    linked = "a symlink, not the wheel's file: /usr/lib/python3.12/site-packages/wd2l/"
+    assert sorted(probs) == sorted([shown + rel for rel in (
+        "extra.py", "__pycache__/gone.cpython-312.pyc", "__pycache__/sender.cpython-312.opt-1.pyc",
+        "data", "data/x.txt")] + [linked + "etc", linked + "sender.py"])
+
+
+def test_each_command_runs_its_entry_point_with_the_images_python(tmp_path):
+    # The console scripts in /usr/bin weren't checked at all (#159).
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    bin_ = os.path.join(root, "usr/bin")
+    os.remove(os.path.join(bin_, "wd2l-sender"))
+    with open(os.path.join(bin_, "wd2l-receiver"), "w") as f:
+        f.write(wrapper("wd2l.sender:main", shebang="#!/usr/local/bin/python3"))
+    with open(os.path.join(bin_, "wd2l-extra"), "w") as f:
+        f.write(wrapper("wd2l.sender:main"))
+    os.chmod(os.path.join(bin_, "wd2l-extra"), 0o644)
+    assert sorted(ci.check_wheel_files(root, whl, SHA)) == sorted([
+        "missing command: /usr/bin/wd2l-sender",
+        "/usr/bin/wd2l-receiver runs '/usr/local/bin/python3', which the image doesn't have",
+        "/usr/bin/wd2l-receiver doesn't run wd2l.receiver:main",
+        "not in the wheel's entry points: /usr/bin/wd2l-extra"])
+
+
+def test_a_command_must_import_and_call_its_entry_point(tmp_path):
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    bin_ = os.path.join(root, "usr/bin")
+    with open(os.path.join(bin_, "wd2l-sender"), "w") as f:
+        f.write("#!/usr/sbin/python3\nimport sys\nfrom wd2l.sender import main\nsys.exit(0)\n")
+    with open(os.path.join(bin_, "wd2l-receiver"), "w") as f:
+        f.write("#!/usr/sbin/python3\nimport sys\nfrom wd2l import receiver as main\nsys.exit(main())\n")
+    assert sorted(ci.check_wheel_files(root, whl, SHA)) == [
+        "/usr/bin/wd2l-receiver doesn't run wd2l.receiver:main",
+        "/usr/bin/wd2l-sender doesn't run wd2l.sender:main"]
+
+
+def test_a_command_must_be_an_executable_python_file(tmp_path):
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    bin_ = os.path.join(root, "usr/bin")
+    os.chmod(os.path.join(bin_, "wd2l-sender"), 0o644)
+    os.remove(os.path.join(bin_, "wd2l-receiver"))
+    os.symlink("python3", os.path.join(bin_, "wd2l-receiver"))
+    assert sorted(ci.check_wheel_files(root, whl, SHA)) == sorted([
+        "not executable: /usr/bin/wd2l-sender",
+        "/usr/bin/wd2l-receiver is a symlink, not pip's script"])
+
+
+def test_the_interpreter_is_looked_up_inside_the_image(tmp_path):
+    # An absolute symlink points into the image, not at the runner's own files.
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    os.remove(os.path.join(root, "usr/bin/python3"))
+    os.symlink("/usr/bin/python3.12", os.path.join(root, "usr/bin/python3"))
+    assert ci.check_wheel_files(root, whl, SHA) == []
+    os.remove(os.path.join(root, "usr/bin/python3.12"))
+    probs = ci.check_wheel_files(root, whl, SHA)
+    assert len(probs) == 2 and all("which the image doesn't have" in p for p in probs)
 
 
 vg = load_script("packaging/container/vuln_gate.py")

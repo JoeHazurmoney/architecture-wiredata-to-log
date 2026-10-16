@@ -65,13 +65,9 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Wheel and sdist (BUILD = the commit; file times = the commit's)
+      - name: Wheel and sdist (hash-pinned tools; BUILD = the commit; file times = the commit's)
         run: |
-          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"; export SOURCE_DATE_EPOCH
-          # The build tools by hash, and no isolated build env that would fetch them unpinned.
-          python -m pip install -q --require-hashes -r packaging/build-tools/requirements.txt
-          git rev-parse HEAD > wd2l/BUILD
-          python -m build --no-isolation
+          packaging/build-dist.sh dist
           python packaging/check_dist.py dist --commit "$(git rev-parse HEAD)"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -129,7 +125,6 @@ jobs:
           - {arch: arm64, runner: ubuntu-24.04-arm}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
-    continue-on-error: true      # report-only until it has matched on 10 pushes in a row
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -147,18 +142,18 @@ jobs:
         with:
           name: build-info-${{ matrix.arch }}
           path: build-info
-      - name: Rebuild the wheel and the image from the same commit, on a fresh runner
+      - name: Rebuild the wheel, the sdist and the image from the same commit, on a fresh runner
         run: |
-          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"; export SOURCE_DATE_EPOCH
-          python -m pip install -q --require-hashes -r packaging/build-tools/requirements.txt
-          git rev-parse HEAD > wd2l/BUILD
-          python -m build --no-isolation --wheel --outdir dist2
-          if cmp -s dist/*.whl dist2/*.whl; then echo "wheel: identical"; else echo "wheel: DIFFERS"; fi
+          # The same script as the wheel job, so a difference is the build's, not the steps'.
+          # Any difference fails the run; the image is compared too, to show what differs.
+          rc=0
+          packaging/build-dist.sh dist2
+          python packaging/check_dist.py dist2 --commit "$(git rev-parse HEAD)" --same-as dist || rc=1
           packaging/container/build.sh dist localhost/wd2l:again
           want=$(jq -r .image_id build-info/build-info.json)
           got=$(podman image inspect --format '{{.Id}}' localhost/wd2l:again)
           echo "first build $want"; echo "rebuild     $got"
-          if [ "$want" = "$got" ]; then echo "image: identical"; exit 0; fi
+          if [ "$want" = "$got" ]; then echo "image: identical"; exit $rc; fi
           first=$(podman load -q -i image/image.oci.tar | awk '{print $NF}')
           for i in "$first" localhost/wd2l:again; do
             c=$(podman create -q "$i")

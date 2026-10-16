@@ -125,6 +125,109 @@ def test_exactly_one_wheel_and_one_sdist(tmp_path):
     assert any("one wheel" in p for p in probs) and any("one sdist" in p for p in probs)
 
 
+import gzip
+import shutil
+import struct
+
+normalize = load_script("packaging/normalize_sdist.py")
+EPOCH = 1792116758
+SDIST_FILES = (("wd2l-0.3.0/", None, 0o777), ("wd2l-0.3.0/README.md", b"readme\n", 0o666),
+               ("wd2l-0.3.0/deploy/common/wd2l-audit-seal.sh", b"#!/bin/sh\n", 0o777))
+
+
+def setuptools_sdist(path, when, uid=1001, name="runner", umask=0o002):
+    """An sdist as setuptools writes one: the build time on every member and in the gzip
+    header, the builder as the owner, and the builder's umask in the modes."""
+    with open(path, "wb") as raw:
+        with gzip.GzipFile(os.path.basename(path), "wb", fileobj=raw, mtime=int(when)) as gz:
+            with tarfile.open(fileobj=gz, mode="w", format=tarfile.PAX_FORMAT) as t:
+                for n, data, mode in SDIST_FILES:
+                    info = tarfile.TarInfo(n.rstrip("/"))
+                    info.mtime, info.uid, info.gid, info.uname, info.gname = when, uid, uid, name, name
+                    if data is None:
+                        info.type, info.mode = tarfile.DIRTYPE, mode & ~umask
+                        t.addfile(info)
+                    else:
+                        info.size, info.mode = len(data), mode & ~umask
+                        t.addfile(info, io.BytesIO(data))
+
+
+def test_two_builds_of_one_commit_give_the_same_sdist(tmp_path):
+    # setuptools ignores SOURCE_DATE_EPOCH for sdists, so two runners' sdists differed in
+    # every member's time and in the gzip header (#159).
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    a, b = str(tmp_path / "a/wd2l-0.3.0.tar.gz"), str(tmp_path / "b/wd2l-0.3.0.tar.gz")
+    setuptools_sdist(a, EPOCH + 151.9136133)
+    setuptools_sdist(b, EPOCH + 5154.3777523, uid=0, name="root", umask=0o022)
+    assert open(a, "rb").read() != open(b, "rb").read()
+    for p in (a, b):
+        normalize.normalize(p, EPOCH)
+    assert open(a, "rb").read() == open(b, "rb").read()
+    raw = open(a, "rb").read()
+    assert struct.unpack("<I", raw[4:8])[0] == EPOCH
+    with tarfile.open(a) as t:
+        got = [(m.name, m.mtime, m.uid, m.gid, m.uname, m.gname, oct(m.mode),
+                t.extractfile(m).read() if m.isfile() else None) for m in t.getmembers()]
+        assert all(m.pax_headers == {} for m in t.getmembers())
+    assert got == [
+        ("wd2l-0.3.0", EPOCH, 0, 0, "root", "root", "0o755", None),
+        ("wd2l-0.3.0/README.md", EPOCH, 0, 0, "root", "root", "0o644", b"readme\n"),
+        ("wd2l-0.3.0/deploy/common/wd2l-audit-seal.sh", EPOCH, 0, 0, "root", "root", "0o755",
+         b"#!/bin/sh\n")]
+
+
+def test_normalize_needs_source_date_epoch(tmp_path, monkeypatch):
+    p = str(tmp_path / "wd2l-0.3.0.tar.gz")
+    setuptools_sdist(p, EPOCH + 1)
+    monkeypatch.delenv("SOURCE_DATE_EPOCH", raising=False)
+    with pytest.raises(SystemExit) as e:
+        normalize.main([p])
+    assert "SOURCE_DATE_EPOCH" in str(e.value)
+    monkeypatch.setenv("SOURCE_DATE_EPOCH", str(EPOCH))
+    assert normalize.main([p]) == 0
+    with tarfile.open(p) as t:
+        assert {m.mtime for m in t.getmembers()} == {EPOCH}
+
+
+def rebuilt(tmp_path):
+    first, second = tmp_path / "dist", tmp_path / "dist2"
+    first.mkdir()
+    good_dist(first)
+    shutil.copytree(str(first), str(second))
+    return str(first), str(second)
+
+
+def test_a_rebuild_must_match_the_first_build_byte_for_byte(tmp_path):
+    first, second = rebuilt(tmp_path)
+    assert check_dist.same_as(second, first) == []
+    assert check_dist.main([second, "--commit", "abc123", "--version", "0.3.0",
+                            "--same-as", first]) == 0
+    with tarfile.open(os.path.join(second, "wd2l-0.3.0.tar.gz")) as t:
+        members = [(m, t.extractfile(m).read()) for m in t.getmembers()]
+    with tarfile.open(os.path.join(second, "wd2l-0.3.0.tar.gz"), "w:gz") as t:
+        for m, data in members:
+            if m.name.endswith("/LICENSE"):
+                m.mtime = EPOCH
+            t.addfile(m, io.BytesIO(data))
+    with zipfile.ZipFile(os.path.join(second, "wd2l-0.3.0-py3-none-any.whl"), "a") as z:
+        z.writestr("wd2l/extra.py", "")
+    probs = check_dist.same_as(second, first)
+    text = "\n".join(probs)
+    assert "wd2l-0.3.0.tar.gz differs" in text and "wd2l-0.3.0/LICENSE: mtime" in text
+    assert "wd2l-0.3.0-py3-none-any.whl differs" in text and "wd2l/extra.py: only in" in text
+    assert check_dist.main([second, "--commit", "abc123", "--version", "0.3.0",
+                            "--same-as", first]) == 1
+
+
+def test_a_rebuild_must_make_the_same_files(tmp_path):
+    first, second = rebuilt(tmp_path)
+    os.remove(os.path.join(second, "wd2l-0.3.0.tar.gz"))
+    open(os.path.join(second, "wd2l-0.3.0.zip"), "w").close()
+    text = "\n".join(check_dist.same_as(second, first))
+    assert "wd2l-0.3.0.tar.gz: only in" in text and "wd2l-0.3.0.zip: only in" in text
+
+
 import subprocess
 
 TOOLS = os.path.join(REPO, "packaging", "ci", "tools.Containerfile")
