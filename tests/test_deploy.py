@@ -168,7 +168,7 @@ import wd2l
 def quadlet(path):
     """A Quadlet/systemd unit as {section: {key: [values]}}; continuation lines joined."""
     with open(path) as f:
-        text = f.read().replace("\r\n", "\n").replace("\\n", " ")
+        text = f.read().replace("\r\n", "\n").replace("\\\n", " ")
     out, sec = {}, None
     for line in text.splitlines():
         line = line.strip()
@@ -180,6 +180,17 @@ def quadlet(path):
         k, v = line.split("=", 1)
         sec.setdefault(k.strip(), []).append(v.strip())
     return out
+
+
+def test_the_quadlet_reader_joins_continued_lines(tmp_path):
+    """#143: it replaced the two characters \\n, not a backslash at the end of a line, so a
+    wrapped Exec= would have been read as two broken lines."""
+    f = tmp_path / "x.container"
+    f.write_text("[Container]\nExec=wd2l-receiver --live eth1 \\\n  --out-dir /var/lib/wd2l\n"
+                 "Image=wd2l:1\n")
+    q = quadlet(str(f))["Container"]
+    assert q["Exec"] == ["wd2l-receiver --live eth1    --out-dir /var/lib/wd2l"]
+    assert q["Image"] == ["wd2l:1"]
 
 
 QUADLETS = [
