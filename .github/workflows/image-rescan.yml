@@ -1,7 +1,8 @@
 name: image-rescan
 # Re-scans the released images, both platforms, with today's vulnerability data: a CVE disclosed after a release
-# opens an issue (docs/decisions/0004-container-base-image.md, docs/releasing.md). Also checks that every pinned
-# image digest still resolves: a registry that deletes retired digests otherwise breaks the next run that pulls (#97).
+# that needs a security review opens an issue (docs/decisions/0004-container-base-image.md, docs/releasing.md).
+# Also checks that every pinned image digest still resolves: a registry that deletes retired digests otherwise
+# breaks the next run that pulls (#97).
 on:
   schedule:
     - cron: "17 6 * * 1"
@@ -53,7 +54,6 @@ jobs:
         run: |
           mkdir -p .cache
           gh release list --limit 3 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' > tags.txt
-          fail=0
           mapfile -t tags < tags.txt
           for tag in "${tags[@]}"; do
             v=${tag#v}; ref="ghcr.io/joehazurmoney/wd2l:$v"
@@ -61,10 +61,14 @@ jobs:
               packaging/ci/tool grype "registry:$ref" --platform "linux/$a" -q -o json --file "/work/grype-$v-$a.json"
               packaging/ci/tool trivy image --platform "linux/$a" --quiet --cache-dir /work/.cache/trivy --scanners vuln \
                 --format json --output "/work/trivy-$v-$a.json" "$ref"
-              if ! python3 packaging/container/vuln_gate.py --grype "grype-$v-$a.json" --trivy "trivy-$v-$a.json" \
-                   --exceptions packaging/container/vuln-exceptions.json --summary "summary-$v-$a.md" > /dev/null; then
-                fail=1
-                title="Image rescan: wd2l $v ($a) has a fixable High/Critical vulnerability"
+              # Findings don't fail the run (#175): one that needs a review (exit 3) opens its
+              # issue, or comments on the open one. Any other exit is the gate itself failing.
+              rc=0
+              python3 packaging/container/vuln_gate.py --grype "grype-$v-$a.json" --trivy "trivy-$v-$a.json" \
+                --exceptions packaging/container/vuln-exceptions.json --summary "summary-$v-$a.md" --exit-code 3 > /dev/null || rc=$?
+              [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || exit "$rc"
+              if [ "$rc" -eq 3 ]; then
+                title="Image rescan: wd2l $v ($a) needs a security review"
                 n=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
                 if [ -n "$n" ]; then gh issue comment "$n" --body-file "summary-$v-$a.md"
                 else gh issue create --title "$title" --body-file "summary-$v-$a.md"; fi
@@ -72,4 +76,3 @@ jobs:
               { echo "## wd2l $v ($a)"; cat "summary-$v-$a.md"; } >> "$GITHUB_STEP_SUMMARY"
             done
           done
-          exit $fail

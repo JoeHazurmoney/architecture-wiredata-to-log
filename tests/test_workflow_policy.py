@@ -422,3 +422,47 @@ def test_assets_adds_the_changelog_bundle_and_verify_release_before_the_manifest
     # ...and the release checks itself with the script it ships, after SHA256SUMS.
     assert a.index("sha256sum -- * > SHA256SUMS") < \
         a.index('python "assets/wd2l-$V-verify-release.py" --dir assets --skip-signature')
+
+
+def test_scan_findings_pause_for_a_security_review_instead_of_failing():
+    # The user's rule (#175): scanning measures known risk; it records the findings and, when one
+    # needs a decision, waits for a person, as a release waits at its gate.
+    image = jobs(read("image.yml"))
+    scan = image["vuln-scan"]
+    assert "vuln_gate.py" in scan and "--exit-code" not in scan and "exit $rc" not in scan
+    review = image["vuln-review"]
+    assert "needs: [vuln-scan]" in review and "pattern: vuln-*" in review
+    assert "jq -s 'map(.gate.review_needed) | any' vuln-amd64/vuln-predicate.json vuln-arm64/vuln-predicate.json" in review
+    gate = image["security-review"]
+    assert "needs: [vuln-review]" in gate and "environment: security-review" in gate
+    # Pull requests and releases pause; a push to main records without pausing.
+    assert ("if: ${{ needs.vuln-review.outputs.needed == 'true' && "
+            "!(github.event_name == 'push' && github.ref == 'refs/heads/main') }}") in gate
+    # Every later step waits for the review: tests.yml's ci-ok and rpm, release.yml's publish.
+    assert "needs: [pytest, lab, image, rpm]" in jobs(read("tests.yml"))["ci-ok"]
+    assert "needs: [version, tests, image, rpm]" in jobs(read("release.yml"))["publish"]
+
+
+def test_code_scanning_uploads_whatever_results_exist_unless_cancelled():
+    # It was skipped whenever any image check failed, the functional lab included, so a finding
+    # never reached Code scanning on the push where it first showed (#175).
+    cs = jobs(read("tests.yml"))["code-scanning"]
+    assert "if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}" in cs
+    steps = cs.split("      - uses: ")[2:]
+    downloads = [s for s in steps if s.startswith("actions/download-artifact@")]
+    uploads = [s for s in steps if s.startswith("github/codeql-action/upload-sarif@")]
+    # One download by pattern: a platform whose image didn't build has no results to fetch.
+    assert len(downloads) == 1 and "pattern: vuln-*" in downloads[0]
+    assert len(uploads) == 4
+    for s in uploads:
+        sarif = re.search(r"sarif_file: (\S+)", s).group(1)
+        assert "if: ${{ hashFiles('%s') != '' }}" % sarif in s
+
+
+def test_the_rescan_opens_issues_from_the_review_decision_and_fails_only_on_errors():
+    # vuln_gate.py no longer fails on findings; --exit-code 3 marks "needs review" (#175).
+    scan = jobs(read("image-rescan.yml"))["rescan"]
+    assert '--summary "summary-$v-$a.md" --exit-code 3 > /dev/null || rc=$?' in scan
+    assert '[ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || exit "$rc"' in scan
+    assert 'if [ "$rc" -eq 3 ]; then' in scan
+    assert "exit $fail" not in scan

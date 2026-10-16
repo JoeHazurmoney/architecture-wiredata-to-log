@@ -501,10 +501,32 @@ def test_cli_exit_codes_summary_and_predicate(tmp_path):
     s, p = tmp_path / "s.md", tmp_path / "p.json"
     args = ["--grype", str(g), "--trivy", str(t), "--exceptions", str(e), "--today", TODAY,
             "--summary", str(s), "--predicate", str(p)]
-    assert vg.main(args) == 1
-    assert "CVE-1" in s.read_text() and json.loads(p.read_text())["gate"]["passed"] is False
-    e.write_text(json.dumps({"exceptions": [exc("CVE-1", "openssl-libs")]}))
+    # Findings never fail the build: they're recorded, and a review decides (#175).
     assert vg.main(args) == 0
+    pred = json.loads(p.read_text())["gate"]
+    assert pred["review_needed"] is True and pred["passed"] is False
+    assert s.read_text().startswith("### Vulnerability scan: security review needed")
+    assert "CVE-1" in s.read_text()
+    assert vg.main(args + ["--exit-code", "3"]) == 3          # the weekly rescan's issue trigger
+    e.write_text(json.dumps({"exceptions": [exc("CVE-1", "openssl-libs")]}))
+    assert vg.main(args + ["--exit-code", "3"]) == 0
+    assert json.loads(p.read_text())["gate"]["review_needed"] is False
+    assert s.read_text().startswith("### Vulnerability scan: no review needed")
+
+
+def test_an_exception_problem_needs_a_review_too(tmp_path):
+    g, t, e = tmp_path / "g.json", tmp_path / "t.json", tmp_path / "e.json"
+    g.write_text(json.dumps(grype_doc()))
+    t.write_text(json.dumps(trivy_doc()))
+    e.write_text(json.dumps({"exceptions": [exc("CVE-9", "x", expires="2026-10-01")]}))
+    p, sm = tmp_path / "p.json", tmp_path / "s.md"
+    args = ["--grype", str(g), "--trivy", str(t), "--exceptions", str(e), "--today", TODAY,
+            "--predicate", str(p), "--summary", str(sm)]
+    assert vg.main(args) == 0 and vg.main(args + ["--exit-code", "3"]) == 3
+    assert json.loads(p.read_text())["gate"]["review_needed"] is True
+    text = sm.read_text()
+    assert text.startswith("### Vulnerability scan: security review needed")
+    assert "**Exceptions to review**" in text and "CVE-9" in text
 
 
 def test_the_summary_lists_every_finding_and_why_it_passed_the_gate():

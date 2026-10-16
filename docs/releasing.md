@@ -16,7 +16,7 @@ publishes it.
 ```mermaid
 flowchart LR
   tag["tag vX.Y.Z"] --> tests["tests<br/>pytest 3.9 and 3.12, lab"]
-  tag --> image["image.yml<br/>lint, base-verify, wheel, build, reproducible,<br/>hardening, vuln-scan, sbom, functional, fips-tests"]
+  tag --> image["image.yml<br/>lint, base-verify, wheel, build, reproducible,<br/>hardening, vuln-scan, security-review,<br/>sbom, functional, fips-tests"]
   image --> rpm["rpm.yml<br/>EL9 and EL10 builds, 6 install tests"]
   tests --> publish["publish.yml<br/>push, mirror the bases, sign, attest,<br/>verify-published"]
   image --> publish
@@ -64,8 +64,11 @@ proves:
   exactly as in the wheel and nothing else beside them, and each command in `/usr/bin` runs
   its entry point with the image's Python
   ([`check_image.py`](../packaging/container/check_image.py)).
-* **vuln-scan**: Grype and Trivy find no fixable High or Critical vulnerability and no secret,
-  apart from approved exceptions ([`vuln_gate.py`](../packaging/container/vuln_gate.py)).
+* **vuln-scan**: Grype and Trivy record every finding
+  ([`vuln_gate.py`](../packaging/container/vuln_gate.py)). Findings never fail the build.
+* **security-review**: when a finding needs a decision, the run waits for a person
+  ([Security review](#security-review)). A pull request or a release pauses; a push to `main`
+  records without pausing.
 * **sbom**: the image's SBOM is the base's, plus wd2l, less pip
   ([`sbom_diff.py`](../packaging/container/sbom_diff.py)).
 * **functional**: the lab passes with the sender and receiver running from the image.
@@ -191,7 +194,7 @@ work had merged. It's linked from that PR's description and dated by the PR's me
    it, and deleting it retires the tag name for good (0.3.0rc6, #27).
 7. Review the draft:
    * the assets list, and the notes;
-   * the `vuln-scan` gate summary and the `hardening` result in the run.
+   * the `vuln-scan` summary and the `hardening` result in the run.
 8. **Publish release**. The notes are complete as generated, so there's nothing to paste.
 9. Check that what was published is the draft: `gh release view vX.Y.Z --json assets,author`
    shows every file, and github-actions as the author.
@@ -270,6 +273,9 @@ names as served.
     before anything is signed. `publish.yml`'s `publish` job and `release.yml`'s `release` job
     run in it, and the signing secrets live in it. `attest.yml` has no gate of its own. It runs
     only after `publish` was approved, and only for a `v*` tag in this repository.
+  * **The `security-review` environment:** the owner is its required reviewer. Any branch or
+    tag may use it: `image.yml`'s `security-review` job waits there when a scan finding needs
+    a review ([Security review](#security-review)).
   * **Actions:** every action must be pinned to a commit SHA, and a PR from any outside
     contributor waits for approval before its workflows run (they never get secrets).
   * **Secret scanning** with push protection, and Dependabot alerts and security updates.
@@ -422,9 +428,9 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
 
 * **Security > Code scanning.** Every Grype and Trivy finding for the image built from
   `main`, one alert each, with filters and history (`tests.yml`'s `code-scanning` job uploads
-  the SARIF files after each push to `main`).
-* **A run's Summary tab.** The vulnerability gate's verdict, then every finding with the reason
-  it did or didn't block (for example "passed: no fix yet"). A release carries the same table
+  the SARIF files after each push to `main`, even when another image check failed).
+* **A run's Summary tab.** Whether a security review is needed, then every finding and why
+  (for example "review", "exception" or "passed: no fix yet"). A release carries the same table
   for each platform as `wd2l-<version>-vuln-summary-<arch>.md`.
 * **A run's artifacts.** `vuln-<arch>` holds Grype's and Trivy's full JSON and SARIF; `sbom-<arch>`
   the SBOMs; `base-evidence` the base images' checks. GitHub deletes artifacts after the
@@ -470,13 +476,15 @@ a pin. The pins differ in what they reach:
   and major versions of `hi/python`.
 * **A fixable High or Critical in a released image.** The weekly rescan
   ([`image-rescan.yml`](../.github/workflows/image-rescan.yml)) rescans the three latest full
-  releases (not pre-releases) with fresh vulnerability data, and opens an issue for each new one.
+  releases (not pre-releases) with fresh vulnerability data, and opens an issue for each one
+  that needs a review (or comments on its open issue).
   Ship a patch release on a base with the fix **within 7 days for a Critical, and 30 days for a
   High**, counted from the later of the issue and that base's publication. Until the base exists,
   the finding needs an exception (below).
-* **The `vuln-scan` gate fails because of the base, not the change.** A CVE published since the
-  base last moved fails every PR. Move the base first, in its own PR. If no newer base has the
-  fix yet, the security owner records an exception so other work can merge.
+* **A PR pauses for review because of the base, not the change.** A CVE published since the
+  base last moved makes every PR wait at `security-review`. Move the base first, in its own PR.
+  If no newer base has the fix yet, the security owner approves the review, and records an
+  exception so the next PRs don't pause for the same finding.
 * **Before every release** ([Cutting a release](#cutting-a-release), step 1): the base is the
   newest that passes the pipeline, or the release's summary says why not, and every pin resolves.
 * **A pin is gone.** The rescan's `pins` job checks each week that every pinned digest still
@@ -488,7 +496,7 @@ a pin. The pins differ in what they reach:
 The PR's pipeline does the checking. Read its results rather than trusting the tag:
 
 * `base-verify`: Red Hat's signature, provenance and SBOM, for the new digest.
-* `vuln-scan`: compare its gate summary with the last one on `main`. A new base must add no
+* `vuln-scan`: compare its summary with the last one on `main`. A new base must add no
   fixable High or Critical, and should remove the ones it was taken for. Name those CVEs in the
   PR, so the release's summary can.
 * `reproducible`, `hardening` and the functional tests: green, as for any change.
@@ -519,11 +527,28 @@ The PR's pipeline does the checking. Read its results rather than trusting the t
   digest when Fedora's daily rebuild re-tags it, so a pin there broke within a day (#97). Before
   pinning a new image, check that one of its months-old digests still resolves.
 
+### Security review
+
+Scanning measures known risk at the time of the scan, so findings never fail the build (#175).
+They're in the run's summary and its `vuln-<arch>` artifacts, and from `main` in Code scanning.
+A finding needs a review when it is a fixable High or Critical, or a secret, that no unexpired
+exception covers; so does an exception that has expired or lacks a field.
+
+* **On a pull request or a release** (a tag or a dry run), `image.yml`'s `security-review` job
+  then waits at the `security-review` environment. Everything after the image waits with it:
+  `ci-ok`, the RPMs, `publish`. On the run's page, **Review deployments**: read the summary,
+  then **Approve and deploy** to go on, or **Reject**, which fails the run.
+* **On a push to `main`** it records the findings without pausing: the change has merged, and
+  its pull request was reviewed.
+* **The weekly rescan** opens an issue for a released image that needs a review.
+
 ### Vulnerability exceptions
 
-[`packaging/container/vuln-exceptions.json`](../packaging/container/vuln-exceptions.json) lets
-one fixable High or Critical through the gate. Only the security owner approves one, and its
-`expires` is at most 90 days out. The gate fails on an expired exception, used or not.
+[`packaging/container/vuln-exceptions.json`](../packaging/container/vuln-exceptions.json)
+records the security owner's approval of one fixable High or Critical, so that it doesn't pause
+a run for review again. Only the security owner approves one, and its `expires` is at most 90
+days out. An expired exception, used or not, needs a review again: every run pauses until it is
+renewed or removed.
 
 ## Keys
 
