@@ -282,18 +282,22 @@ def test_only_a_prs_or_a_dry_runs_older_run_is_cancelled():
 
 def test_only_the_floors_job_keeps_a_pytest_without_the_tmpdir_fix():
     # CVE-2025-71176 is fixed in pytest 9.0.3, which needs Python 3.10 (#139). Dependabot's
-    # ignore rules hold for a whole directory, so the 3.9 pins have their own.
+    # ignore rules hold for a whole entry, so the 3.9 pins have their own, in a sibling
+    # directory: the /packaging/ci entry also reads the directories below it (#145).
     def pin(path, name):
         with open(os.path.join(REPO, path), encoding="utf-8") as f:
             return tuple(map(int, re.search(r"^%s==([\d.]+)" % name, f.read(), re.M).group(1)
                                         .split(".")))
     assert pin("packaging/ci/test-requirements.txt", "pytest") >= (9, 0, 3)
-    assert pin("packaging/ci/py39/test-requirements.txt", "pytest")[0] == 8
+    assert pin("packaging/ci-py39/test-requirements.txt", "pytest")[0] == 8
+    below = [os.path.relpath(os.path.join(d, f), REPO) for d, _, fs in
+             os.walk(os.path.join(REPO, "packaging", "ci")) for f in fs if "requirements" in f]
+    assert below == [os.path.join("packaging", "ci", "test-requirements.txt")], below
     with open(os.path.join(REPO, ".github", "dependabot.yml"), encoding="utf-8") as f:
         cfg = f.read()
     ci = cfg.split('directory: "/packaging/ci"\n', 1)[1].split("package-ecosystem:", 1)[0]
     assert "dependency-name: pytest" not in ci
-    py39 = cfg.split('directory: "/packaging/ci/py39"\n', 1)[1].split("package-ecosystem:", 1)[0]
+    py39 = cfg.split('directory: "/packaging/ci-py39"\n', 1)[1].split("package-ecosystem:", 1)[0]
     assert '      - dependency-name: pytest\n        versions: [">=9"]' in py39
 
 
@@ -318,7 +322,7 @@ def test_ci_runs_every_test_with_hash_pinned_packages():
     assert ('python -m pip install --require-hashes -r "$TEST_REQS" '
             '-r packaging/release/requirements.txt') in pytest_job
     # Only the floor's leg takes the 3.9 pins: pytest 9, which fixes CVE-2025-71176, needs 3.10.
-    assert ("TEST_REQS: ${{ matrix.python-version == '3.9' && 'packaging/ci/py39/test-requirements.txt'"
+    assert ("TEST_REQS: ${{ matrix.python-version == '3.9' && 'packaging/ci-py39/test-requirements.txt'"
             " || 'packaging/ci/test-requirements.txt' }}") in pytest_job
     assert 'WD2L_NO_SKIPS: "1"' in pytest_job
     fips = jobs(read("image.yml"))["fips-tests"]
