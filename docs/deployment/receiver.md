@@ -31,6 +31,11 @@ kernel receive buffer setting, and templates (auditd rules, the Quadlet unit, th
 in `/usr/share/wd2l`. They enable nothing. `dnf upgrade` doesn't restart wd2l: restart it as
 [planned-downtime.md](../planned-downtime.md) says.
 
+`dnf remove` stops and disables the units, and takes the code, the units and the SELinux
+modules. It leaves what wd2l wrote and what you added: `/var/log/wd2l` (the audit trail),
+`/var/lib/wd2l` (the state, the spool and the capture archive), the token files, an edited
+`.env` file as `<name>.env.rpmsave`, and the `wd2l` user and the `wd2l-audit` group.
+
 On a host with `localpkg_gpgcheck=1` (the RHEL STIG sets it), `dnf install` needs
 `--nogpgcheck`, after the release is verified: see
 [releasing.md](../releasing.md#bringing-a-release-into-an-enclave).

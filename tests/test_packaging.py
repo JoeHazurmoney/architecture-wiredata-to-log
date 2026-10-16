@@ -541,3 +541,18 @@ def test_scriptlets_that_run_semodule_require_policycoreutils():
     for part in (base, receiver):
         assert re.search(r"^Requires\(post\):\s+policycoreutils$", part, re.M)
         assert re.search(r"^Requires\(postun\):\s+policycoreutils$", part, re.M)
+
+
+def test_the_install_test_removes_the_packages_and_keeps_what_wd2l_wrote():
+    # Nothing ran the spec's %preun and %postun, or checked what dnf remove leaves (#165).
+    leg = read("packaging/rpm/install-test.sh").split("\n  remove)\n", 1)[1].split(";;", 1)[0]
+    assert "dnf install -y -q selinux-policy-targeted" in leg      # so the modules load, then go
+    assert "dnf remove -y -q wd2l wd2l-sender wd2l-receiver" in leg
+    gone = ("rpm -q", "command -v", "site-packages/wd2l", "/usr/lib/systemd/system/wd2l-",
+            "wd2l_container", "wd2l_pcap")
+    kept = ("/etc/wd2l/sender.env.rpmsave", "/etc/wd2l/hec.token", "/var/log/wd2l/audit-",
+            "/var/lib/wd2l/state.json", "getent passwd wd2l", "getent group wd2l-audit")
+    after = leg.split("dnf remove", 1)[1]
+    for check in gone + kept:
+        assert check in after, check
+    assert "leg: [fresh, over-manual, upgrade, remove]" in read(".github/workflows/rpm.yml")
