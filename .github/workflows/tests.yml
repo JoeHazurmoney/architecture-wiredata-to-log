@@ -102,8 +102,9 @@ jobs:
 
   code-scanning:
     # Grype's and Trivy's findings in Security > Code scanning, from main only: alerts are tracked
-    # against the default branch, and a fork PR's token can't upload.
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    # against the default branch, and a fork PR's token can't upload. !cancelled(): also when
+    # another image check failed, uploading whichever platform's results exist (#175).
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     needs: [image]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -112,28 +113,28 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # By pattern: whichever of vuln-amd64 and vuln-arm64 exist, each in its own directory.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: vuln-amd64
-          path: vuln-amd64
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: vuln-arm64
-          path: vuln-arm64
+          pattern: vuln-*
       # amd64 keeps the original categories, so its alert history carries on.
       - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        if: ${{ hashFiles('vuln-amd64/grype.sarif') != '' }}
         with:
           sarif_file: vuln-amd64/grype.sarif
           category: grype-image
       - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        if: ${{ hashFiles('vuln-amd64/trivy.sarif') != '' }}
         with:
           sarif_file: vuln-amd64/trivy.sarif
           category: trivy-image
       - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        if: ${{ hashFiles('vuln-arm64/grype.sarif') != '' }}
         with:
           sarif_file: vuln-arm64/grype.sarif
           category: grype-image-arm64
       - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        if: ${{ hashFiles('vuln-arm64/trivy.sarif') != '' }}
         with:
           sarif_file: vuln-arm64/trivy.sarif
           category: trivy-image-arm64

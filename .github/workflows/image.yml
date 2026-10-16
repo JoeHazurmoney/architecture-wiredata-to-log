@@ -232,19 +232,49 @@ jobs:
           packaging/ci/tool trivy image --quiet --cache-dir /work/.cache/trivy --input /work/image/oci \
             --scanners vuln,secret --format json --output /work/vuln/trivy.json
           packaging/ci/tool trivy convert --format sarif --output /work/vuln/trivy.sarif /work/vuln/trivy.json
-      - name: Gate (fixable High/Critical, or a secret)
+      - name: Record the findings, and whether they need a security review (fixable High/Critical, or a secret)
         run: |
-          rc=0
+          # Findings never fail the build (#175): vuln-review and security-review decide.
           python3 packaging/container/vuln_gate.py --grype vuln/grype.json --trivy vuln/trivy.json \
             --exceptions packaging/container/vuln-exceptions.json \
-            --summary vuln/vuln-summary.md --predicate vuln/vuln-predicate.json || rc=$?
+            --summary vuln/vuln-summary.md --predicate vuln/vuln-predicate.json > /dev/null
           { echo "### ${{ matrix.arch }}"; cat vuln/vuln-summary.md; } >> "$GITHUB_STEP_SUMMARY"
-          exit $rc
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: vuln-${{ matrix.arch }}
           path: vuln/
+
+  vuln-review:
+    # Whether either platform's findings need a security review: a fixable High or Critical, or
+    # a secret, that no unexpired exception covers, or an exception that has expired.
+    needs: [vuln-scan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      needed: ${{ steps.decide.outputs.needed }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: vuln-*
+      - id: decide
+        run: |
+          needed=$(jq -s 'map(.gate.review_needed) | any' vuln-amd64/vuln-predicate.json vuln-arm64/vuln-predicate.json)
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          echo "security review needed: $needed"
+
+  security-review:
+    # The pause (docs/releasing.md, "Security review"): on a pull request or a release, a finding
+    # that needs review waits here until the security-review environment's required reviewer
+    # approves. Rejecting fails the run. A push to main records its findings without pausing:
+    # its pull request was reviewed. Everything after the image waits: ci-ok, the RPMs, publish.
+    needs: [vuln-review]
+    if: ${{ needs.vuln-review.outputs.needed == 'true' && !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: security-review
+    steps:
+      - run: echo "Approved after review. The findings are in this run's summary and its vuln-* artifacts."
 
   sbom:
     # Reads the image archives only: both platforms on the amd64 runner.

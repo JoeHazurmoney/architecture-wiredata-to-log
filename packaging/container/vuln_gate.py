@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""One gate over Grype and Trivy results (docs/decisions/0004-container-base-image.md).
+"""One review gate over Grype and Trivy results (docs/decisions/0004-container-base-image.md).
 
-Fails on any fixable High or Critical vulnerability, and on any secret Trivy finds, unless an
-unexpired exception in vuln-exceptions.json names that ID in that package. Also fails on any
-expired or incomplete exception, used or not, so that each one gets looked at again.
+Scanning measures known risk at the time of the scan, so findings never fail the build (#175).
+This records them, and says whether a security review is needed: for any fixable High or
+Critical vulnerability, and any secret Trivy finds, unless an unexpired exception in
+vuln-exceptions.json names that ID in that package; and for any expired or incomplete
+exception, used or not, so that each one gets looked at again. image.yml then pauses at the
+security-review environment until a reviewer approves.
 
     vuln_gate.py --grype G.json --trivy T.json --exceptions E.json [--today YYYY-MM-DD]
-                 [--summary OUT.md] [--predicate OUT.json]"""
+                 [--summary OUT.md] [--predicate OUT.json] [--exit-code N]
+
+Exit 0, or N with --exit-code when a review is needed (the weekly rescan opens an issue)."""
 
 import argparse
 import json
@@ -84,7 +89,7 @@ SEVERITY_ORDER = ("SECRET", "CRITICAL", "HIGH", "MEDIUM", "LOW", "NEGLIGIBLE", "
 def _gate_reason(f: Dict[str, Any], gated: List[Dict[str, Any]],
                  excepted: List[Dict[str, Any]]) -> str:
     if any(f is g for g in gated):
-        return "gated"
+        return "review"
     if any(f is e for e in excepted):
         return "exception"
     return "passed: no fix yet" if f["severity"] in GATED else "passed: below High"
@@ -92,9 +97,10 @@ def _gate_reason(f: Dict[str, Any], gated: List[Dict[str, Any]],
 
 def summary(gated: List[Dict[str, Any]], excepted: List[Dict[str, Any]], probs: List[str],
             counts: Dict[str, int], findings: Sequence[Dict[str, Any]] = ()) -> str:
-    lines = ["### Vulnerability gate: %s" % ("FAILED" if gated or probs else "passed"), "",
+    lines = ["### Vulnerability scan: %s" % ("security review needed" if gated or probs
+                                             else "no review needed"), "",
              "Findings: %s." % ", ".join("%s %d" % kv for kv in sorted(counts.items())), ""]
-    for title, rows in (("Gated (fixable High/Critical, or a secret)", gated),
+    for title, rows in (("Needs review (fixable High/Critical, or a secret)", gated),
                         ("Covered by an exception", excepted)):
         if rows:
             lines += ["**%s**" % title, "", "| Scanner | ID | Package | Version | Severity | Fixed in |",
@@ -113,7 +119,8 @@ def summary(gated: List[Dict[str, Any]], excepted: List[Dict[str, Any]], probs: 
                 f["scanner"], f["id"], f["package"], f["version"], f["severity"], f["fixed_in"],
                 _gate_reason(f, gated, excepted)))
         lines.append("")
-    lines += ["- " + p for p in probs]
+    if probs:
+        lines += ["**Exceptions to review**", ""] + ["- " + p for p in probs]
     return "\n".join(lines) + "\n"
 
 
@@ -125,6 +132,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--today", default=datetime.now(timezone.utc).date().isoformat())
     p.add_argument("--summary")
     p.add_argument("--predicate")
+    p.add_argument("--exit-code", type=int, default=0, metavar="N",
+                   help="exit N when a review is needed (default 0: findings never fail)")
     a = p.parse_args(argv)
     docs = {}
     for name in ("grype", "trivy", "exceptions"):
@@ -143,10 +152,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             json.dump({"scanned_on": a.today,
                        "scanners": {"grype": docs["grype"].get("descriptor", {}),
                                     "trivy": {"SchemaVersion": docs["trivy"].get("SchemaVersion")}},
-                       "gate": {"passed": not (gated or probs), "rule": "fixable High/Critical, or a secret",
+                       "gate": {"passed": not (gated or probs), "review_needed": bool(gated or probs),
+                                "rule": "fixable High/Critical, or a secret: a security review",
                                 "gated": gated, "excepted": excepted, "problems": probs},
                        "findings": {"grype": len(g), "trivy": len(t)}}, f, indent=1)
-    return 1 if gated or probs else 0
+    return a.exit_code if gated or probs else 0
 
 
 if __name__ == "__main__":
