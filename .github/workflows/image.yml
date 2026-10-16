@@ -99,7 +99,7 @@ jobs:
           mkdir -p image build-info
           podman save --format oci-archive -o image/image.oci.tar localhost/wd2l:ci
           jq -n --arg commit "$(git rev-parse HEAD)" \
-                --arg version "$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' wd2l/__init__.py)" \
+                --arg version "$(python3 packaging/release/versions.py --get pep440)" \
                 --arg arch "${{ matrix.arch }}" \
                 --arg image_id "$(podman image inspect --format '{{.Id}}' localhost/wd2l:ci)" \
                 --arg epoch "$(git log -1 --format=%ct)" --arg started "$started" \
