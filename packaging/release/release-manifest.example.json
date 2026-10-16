@@ -60,7 +60,8 @@
  "base_images": [
   {"stage": "runtime", "ref": "registry.access.redhat.com/hi/python:3.12-fips@sha256:26d5e70520b1bda08556041ea6a45034a7bb789c776e8054bcc06151de0c3067",
    "index_digest": "sha256:26d5e70520b1bda08556041ea6a45034a7bb789c776e8054bcc06151de0c3067",
-   "platforms": {"amd64": "sha256:ab78f97443fd495dbd90272a53040696c633112f82456ac997bb971a5a321411"},
+   "platforms": {"amd64": "sha256:ab78f97443fd495dbd90272a53040696c633112f82456ac997bb971a5a321411",
+                 "arm64": "sha256:5e2c8a0f7b3d9e1c4a6f8b0d2e4c6a8f0b2d4e6a8c0f1b3d5e7a9c2f4b6d8e0a"},
    "release": "1791440965", "source_image": "registry.access.redhat.com/hi/python:1791440965-source"}
  ],
  "build_environment": {

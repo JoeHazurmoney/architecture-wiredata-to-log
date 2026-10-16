@@ -81,6 +81,23 @@ def test_a_real_release_must_name_its_image_changelog_summary_and_approval(chang
     assert m.validate(d) is not None
 
 
+def test_a_base_image_may_ship_more_platforms_than_ours():
+    # #121's re-pinned bases list linux/s390x too, and the manifest refused the base record
+    # (#171). Ours stay exactly amd64 and arm64.
+    pytest.importorskip("fastjsonschema")
+    d = copy.deepcopy(example())
+    d["base_images"][0]["platforms"]["s390x"] = "sha256:" + "9" * 64
+    assert m.validate(d) is None
+    del d["base_images"][0]["platforms"]["arm64"]
+    assert m.validate(d) is not None
+    d = copy.deepcopy(example())
+    d["base_images"][0]["platforms"]["s390x"] = "not a digest"
+    assert m.validate(d) is not None
+    d = copy.deepcopy(example())
+    d["image"]["platforms"]["s390x"] = "sha256:" + "9" * 64
+    assert m.validate(d) is not None
+
+
 def test_a_dry_run_may_have_no_image_changelog_summary_or_approval():
     pytest.importorskip("fastjsonschema")
     d = copy.deepcopy(example())
@@ -311,7 +328,8 @@ def gen_args(tmp_path, dry_run=False, digests=True):
     rec = tmp_path / "base-image-record.json"
     rec.write_text(json.dumps({"images": [{"stage": "runtime", "ref": "registry.example/python@sha256:" + "1" * 64,
                                            "index_digest": "sha256:" + "1" * 64,
-                                           "platforms": {"amd64": "sha256:" + "2" * 64},
+                                           "platforms": {"amd64": "sha256:" + "2" * 64,
+                                                         "arm64": "sha256:" + "6" * 64},
                                            "release": "1", "source_image": "registry.example/python:1-source"}]}))
     d = "sha256:" + "3" * 64
     changelog = None
