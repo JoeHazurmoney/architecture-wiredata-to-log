@@ -47,15 +47,23 @@ proves:
   build pipeline, and an SBOM for each platform, all for the pinned digest. The result is
   `base-image-record.json` ([`base_record.py`](../packaging/container/base_record.py), keys in
   [`packaging/container/keys/`](../packaging/container/keys/README.md)).
-* **wheel**: the wheel and sdist, built once with hash-pinned build tools
+* **wheel**: the wheel and sdist, built once ([`build-dist.sh`](../packaging/build-dist.sh))
+  with hash-pinned build tools
   ([`packaging/build-tools/requirements.txt`](../packaging/build-tools/requirements.txt), no
   isolated build environment) and checked ([`check_dist.py`](../packaging/check_dist.py)).
+  setuptools ignores `SOURCE_DATE_EPOCH` for the sdist, so
+  [`normalize_sdist.py`](../packaging/normalize_sdist.py) sets the commit's time, root as the
+  owner and plain modes on its members. Neither file depends on the checkout's times or the
+  builder's umask.
 * **build**: the image from that wheel ([`build.sh`](../packaging/container/build.sh)).
-* **reproducible**: a second build from the same inputs gives the same wheel and the same image
-  ID.
+* **reproducible**: a second build from the same inputs, by the same script, gives the same
+  wheel and sdist, byte for byte, and the same image ID. Any difference fails the run, and the
+  log shows what differs: the archive members, or the image's config and files.
 * **hardening**: the image runs as 65532, has no shell, no package manager (pip included), no
-  setuid file, the FIPS crypto policy, the base's RPM database byte for byte, and wd2l's files
-  exactly as in the wheel ([`check_image.py`](../packaging/container/check_image.py)).
+  setuid file, the FIPS crypto policy, the base's RPM database byte for byte, wd2l's files
+  exactly as in the wheel and nothing else beside them, and each command in `/usr/bin` runs
+  its entry point with the image's Python
+  ([`check_image.py`](../packaging/container/check_image.py)).
 * **vuln-scan**: Grype and Trivy find no fixable High or Critical vulnerability and no secret,
   apart from approved exceptions ([`vuln_gate.py`](../packaging/container/vuln_gate.py)).
 * **sbom**: the image's SBOM is the base's, plus wd2l, less pip
@@ -183,8 +191,7 @@ work had merged. It's linked from that PR's description and dated by the PR's me
    it, and deleting it retires the tag name for good (0.3.0rc6, #27).
 7. Review the draft:
    * the assets list, and the notes;
-   * the `vuln-scan` gate summary, the `hardening` result and the `reproducible` result in the
-     run.
+   * the `vuln-scan` gate summary and the `hardening` result in the run.
 8. **Publish release**. The notes are complete as generated, so there's nothing to paste.
 9. Check that what was published is the draft: `gh release view vX.Y.Z --json assets,author`
    shows every file, and github-actions as the author.

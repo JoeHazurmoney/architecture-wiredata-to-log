@@ -9,6 +9,9 @@ its filesystem and its config:
 * the system crypto policy is FIPS;
 * the RPM database is byte-identical to the base's, so the image adds no packages;
 * wd2l's files match the wheel's RECORD hashes, and wd2l/BUILD names the commit;
+* site-packages/wd2l holds nothing else but the compiled .pyc of those files;
+* each of the wheel's console scripts is in /usr/bin: pip's script, executable, run by an
+  interpreter the image has, importing and calling its entry point. No other wd2l* command;
 * the labels name wd2l (not the base), the version, the commit, MIT and the exact base.
 
     check_image.py --rootfs DIR --base-rootfs DIR --config INSPECT.json --wheel WHL
@@ -17,17 +20,20 @@ its filesystem and its config:
 The two rootfs directories come from `podman image mount`, inside `podman unshare`."""
 
 import argparse
+import ast
 import base64
+import configparser
 import csv
 import glob
 import hashlib
 import io
 import json
 import os
+import re
 import stat
 import sys
 import zipfile
-from typing import Any, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 SHELLS = ("bin/sh", "bin/bash", "usr/bin/sh", "usr/bin/bash", "bin/ash", "bin/dash",
           "usr/bin/dash", "bin/busybox", "usr/bin/busybox", "usr/bin/zsh")
@@ -124,6 +130,69 @@ def check_filesystem(root: str, base_root: str) -> List[str]:
     return out
 
 
+def _in_image(root: str, path: str) -> Optional[str]:
+    """PATH, an absolute path inside the image, as a path under ROOT with every symlink
+    resolved inside the image too (the runner's own files never count), or None."""
+    todo, done, hops = [p for p in path.split("/") if p], [], 0
+    while todo:
+        part = todo.pop(0)
+        if part in (".", ".."):
+            done = done[:-1] if part == ".." else done
+            continue
+        here = os.path.join(root, *done, part)
+        if os.path.islink(here):
+            hops += 1
+            target = os.readlink(here)
+            if hops > 40:
+                return None
+            todo = [p for p in target.split("/") if p] + todo
+            done = [] if target.startswith("/") else done
+        elif os.path.lexists(here):
+            done.append(part)
+        else:
+            return None
+    return os.path.join(root, *done)
+
+
+def check_commands(root: str, scripts: Dict[str, str]) -> List[str]:
+    """Each console script (name -> module:attr) is pip's script for it in /usr/bin."""
+    out = []
+    for name, target in sorted(scripts.items()):
+        path, shown = os.path.join(root, "usr/bin", name), "/usr/bin/" + name
+        if os.path.islink(path):
+            out.append("%s is a symlink, not pip's script" % shown)
+            continue
+        if not os.path.isfile(path):
+            out.append("missing command: " + shown)
+            continue
+        if not os.stat(path).st_mode & 0o111:
+            out.append("not executable: " + shown)
+        with open(path, "rb") as f:
+            text = f.read().decode("utf-8", "replace")
+        first = text.split("\n", 1)[0]
+        interp = first[2:].split()[0] if first.startswith("#!") and first[2:].split() else ""
+        real = _in_image(root, interp) if interp.startswith("/") else None
+        if not (real and os.path.isfile(real)):
+            out.append("%s runs %r, which the image doesn't have" % (shown, interp or first))
+        module, _, attr = target.partition(":")
+        head = attr.split(".")[0]
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            tree = ast.parse("")
+        imported = any(isinstance(n, ast.ImportFrom) and n.module == module and n.level == 0
+                       and [a.name for a in n.names] == [head] and n.names[0].asname is None
+                       for n in ast.walk(tree))
+        called = any(isinstance(n, ast.Call) and isinstance(n.func, (ast.Name, ast.Attribute))
+                     and ast.unparse(n.func) == attr for n in ast.walk(tree))
+        if not (imported and called):
+            out.append("%s doesn't run %s" % (shown, target))
+    for path in sorted(glob.glob(os.path.join(root, "usr/bin/wd2l*"))):
+        if os.path.basename(path) not in scripts:
+            out.append("not in the wheel's entry points: /usr/bin/" + os.path.basename(path))
+    return out
+
+
 def check_wheel_files(root: str, wheel: str, commit: str) -> List[str]:
     sites = glob.glob(os.path.join(root, "usr/lib/python3.*/site-packages"))
     if len(sites) != 1:
@@ -131,7 +200,12 @@ def check_wheel_files(root: str, wheel: str, commit: str) -> List[str]:
     site, out = sites[0], []
     with zipfile.ZipFile(wheel) as z:
         record = [n for n in z.namelist() if n.endswith(".dist-info/RECORD")][0]
-        rows = csv.reader(io.StringIO(z.read(record).decode("utf-8")))
+        rows = list(csv.reader(io.StringIO(z.read(record).decode("utf-8"))))
+        ep = record[:-len("RECORD")] + "entry_points.txt"
+        cp = configparser.ConfigParser(delimiters=("=",), interpolation=None)
+        cp.optionxform = str                     # keep the command names' case
+        cp.read_string(z.read(ep).decode("utf-8") if ep in z.namelist() else "")
+        scripts = dict(cp["console_scripts"]) if cp.has_section("console_scripts") else {}
         for row in rows:
             if len(row) < 2 or not row[0].startswith("wd2l/") or not row[1]:
                 continue
@@ -148,7 +222,22 @@ def check_wheel_files(root: str, wheel: str, commit: str) -> List[str]:
     build = (_read(os.path.join(site, "wd2l", "BUILD")) or "").strip()
     if build != commit:
         out.append("wd2l/BUILD is %r, not the commit %s" % (build, commit))
-    return out
+    # Nothing beside the wheel's files but their .pyc (the Containerfile's compileall).
+    files = {r[0] for r in rows if r and r[0].startswith("wd2l/")}
+    dirs = {os.path.dirname(f) for f in files}
+    dirs |= {d + "/__pycache__" for d in dirs}
+    for dirpath, dirnames, filenames in os.walk(os.path.join(site, "wd2l")):
+        for name in sorted(dirnames + filenames):
+            path = os.path.join(dirpath, name)
+            rel = os.path.relpath(path, site).replace(os.sep, "/")
+            pyc = re.match(r"^(.*)/__pycache__/([^/.]+)\.cpython-\d+\.pyc$", rel)
+            shown = "/" + os.path.relpath(path, root).replace(os.sep, "/")
+            if os.path.islink(path):             # the hashes above read through it
+                out.append("a symlink, not the wheel's file: " + shown)
+            elif not (rel in (dirs if os.path.isdir(path) else files)
+                      or (pyc and "%s/%s.py" % pyc.groups() in files)):
+                out.append("not in the wheel: " + shown)
+    return out + check_commands(root, scripts)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
