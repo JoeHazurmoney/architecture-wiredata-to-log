@@ -147,6 +147,7 @@ class StreamTracker:
         self.linked = False               # its link to the previous stream has been checked
         self.records = False   # the sender's records stream (flags bit 0)
         self.clock_offset: Optional[float] = None   # receiver minus sender clock, last heartbeat
+        self.last_sender_time: Optional[float] = None   # that heartbeat's sender_time
         self.rc = StreamReconciler()
 
     def needed(self, seq: int) -> bool:
@@ -695,8 +696,12 @@ class Receiver:
         prev = info.pop("prev_stream", None)
         self.counters["heartbeats"] += 1
         sent = info.get("sender_time")
-        if isinstance(sent, (int, float)) and not isinstance(sent, bool):
+        if (isinstance(sent, (int, float)) and not isinstance(sent, bool)
+                and sent != t.last_sender_time):
             # Clock offset plus the one-way delay, which is well under 1 ms on a direct fiber.
+            # A repeat of the last heartbeat (the final one goes out FINAL_COPIES times) would
+            # add the time between copies, so only the first copy counts (#147).
+            t.last_sender_time = sent
             t.clock_offset = self.last_clock_offset = round(self._wall(now) - sent, 3)
         if not t.linked and not t.records:
             self._link(t, info, prev, now)

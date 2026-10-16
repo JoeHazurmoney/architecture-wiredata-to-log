@@ -313,6 +313,26 @@ def test_sender_time_unavailable_alarms_then_clears():
         ("alarm", "sender: unavailable"), ("ok", None)]
 
 
+def test_the_final_heartbeats_copies_dont_move_the_clock_offset():
+    """#147: the final heartbeat goes out FINAL_COPIES times, unchanged, FINAL_SPACING_S apart.
+    Each copy set the offset from the same sender_time, so the last read ~0.1 s: a false "clock
+    skew" alarm at every clean stop, up for the whole downtime."""
+    from wd2l.sender import FINAL_COPIES, FINAL_SPACING_S
+    wall = [1000.0]
+    r, out = rxf(record_clock=lambda: wall[0])
+    final = hbf(1, sender_time=1000.0, final=True)
+    for i in range(FINAL_COPIES):
+        wall[0] = 1000.0 + i * FINAL_SPACING_S
+        feed(r, final, i * FINAL_SPACING_S)
+    r.tick(1)
+    assert r.streams[SID].clock_offset == 0.0 and r.last_clock_offset == 0.0
+    assert [x for x in out.kinds("time_status") if x["time_status"] == "alarm"] == []
+    assert len(out.kinds("stream_end")) == 1
+    wall[0] = 1001.5                                   # a new heartbeat still moves it
+    feed(r, hbf(2, sender_time=1001.0), 1.5)
+    assert r.streams[SID].clock_offset == 0.5
+
+
 def test_skew_raises_the_time_alarm():
     r, out = rxf(record_clock=lambda: 1000.5)
     feed(r, hbf(0, sender_time=1000.0), 0)
