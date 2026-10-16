@@ -99,11 +99,12 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--spool-dir` | `/var/lib/wd2l/spool` | Where batches wait while the SIEM is unreachable |
 | `--default-index` | none | For events that arrive without an index |
 | `--force-index` | none | Put every event in this one index |
-| `--health-index` | default index | Index for `wd2l:health` |
+| `--health-index` | `--force-index`, else the default index | Index for `wd2l:health` |
 | `--out-dir` | none | Also (or instead) write `events.jsonl` + `health.jsonl`. For the lab and tests; see [ADR-0003](../decisions/0003-receiver-to-siem-delivery.md) before using it in production |
 | `--gap-window` | `2` s | How long a missing event may be late before it's a gap |
 | `--reasm-timeout` | `5` s | How long to hold part of a split event once its stream has sent something else. While the stream sends nothing, up to `--stream-lost-after` |
 | `--hb-timeout` | `5` s | No heartbeat for this long → `heartbeat_stale` |
+| `--stream-lost-after` | `60` s | No frame from a sender run for this long, and no clean stop → `stream_lost` |
 | `--health-interval` | `60` s | Summary record interval |
 | `--max-event`, `--max-buffer` | 256 KB, 64 MB | Input caps |
 | `--hec-queue` | `100000` | Events held in memory for the SIEM. Overflow is reported as `reason=output_dropped` gaps (replay recovers them) |
@@ -122,6 +123,7 @@ It runs as `wd2l` with only `CAP_NET_RAW`. Options (`python3 -m wd2l.receiver --
 | `--chrony-addr` | none | Ask chronyd over UDP (`HOST[:PORT]`, port 323) instead of running `chronyc`. The env file uses `127.0.0.1:323`, for the native and the container unit alike: nothing to run, and no SELinux denial (chronyc can't enter its domain under `NoNewPrivileges`). chronyd's default configuration answers it; `cmdport 0` turns it off |
 | `--max-stratum` | 3 | Time alarm above this chrony stratum. 3 suits a site with its own GPS time; a host on a public NTP pool may need 4 or 5. It applies to the sender's reading too |
 | `--log-format` | text | `receiver.env` uses `json`: one JSON object per log line |
+| `--verbose`, `-v` | off | Debug logging from the start. `SIGUSR1` switches it on and off while running ([operations.md](../operations.md)) |
 | `--no-rx-time` | stamping on | Stop stamping each event's arrival time (`wd2l_rx_time`). Leave it on: it's how delays are measured ([operations.md](../operations.md#measuring-delays)) |
 
 ### Audit files

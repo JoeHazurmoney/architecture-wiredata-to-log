@@ -274,7 +274,8 @@ a missing file or directory, or one it may not read (run it as `wd2l`, or join `
 * Time stamps are UTC with microseconds. Each side reads chrony at most every 60 s: `chronyc -c
   tracking`, or with `--chrony-addr HOST[:PORT]` the same request over UDP to chronyd (the
   container images have no `chronyc`). `time_quality` is in every summary and audit record.
-* **Thresholds** (defaults in the code, no option yet): an alarm when unsynced, above stratum 3
+* **Thresholds** (defaults in the code; the stratum limit is the receiver's `--max-stratum`, for
+  both sides' readings): an alarm when unsynced, above stratum 3
   or more than 100 ms off, and when the two clocks differ by more than 50 ms. Hosts are expected
   at stratum 3.
 * **Unreadable chrony** is an alarm too, on either side. The sender then sends
