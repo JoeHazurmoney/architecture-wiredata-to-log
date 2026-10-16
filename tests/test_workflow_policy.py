@@ -492,3 +492,37 @@ def test_no_secret_is_pasted_into_a_script():
                 # Allowed: a key whose value is the expression (env:, with:, secrets: blocks).
                 env_like = r"^\s+[A-Za-z_][A-Za-z0-9_-]*: \$\{\{ secrets\.\w+( != '')? \}\}\s*$"
                 assert re.match(env_like, line), "%s:%d: %s" % (name, n, line.strip())
+
+
+def test_one_version_parser():
+    # Four parsers could drift; the two sed copies already differed on a CR (#180).
+    for path in glob.glob(os.path.join(WORKFLOWS, "*.yml")) + [
+            os.path.join(REPO, "packaging", "container", "build.sh")]:
+        with open(path, encoding="utf-8") as f:
+            assert "__version__" not in f.read(), os.path.basename(path)
+    assert ('--arg version "$(python3 packaging/release/versions.py --get pep440)"'
+            in jobs(read("image.yml"))["build"])
+    with open(os.path.join(REPO, "packaging", "container", "build.sh"), encoding="utf-8") as f:
+        assert 'VERSION="$(python3 "$REPO/packaging/release/versions.py" --get pep440)"' in f.read()
+
+
+def test_the_image_name_and_the_urls_agree_everywhere():
+    # Written out in five files (#180): a change to one would push, sign, attest or rescan
+    # under another name.
+    from helpers import load_script
+    manifest = load_script("packaging/release/manifest.py")
+    notes = load_script("packaging/release/notes.py")
+    assert notes.IMAGE == manifest.IMAGE
+    texts = {os.path.basename(p): open(p, encoding="utf-8").read()
+             for p in glob.glob(os.path.join(WORKFLOWS, "*.yml"))}
+    for p in ("packaging/release/manifest.py", "packaging/release/notes.py"):
+        texts[p] = open(os.path.join(REPO, p), encoding="utf-8").read()
+    names = {"ghcr.io/%s/%s" % m for t in texts.values()
+             for m in re.findall(r"ghcr\.io/([\w.-]+)/(wd2l[\w.-]*)", t)
+             if not m[1].startswith("wd2l-base")}             # the base images' mirror
+    assert names == {manifest.IMAGE}
+    atts = {m for t in texts.values()
+            for m in re.findall(r"https://github\.com/[\w.-]+/[\w.-]+/attestations", t)}
+    assert atts == {manifest.ATT}
+    mirror = "quay.io/hummingbird/${name#registry.access.redhat.com/hi/}"
+    assert mirror in texts["image.yml"] and mirror in texts["publish.yml"]

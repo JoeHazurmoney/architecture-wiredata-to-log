@@ -584,3 +584,12 @@ def test_the_install_test_removes_the_packages_and_keeps_what_wd2l_wrote():
     for check in gone + kept:
         assert check in after, check
     assert "leg: [fresh, over-manual, upgrade, remove]" in read(".github/workflows/rpm.yml")
+
+
+def test_check_dist_reads_the_version_as_versions_py_does(tmp_path):
+    # Its own parser stays; it must agree with the one every workflow calls (#180).
+    versions = load_script("packaging/release/versions.py")
+    for text in ('__version__ = "1.2.0rc3"\n', '"""wd2l"""\r\n__version__ = "1.2.0"\r\n'):
+        init = tmp_path / "__init__.py"
+        init.write_bytes(text.encode())
+        assert check_dist.repo_version(str(init)) == versions.read_version(str(init))
