@@ -287,6 +287,34 @@ def test_tool_runs_the_pinned_image_with_the_work_tree(tmp_path):
     assert args[args.index("--user") + 1] == "%d:%d" % (os.getuid(), os.getgid())
 
 
+def test_only_the_tools_that_push_or_sign_get_the_registry_login(tmp_path):
+    # Every tool got it: in the rescan, a login made with an issues: write token reached the
+    # docker.io scanners (#178). cosign and oras push and sign; the packages are public.
+    log, fake = tmp_path / "args", tmp_path / "podman"
+    fake.write_text('#!/bin/sh\nfor a in "$@"; do echo "$a"; done > "%s"\n' % log)
+    fake.chmod(0o755)
+    (tmp_path / "containers").mkdir()
+    (tmp_path / "containers" / "auth.json").write_text("{}")
+    env = dict(os.environ, PODMAN=str(fake), XDG_RUNTIME_DIR=str(tmp_path))
+    env.pop("REGISTRY_AUTH_FILE", None)
+    for name, wanted in (("cosign", True), ("oras", True), ("grype", False), ("trivy", False),
+                         ("syft", False), ("hadolint", False), ("git-cliff", False)):
+        r = subprocess.run(["bash", TOOL, name, "x"], cwd=str(tmp_path), env=env,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert r.returncode == 0, r.stderr
+        args = log.read_text().splitlines()
+        mounted = "%s/containers/auth.json:/auth/config.json:ro" % tmp_path in args
+        assert mounted is wanted and ("DOCKER_CONFIG=/auth" in args) is wanted, name
+
+
+def test_cosign_is_pinned_by_its_version():
+    # :latest showed only digests in Dependabot's titles, so a major release that drops the
+    # older-format signature flags would arrive unannounced (#178).
+    assert re.match(r"registry\.access\.redhat\.com/hi/cosign:\d+@sha256:[0-9a-f]{64}$",
+                    tool_refs()["cosign"])
+    assert "*.key" in read(".gitignore").splitlines()
+
+
 def test_tool_ref_and_unknown_tool():
     r = subprocess.run(["bash", TOOL, "--ref", "syft"], stdout=subprocess.PIPE)
     assert r.returncode == 0 and r.stdout.decode().strip() == tool_refs()["syft"]

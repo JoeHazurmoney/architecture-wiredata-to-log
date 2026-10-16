@@ -66,7 +66,7 @@
  ],
  "build_environment": {
   "actions": [{"action": "actions/checkout", "commit": "3d3c42e5aac5ba805825da76410c181273ba90b1", "version": "v7.0.1"}],
-  "tool_images": [{"name": "cosign", "ref": "registry.access.redhat.com/hi/cosign:latest@sha256:9d892a27d5ecc4235ce101798ea6d9f5f46221eb7447e309793db1c2450e384e"}],
+  "tool_images": [{"name": "cosign", "ref": "registry.access.redhat.com/hi/cosign:3@sha256:9d892a27d5ecc4235ce101798ea6d9f5f46221eb7447e309793db1c2450e384e"}],
   "runners": ["ubuntu-24.04", "ubuntu-24.04-arm"]
  },
  "changelog": {"file": "wd2l-1.1.0-changelog.md",

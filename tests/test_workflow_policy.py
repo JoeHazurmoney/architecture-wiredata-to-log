@@ -478,3 +478,17 @@ def test_the_rescan_scans_what_shipped_and_labels_its_issues():
     assert 'ref="ghcr.io/joehazurmoney/wd2l@$d"' in scan
     assert 'wd2l:$v"' not in scan
     assert 'gh issue create --title "$title" --label security --label bug --body-file "summary-$v-$a.md"' in scan
+
+
+def test_no_secret_is_pasted_into_a_script():
+    # An expression in run: is pasted into the script's text; `echo "${{ secrets.GITHUB_TOKEN }}"`
+    # did that for each podman login (#178). Secrets reach scripts through env, as variables.
+    for path in glob.glob(os.path.join(WORKFLOWS, "*.yml")):
+        name = os.path.basename(path)
+        with open(path, encoding="utf-8") as f:
+            for n, line in enumerate(f, 1):
+                if "secrets." not in line or line.lstrip().startswith("#"):
+                    continue
+                # Allowed: a key whose value is the expression (env:, with:, secrets: blocks).
+                env_like = r"^\s+[A-Za-z_][A-Za-z0-9_-]*: \$\{\{ secrets\.\w+( != '')? \}\}\s*$"
+                assert re.match(env_like, line), "%s:%d: %s" % (name, n, line.strip())
