@@ -116,7 +116,7 @@ def test_each_fault_expects_what_the_docs_and_the_rules_say():
     assert len(rules) == 11, rules
     for name, args in expect.items():
         if args == "--time-alarm":
-            assert doc[name] == "a time alarm", name
+            assert doc[name] == "a time alarm (`receiver: unsynced`)", name   # #151
             continue
         a = dict(re.findall(r"--(\w+) (\S+)", args))
         want = (a["segment"], a["status"], int(a["rule"]))
