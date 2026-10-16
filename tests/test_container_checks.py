@@ -488,6 +488,18 @@ def test_an_expired_exception_no_longer_covers():
     assert [f["id"] for f in gated] == ["CVE-1"]
 
 
+def test_an_exception_lasts_90_days_at_most():
+    # Policy said 90 days; only expiry was checked, so 2099 passed (#177). Counted from the scan:
+    # an exception approved for at most 90 days never trips it later.
+    _g, _e, probs = run_gate(grype_doc(), trivy_doc(), [exc("CVE-1", "x", expires="2027-01-05")])
+    assert probs == []                                          # TODAY + 90 days
+    _g, _e, probs = run_gate(grype_doc(), trivy_doc(), [exc("CVE-1", "x", expires="2027-01-06")])
+    assert len(probs) == 1 and "CVE-1" in probs[0] and "more than 90 days" in probs[0]
+    gated, _e, _p = run_gate(grype_doc(("CVE-1", "High", "fixed", "x")), trivy_doc(),
+                             [exc("CVE-1", "x", expires="2099-01-01")])
+    assert [f["id"] for f in gated] == ["CVE-1"]                # and it covers nothing
+
+
 def test_incomplete_exception_is_a_problem():
     _g, _e, probs = run_gate(grype_doc(), trivy_doc(), [{"id": "CVE-1", "package": "x"}])
     assert any("reason" in p for p in probs)

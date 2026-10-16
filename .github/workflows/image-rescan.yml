@@ -56,7 +56,13 @@ jobs:
           gh release list --limit 3 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' > tags.txt
           mapfile -t tags < tags.txt
           for tag in "${tags[@]}"; do
-            v=${tag#v}; ref="ghcr.io/joehazurmoney/wd2l:$v"
+            v=${tag#v}
+            # What shipped, by the digest its manifest records: a tag can move (#177). Every final
+            # release from 1.0.0 has one.
+            gh release download "$tag" -p "wd2l-$v-release-manifest.json" -O "manifest-$v.json"
+            d=$(jq -r '.image.index_digest // empty' "manifest-$v.json")
+            [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::$tag's manifest names no image digest"; exit 1; }
+            ref="ghcr.io/joehazurmoney/wd2l@$d"
             for a in amd64 arm64; do
               packaging/ci/tool grype "registry:$ref" --platform "linux/$a" -q -o json --file "/work/grype-$v-$a.json"
               packaging/ci/tool trivy image --platform "linux/$a" --quiet --cache-dir /work/.cache/trivy --scanners vuln \
@@ -71,7 +77,7 @@ jobs:
                 title="Image rescan: wd2l $v ($a) needs a security review"
                 n=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
                 if [ -n "$n" ]; then gh issue comment "$n" --body-file "summary-$v-$a.md"
-                else gh issue create --title "$title" --body-file "summary-$v-$a.md"; fi
+                else gh issue create --title "$title" --label security --label bug --body-file "summary-$v-$a.md"; fi
               fi
               { echo "## wd2l $v ($a)"; cat "summary-$v-$a.md"; } >> "$GITHUB_STEP_SUMMARY"
             done

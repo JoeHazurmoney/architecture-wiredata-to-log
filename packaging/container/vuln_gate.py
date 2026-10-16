@@ -4,9 +4,9 @@
 Scanning measures known risk at the time of the scan, so findings never fail the build (#175).
 This records them, and says whether a security review is needed: for any fixable High or
 Critical vulnerability, and any secret Trivy finds, unless an unexpired exception in
-vuln-exceptions.json names that ID in that package; and for any expired or incomplete
-exception, used or not, so that each one gets looked at again. image.yml then pauses at the
-security-review environment until a reviewer approves.
+vuln-exceptions.json names that ID in that package; and for any exception that is expired,
+incomplete or runs more than 90 days from the scan, used or not, so that each one gets looked
+at again. image.yml then pauses at the security-review environment until a reviewer approves.
 
     vuln_gate.py --grype G.json --trivy T.json --exceptions E.json [--today YYYY-MM-DD]
                  [--summary OUT.md] [--predicate OUT.json] [--exit-code N]
@@ -16,11 +16,12 @@ Exit 0, or N with --exit-code when a review is needed (the weekly rescan opens a
 import argparse
 import json
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 GATED = ("HIGH", "CRITICAL")
 FIELDS = ("id", "package", "reason", "expires", "approved_by")
+MAX_DAYS = 90                      # an exception's life, at most (docs/releasing.md)
 
 
 def grype_findings(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -67,6 +68,11 @@ def load_exceptions(doc: Dict[str, Any], today: str) -> Tuple[List[Dict[str, Any
         if expires < t:
             probs.append("exception for %s in %s expired on %s: review it, then renew or remove it"
                          % (e["id"], e["package"], e["expires"]))
+            continue
+        if expires > t + timedelta(days=MAX_DAYS):         # #177: 2099 passed
+            probs.append("exception for %s in %s expires on %s, more than %d days from today: "
+                         "approve it for %d days at most" % (e["id"], e["package"], e["expires"],
+                                                             MAX_DAYS, MAX_DAYS))
             continue
         valid.append(e)
     return valid, probs

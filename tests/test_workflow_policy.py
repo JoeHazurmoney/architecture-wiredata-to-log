@@ -466,3 +466,15 @@ def test_the_rescan_opens_issues_from_the_review_decision_and_fails_only_on_erro
     assert '[ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || exit "$rc"' in scan
     assert 'if [ "$rc" -eq 3 ]; then' in scan
     assert "exit $fail" not in scan
+
+
+def test_the_rescan_scans_what_shipped_and_labels_its_issues():
+    # It scanned wd2l:$v, which can move, and filed unlabelled issues the manifest's Known
+    # issues left out (#177).
+    scan = jobs(read("image-rescan.yml"))["rescan"]
+    assert 'gh release download "$tag" -p "wd2l-$v-release-manifest.json" -O "manifest-$v.json"' in scan
+    assert "d=$(jq -r '.image.index_digest // empty' \"manifest-$v.json\")" in scan
+    assert '[[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || {' in scan
+    assert 'ref="ghcr.io/joehazurmoney/wd2l@$d"' in scan
+    assert 'wd2l:$v"' not in scan
+    assert 'gh issue create --title "$title" --label security --label bug --body-file "summary-$v-$a.md"' in scan
