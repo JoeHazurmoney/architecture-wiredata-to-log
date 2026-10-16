@@ -47,8 +47,8 @@ It runs without root in under a minute; every test should pass, none skipped.
 
 ## 5. Run the lab
 
-Each run takes 15–25 seconds and cleans up after itself. The README lists every option; the
-ones below show the main results.
+Each run takes 15–25 seconds and cleans up after itself. The header of `lab/run-lab.sh` lists
+every option; the ones below show the main results.
 
 ```bash
 sudo lab/run-lab.sh                             # clean run
@@ -88,7 +88,8 @@ planted on purpose (random, gzip, PGP), which the sender must flag
 Every run also checks that Enclave 2 sent nothing: "frames Enclave 2 tried to send" counts what
 the lab's drop rule on the capture NIC stopped, and "frames sent back toward Enclave 1 from
 Enclave 2" what got past it; both must read 0. And it checks that only log traffic crossed
-("other packets on the tapped cable: 0").
+("other packets on the tapped cable: 0"). Without `--fault`, it also checks that no fault or
+time alarm was raised (rule 9 is allowed after loss or an outage).
 
 ## 6. Look at the results
 
@@ -150,8 +151,9 @@ restored exactly.
 
 ## 9. Inject faults and see where the receiver places them
 
-Each `--fault` run injects one fault, checks that the receiver names the right segment and rule
-([the rules](audit-and-health.md#10-where-is-the-fault-the-rules)), then that the report clears.
+Each `--fault` run injects one fault, checks that the first fault the receiver reports names the
+right segment and rule ([the rules](audit-and-health.md#10-where-is-the-fault-the-rules)), then
+that the report clears.
 It ends with `PASS: fault reported where expected, then cleared`, and the usual `PASS` too.
 
 | `--fault` | What the lab does | The receiver should say |

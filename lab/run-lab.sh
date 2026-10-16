@@ -255,7 +255,9 @@ RX_ARGS=(--live cap0 --dst-ip 10.255.255.2 --dst-port 5514 --src-ip 10.255.255.1
          --audit-dir "$OUT/audit-e2" "${TIME_ARGS[@]}"
          --pcap-dir "$OUT/pcap" --fault-interval 1)
 if [ -n "$FAULT" ]; then
-  RX_ARGS+=(--fault-window 10 --input-flat-after 5 --time-check-interval 1)
+  # --input-flat-after above --hb-timeout (5 s) plus a heartbeat: equal, rule 5 raced the
+  # injected fault and could come first (#149).
+  RX_ARGS+=(--fault-window 10 --input-flat-after 8 --time-check-interval 1)
   [ "$FAULT" != receiver-slow ] || RX_ARGS+=(--capture-rcvbuf 65536)
   if [ "$FAULT" = siem-down ]; then
     echo lab-token > "$OUT/hec.token"
@@ -432,7 +434,13 @@ if [ -n "$FAULT" ]; then
     siem-down)       EXPECT=(--segment e2-siem --status amber --rule 10) ;;
     clock)           EXPECT=(--time-alarm) ;;
   esac
-  python3 "$HERE/check_fault.py" "$OUT/received/health.jsonl" "${EXPECT[@]}" || RC=1
+  python3 "$HERE/check_fault.py" "$OUT/received/health.jsonl" --first "${EXPECT[@]}" || RC=1
+else
+  echo "== checking that the receiver raised no false alarm"
+  ALLOW=()
+  # Loss and the receiver's own downtime leave not_received gaps: rule 9, by design (#133).
+  if [ -n "$LOSS" ] || [ "$OUTAGE" = 1 ]; then ALLOW+=(--allow-rule 9); fi
+  python3 "$HERE/check_fault.py" "$OUT/received/health.jsonl" --none "${ALLOW[@]}" || RC=1
 fi
 if [ ${#FILES[@]} -gt 0 ]; then
   echo

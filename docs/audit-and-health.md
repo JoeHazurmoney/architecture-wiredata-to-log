@@ -292,8 +292,8 @@ a missing file or directory, or one it may not read (run it as `wd2l`, or join `
 ## 10. Where is the fault: the rules
 
 The receiver has nearly every signal (its own NIC, capture and SIEM output, plus Enclave 1's state
-from the heartbeat), so it decides where a fault is. The rules work with any SIEM and are tested
-in the lab (`lab/run-lab.sh --fault NAME`).
+from the heartbeat), so it decides where a fault is. The rules work with any SIEM. All eleven are
+unit-tested; rules 1–5 and 8–10 are also injected in the lab (`lab/run-lab.sh --fault NAME`).
 
 * It re-evaluates every 5 s (`--fault-interval`, live capture only). "New" means growth over the
   last 60 s (`--fault-window`).
