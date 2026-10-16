@@ -1,8 +1,8 @@
 # ADR-0001: No message queue in Enclave 2 for now
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-13, shipped in 1.0.0)
 **Date:** 2026-10-04
-**Deciders:** System owner. The ISSO before any new component is added in Enclave 2.
+**Deciders:** System owner. The security owner before any new component is added in Enclave 2.
 
 ## Context
 

@@ -1,6 +1,6 @@
 # ADR-0003: Send rebuilt events straight to the SIEM; no event files to rotate
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-13, shipped in 1.0.0)
 **Date:** 2026-10-04
 **Deciders:** System owner. The Enclave 2 SIEM owner, for the collector token and the indexes.
 
