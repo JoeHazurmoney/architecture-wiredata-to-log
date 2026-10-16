@@ -38,6 +38,14 @@ updates:
       # 2.22 needs Python 3.10; wd2l supports 3.9 (pyproject.toml), and the tests run on it.
       - dependency-name: fastjsonschema
         versions: [">=2.22"]
+  # What builds the shipped wheel (packaging/build-tools/requirements.txt, hash-pinned).
+  - package-ecosystem: pip
+    directory: "/packaging/build-tools"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "build"
+      include: "scope"
   # CI's test runner (packaging/ci/test-requirements.txt, hash-pinned), Python 3.10 and up.
   - package-ecosystem: pip
     directory: "/packaging/ci"
