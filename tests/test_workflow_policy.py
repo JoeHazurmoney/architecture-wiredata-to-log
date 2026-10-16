@@ -301,6 +301,23 @@ def test_only_the_floors_job_keeps_a_pytest_without_the_tmpdir_fix():
     assert '      - dependency-name: pytest\n        versions: [">=9"]' in py39
 
 
+def test_the_wheel_is_built_with_hash_pinned_tools_only():
+    # The wheel is in every package. `pip install build` and an isolated build fetched whatever
+    # build and setuptools PyPI served that minute, unhashed, into a signed release (#155).
+    install = "python -m pip install -q --require-hashes -r packaging/build-tools/requirements.txt"
+    builds = 0
+    for name in RELEASE_PATH:
+        for job, body in jobs(read(name)).items():
+            for m in re.finditer(r"python -m build\b.*", body):
+                builds += 1
+                assert "--no-isolation" in m.group(0), (name, job, m.group(0))
+                assert install in body[:m.start()], (name, job)
+            assert not re.search(r"pip install (?:-\S+ )*(?:build|setuptools)\b", body), (name, job)
+    assert builds == 2                               # image.yml's wheel and reproducible jobs
+    with open(os.path.join(REPO, ".github", "dependabot.yml"), encoding="utf-8") as f:
+        assert 'directory: "/packaging/build-tools"' in f.read()
+
+
 def test_called_workflows_set_no_concurrency_of_their_own():
     # A group matching the caller's would deadlock the run, and GitHub cancels it.
     for name in ("image.yml", "rpm.yml", "publish.yml", "attest.yml"):

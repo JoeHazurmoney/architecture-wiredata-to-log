@@ -16,7 +16,7 @@ publishes it.
 ```mermaid
 flowchart LR
   tag["tag vX.Y.Z"] --> tests["tests<br/>pytest 3.9 and 3.12, lab"]
-  tag --> image["image.yml<br/>lint, base-verify, build, reproducible,<br/>hardening, vuln-scan, sbom, functional, fips-tests"]
+  tag --> image["image.yml<br/>lint, base-verify, wheel, build, reproducible,<br/>hardening, vuln-scan, sbom, functional, fips-tests"]
   image --> rpm["rpm.yml<br/>EL9 and EL10 builds, 6 install tests"]
   tests --> publish["publish.yml<br/>push, mirror the bases, sign, attest,<br/>verify-published"]
   image --> publish
@@ -47,7 +47,10 @@ proves:
   build pipeline, and an SBOM for each platform, all for the pinned digest. The result is
   `base-image-record.json` ([`base_record.py`](../packaging/container/base_record.py), keys in
   [`packaging/container/keys/`](../packaging/container/keys/README.md)).
-* **build**: the wheel and the image ([`build.sh`](../packaging/container/build.sh)).
+* **wheel**: the wheel and sdist, built once with hash-pinned build tools
+  ([`packaging/build-tools/requirements.txt`](../packaging/build-tools/requirements.txt), no
+  isolated build environment) and checked ([`check_dist.py`](../packaging/check_dist.py)).
+* **build**: the image from that wheel ([`build.sh`](../packaging/container/build.sh)).
 * **reproducible**: a second build from the same inputs gives the same wheel and the same image
   ID.
 * **hardening**: the image runs as 65532, has no shell, no package manager (pip included), no
