@@ -101,7 +101,7 @@ visibility question. [ADR-0002](decisions/0002-opaque-content.md) has the full r
 * **Evidence:** no flags across 17,624 real log lines. All three planted blobs are flagged in the
   lab.
 * **Controls:** a content filter in the sense of AC-4(8), with detection for AC-4(15).
-  AC-4(4) (Flow Control of Encrypted Information) is High-baseline. If the ISSO tailors it in,
+  AC-4(4) (Flow Control of Encrypted Information) is High-baseline. If the security owner tailors it in,
   the ADR's path is to redact the blob or hold the event in Enclave 1.
 
 ## Residual risks

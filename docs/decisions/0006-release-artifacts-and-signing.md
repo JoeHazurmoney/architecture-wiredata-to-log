@@ -1,6 +1,6 @@
 # ADR-0006: Release artifacts and how they are signed
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-13, shipped in 1.0.0)
 **Date:** 2026-10-08
 **Deciders:** System owner. The security owner, who holds the signing key.
 

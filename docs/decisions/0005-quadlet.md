@@ -1,6 +1,6 @@
 # ADR-0005: Run the containers under systemd with Quadlet
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-13, shipped in 1.0.0)
 **Date:** 2026-10-08
 **Deciders:** System owner. Host administrators of both enclaves.
 
@@ -128,14 +128,15 @@ flowchart LR
   * **SELinux.** The shared directories (`/var/lib/wd2l`, `/var/log/wd2l`) are mounted with
     `:z`, because host tcpdump and the audit seal timer use them too.
   * **Podman version.** It needs Podman 4.4 or later.
-* **Still to confirm** on RHEL 10 with SELinux enforcing, at the first release candidate (the
+* **Confirmed on 0.3.0rc5** (AlmaLinux 10, SELinux enforcing; [containers.md](../deployment/containers.md#user-selinux-and-fips)),
+  as planned for the first release candidate (the
   [release plan's](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-0-checks.md) Phase 0 checks 2–4, moved to [Task 6.5](https://github.com/JoeHazurmoney/architecture-wiredata-to-log/blob/813b334/docs/superpowers/plans/2026-10-07-release-packaging/phase-6-release.md) because no VM was available yet):
   * that `Exec=… $WD2L_*_ARGS` expands the env file's options;
   * that `:z` doesn't stop host tcpdump writing the archive;
   * that `User=wd2l` resolves with the passwd mount.
 
-  Each has a fallback ready: options written in `Exec=`; a small SELinux policy module; numeric
-  `User=`/`Group=`.
+  Each had a fallback ready: options written in `Exec=`; a small SELinux policy module; numeric
+  `User=`/`Group=`. Only `:z` needed it (the update below).
 * **Update (0.3.0rc5):** `:z` did stop host tcpdump: it relabelled the archive. `/var/lib/wd2l`
   is now mounted without it; a small module in the RPM labels the directory for containers and
   lets them read the archive only ([containers.md](../deployment/containers.md#user-selinux-and-fips)).

@@ -1,8 +1,8 @@
 # ADR-0002: Flag opaque content in Enclave 1, and let it cross
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-13, shipped in 1.0.0)
 **Date:** 2026-10-04
-**Deciders:** System owner and ISSO.
+**Deciders:** System owner and security owner.
 
 ## Context
 
@@ -123,7 +123,7 @@ release.
   text. B is honest about being a tripwire.
 * **NIST.** AC-4(4) (Flow Control of Encrypted Information) is in the High baseline, not
   Moderate. Its guidance counts unrecognized encoded data as encryption. B detects but doesn't
-  prevent, so if the ISSO tailors AC-4(4) in for this cross-domain flow, C or D is needed.
+  prevent, so if the security owner tailors AC-4(4) in for this cross-domain flow, C or D is needed.
 
 ## Consequences
 
@@ -133,7 +133,7 @@ release.
   suppression in the alert.
 * **Revisit when:**
   1. the direction rule in the [README](../../README.md) changes;
-  2. the ISSO tailors in AC-4(4) or AC-4(15) enforcement (then C or D);
+  2. the security owner tailors in AC-4(4) or AC-4(15) enforcement (then C or D);
   3. the alerts, or a review, show a real channel.
 
 ## Controls
@@ -147,8 +147,8 @@ release.
 
 ## Action items
 
-1. [ ] ISSO: confirm flag-and-pass, or require redact or hold.
+1. [ ] Security owner: confirm flag-and-pass, or require redact or hold.
 2. [ ] Review the first weeks of alerts and record the known benign sources.
 3. [ ] Optional: also flag executables (MZ and ELF headers) and other encodings (base32, base85).
-4. [ ] Once the audit module exists: an `opaque_content` audit record
-   ([audit design](../audit-and-health.md), section 4).
+4. [x] Once the audit module exists: an `opaque_content` audit record
+   ([audit design](../audit-and-health.md), section 4). Done: the sender writes it.

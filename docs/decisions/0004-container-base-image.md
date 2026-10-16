@@ -1,6 +1,6 @@
 # ADR-0004: Container base image: Red Hat Hardened Images, FIPS variant
 
-**Status:** Proposed
+**Status:** Accepted (2026-10-13, shipped in 1.0.0)
 **Date:** 2026-10-08
 **Deciders:** System owner. The security owner, for the cryptography and patching commitments.
 
