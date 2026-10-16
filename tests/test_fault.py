@@ -97,10 +97,10 @@ def test_sender_that_cannot_read_chrony_is_a_time_alarm():
 
 import json
 
-from wd2l import packets, wire
+from wd2l import wire
 from wd2l.receiver import Receiver
 
-from helpers import MemOutput, SlowOutput, eth
+from helpers import MemOutput, SlowOutput, build_udp_frame, eth
 
 SID = 0x1111
 
@@ -159,8 +159,8 @@ def test_foreign_packets_only():
     r, out = rxf()
     feed(r, evt(1) + hbf(1), 0)
     r.tick(0)
-    r.handle_frame(packets.build_udp_frame("02:00:00:00:00:01", "02:00:00:00:00:02",
-                                           "10.255.255.1", "10.255.255.2", 5514, 9999, b"x"), 7)
+    r.handle_frame(build_udp_frame("02:00:00:00:00:01", "02:00:00:00:00:02",
+                                   "10.255.255.1", "10.255.255.2", 5514, 9999, b"x"), 7)
     r.tick(7)
     assert faults(out) == [("red", "boundary", 4)]
 

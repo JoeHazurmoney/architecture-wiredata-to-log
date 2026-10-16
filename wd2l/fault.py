@@ -12,7 +12,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
-from .hostinfo import time_alarm
+from .hostinfo import MAX_OFFSET_MS, MAX_SKEW_S, MAX_STRATUM, time_alarm
 
 SEGMENTS = ("e1-input", "e1-sender", "boundary", "e2-capture", "e2-receiver", "e2-siem")
 RANK = {"ok": 0, "unknown": 1, "amber": 2, "red": 3}
@@ -125,8 +125,8 @@ def evaluate(s: Signals) -> Fault:
 
 
 def time_status(own: Optional[Dict[str, Any]], sender_hb: Dict[str, Any],
-                clock_offset_s: Optional[float], max_stratum: int = 3,
-                max_offset_ms: float = 100.0, max_skew_s: float = 0.05
+                clock_offset_s: Optional[float], max_stratum: int = MAX_STRATUM,
+                max_offset_ms: float = MAX_OFFSET_MS, max_skew_s: float = MAX_SKEW_S
                 ) -> Tuple[str, Optional[str]]:
     """Time quality on both sides and the skew between them (§9). Shown apart from the transfer
     fault: bad time doesn't lose events, but it makes their timestamps wrong."""

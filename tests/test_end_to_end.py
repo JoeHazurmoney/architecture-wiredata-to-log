@@ -3,10 +3,10 @@
 import json
 import random
 
-from wd2l import packets, receiver, wire
+from wd2l import receiver, wire
 from wd2l.sender import Sender
 
-from helpers import FakeSock, eth, make_events, strip_times
+from helpers import FakeSock, PcapWriter, eth, make_events, strip_times
 
 
 def run_sender(events, max_dg=wire.DEFAULT_MAX_DATAGRAM):
@@ -24,7 +24,7 @@ def run_sender(events, max_dg=wire.DEFAULT_MAX_DATAGRAM):
 
 def write_pcap(path, datagrams, keep=lambda i, d: True, t0=1000.0):
     with open(path, "wb") as f:
-        w = packets.PcapWriter(f)
+        w = PcapWriter(f)
         for i, d in enumerate(datagrams):
             if keep(i, d):
                 w.write(t0 + i * 0.0005, eth(d, i))

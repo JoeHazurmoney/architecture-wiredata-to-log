@@ -1,7 +1,9 @@
 """Facts about this host and process for audit and health records: who runs us or signals us,
 which build, chrony's view of the clock (chronyc, or chronyd over UDP), and CPU and memory.
 Anything that can't be read comes back as None or "unavailable"; nothing here raises, except
-the chrony parsers and chrony_tracking, which raise for TimeQuality to catch."""
+the chrony parsers and chrony_tracking, which raise for TimeQuality to catch.
+
+Section numbers (§N) are docs/audit-and-health.md's."""
 
 from __future__ import annotations
 
@@ -20,6 +22,10 @@ from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 UNSET_AUID = 4294967295
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 LEAP_UNSYNCED = "Not synchronised"
+# Time-quality limits, each defined here only (#169). The stratum is --max-stratum's default.
+MAX_STRATUM = 3
+MAX_OFFSET_MS = 100.0           # chrony's offset from true time, on either side
+MAX_SKEW_S = 0.05               # the two enclaves' clocks apart
 
 
 def hostname() -> str:
@@ -124,8 +130,8 @@ def parse_chronyc_tracking(text: str) -> Dict[str, Any]:
             "source": f[1] or f[0]}
 
 
-def time_alarm(q: Dict[str, Any], max_stratum: int = 3,
-               max_offset_ms: float = 100.0) -> Optional[str]:
+def time_alarm(q: Dict[str, Any], max_stratum: int = MAX_STRATUM,
+               max_offset_ms: float = MAX_OFFSET_MS) -> Optional[str]:
     """Why time quality is out of bounds (§9), or None when it is fine."""
     if q.get("synced") is None:
         return "unavailable"
@@ -274,7 +280,8 @@ class TimeQuality:
     chronyc (`cmd`), or by `query` (chrony_tracking, for --chrony-addr)."""
 
     def __init__(self, cmd: Sequence[str] = ("chronyc", "-c", "tracking"), every: float = 60.0,
-                 timeout: float = 2.0, max_stratum: int = 3, max_offset_ms: float = 100.0,
+                 timeout: float = 2.0, max_stratum: int = MAX_STRATUM,
+                 max_offset_ms: float = MAX_OFFSET_MS,
                  clock: Callable[[], float] = time.monotonic,
                  query: Optional[Callable[[], Dict[str, Any]]] = None):
         self.cmd = list(cmd)
@@ -307,7 +314,7 @@ class TimeQuality:
 
 
 def time_quality(chronyc: str = "chronyc", chrony_addr: Optional[str] = None,
-                 every: float = 60.0, max_stratum: int = 3) -> TimeQuality:
+                 every: float = 60.0, max_stratum: int = MAX_STRATUM) -> TimeQuality:
     """The TimeQuality for --chronyc / --chrony-addr / --max-stratum: chronyd over UDP when an
     address is given (the containers have no chronyc), else the chronyc command."""
     tq = TimeQuality(shlex.split(chronyc) + ["-c", "tracking"], every=every,

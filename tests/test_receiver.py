@@ -6,7 +6,7 @@ import pytest
 from wd2l import wire
 from wd2l.receiver import RangeSet, Receiver
 
-from helpers import MemOutput, eth
+from helpers import MemOutput, build_udp_frame, eth
 
 SID = 0x1111
 
@@ -250,22 +250,20 @@ def test_a_state_file_holding_infinity_loads_and_health_runs(tmp_path):
 
 
 def test_other_traffic_is_counted():
-    from wd2l import packets
     r, out = rx()
-    r.handle_frame(packets.build_udp_frame("02:00:00:00:00:01", "ff:ff:ff:ff:ff:ff",
-                                           "10.255.255.1", "10.255.255.3", 68, 67, b"dhcp"), 0)
+    r.handle_frame(build_udp_frame("02:00:00:00:00:01", "ff:ff:ff:ff:ff:ff",
+                                   "10.255.255.1", "10.255.255.3", 68, 67, b"dhcp"), 0)
     assert r.counters["other_packets"] == 1 and "udp 10.255.255.3:67" in r.other_reasons
 
 
 def test_source_port_filter():
-    from wd2l import packets
     r, out = rx(src_port=5514)
     feed(r, ev(1), 0)  # helpers.eth sends from port 40000
     assert r.counters["other_packets"] == 1 and "udp from 10.255.255.1:40000" in r.other_reasons
     assert out.events == []
     for dg in ev(2):
-        r.handle_frame(packets.build_udp_frame("02:00:00:00:00:01", "02:00:00:00:00:02",
-                                               "10.255.255.1", "10.255.255.2", 5514, 5514, dg), 0)
+        r.handle_frame(build_udp_frame("02:00:00:00:00:01", "02:00:00:00:00:02",
+                                       "10.255.255.1", "10.255.255.2", 5514, 5514, dg), 0)
     assert [s for _, s, _ in out.events] == [2]
 
 

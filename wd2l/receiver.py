@@ -6,6 +6,8 @@
 
 Everything arriving on the wire is treated as untrusted: sizes are capped, reassembly
 memory is capped, anything malformed is counted and dropped.
+
+Section numbers (§N) are docs/audit-and-health.md's; "ICD §N" is docs/interface-description.md's.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ import urllib.parse
 from collections import OrderedDict, deque
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from . import __version__, fault, hostinfo, logsetup, packets, wire
+from . import __version__, cli, fault, hostinfo, logsetup, packets, wire
 from . import audit as auditlog
 from .audit import Summarizer
 from .outputs import NOWHERE, FileOutput, HecOutput, MultiOutput, Output
@@ -411,8 +413,8 @@ class Receiver:
                  sample_interval: float = 5.0,
                  fault_interval: float = 0.0, fault_window: float = 60.0,
                  input_flat_after: float = 300.0, backlog_alarm_bytes: int = 1 << 20,
-                 archive_stale_after: float = 15.0, max_skew_s: float = 0.05,
-                 max_stratum: int = 3):
+                 archive_stale_after: float = 15.0, max_skew_s: float = hostinfo.MAX_SKEW_S,
+                 max_stratum: int = hostinfo.MAX_STRATUM):
         """`now` passed to handle_frame/tick drives every timer. Live capture passes a steady
         clock (immune to clock steps); pcap replay passes packet timestamps. `record_clock`,
         if given, supplies the wall-clock `time` written into health records, each event's
@@ -1280,26 +1282,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="token for audit records (their own token, so it can be limited to the "
                         "audit index)")
     p.add_argument("--audit-index", default="wd2l_audit", help="index for audit records")
-    p.add_argument("--audit-dir", help="write hash-chained audit records here "
-                                       "(deployed: /var/log/wd2l)")
-    p.add_argument("--audit-min-free-mb", type=int, default=256,
-                   help="free space below this raises audit_failure")
-    p.add_argument("--chronyc", default="chronyc",
-                   help="chronyc command for time quality (\"-c tracking\" is added)")
-    p.add_argument("--chrony-addr", type=hostinfo.chrony_address, metavar="HOST[:PORT]",
-                   help="ask chronyd over UDP (its command port, 323) for time quality instead "
-                        "of running --chronyc; the container units use 127.0.0.1:323")
-    p.add_argument("--max-stratum", type=hostinfo.stratum, default=3, metavar="N",
-                   help="time alarm when chrony's stratum is above N (1 is a server with its own "
-                        "reference clock, e.g. GPS); applied to the sender's reading too")
+    cli.add_common_args(p, "; applied to the sender's reading too")
     p.add_argument("--capture-iface", help="NIC whose carrier and receive counters are reported "
                                            "(default: the --live interface)")
     p.add_argument("--pcap-dir", help="capture archive directory, to check tcpdump is writing it "
                                       "(deployed: /var/lib/wd2l/pcap)")
     p.add_argument("--capture-rcvbuf", type=int, default=64 * 1024 * 1024,
                    help="receive buffer of the capture socket, bytes")
-    p.add_argument("--log-format", choices=("text", "json"), default="text",
-                   help="operational log lines: text, or one JSON object per line")
     p.add_argument("-v", "--verbose", action="store_true")
     return p
 
