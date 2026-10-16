@@ -39,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         el: ["9", "10"]
-        leg: [fresh, over-manual, upgrade]
+        leg: [fresh, over-manual, upgrade, remove]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

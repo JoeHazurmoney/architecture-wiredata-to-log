@@ -5,6 +5,9 @@
 #   over-manual  first make what the manual install made (the wd2l user and group, an edited
 #                /etc/wd2l/sender.env), then install: nothing fails and the edit stays
 #   upgrade      install Release 1, edit sender.env, upgrade to Release 2: the edit stays
+#   remove       install, add what a site and a running wd2l make, then dnf remove: the code,
+#                the units and the SELinux modules go; the audit trail, the state, the tokens,
+#                the edited sender.env (as .rpmsave) and the wd2l user stay
 # Runs from the repo root, so python3 runs with -I: the checkout's wd2l/ must not be imported.
 set -euo pipefail
 leg="$1"; rel1="$2"; rel2="${3:-}"
@@ -39,6 +42,28 @@ case "$leg" in
     dnf upgrade -y -q "$rel2"/*.noarch.rpm
     rpm -q --qf '%{RELEASE}\n' wd2l | grep -q '^2\.' || fail "not upgraded: $(rpm -q wd2l)"
     grep -qxF "$EDIT" /etc/wd2l/sender.env || fail "the upgrade replaced the edited sender.env" ;;
+  remove)
+    dnf install -y -q selinux-policy-targeted     # a policy store, so the modules load, then go
+    dnf install -y -q "$rel1"/*.noarch.rpm
+    echo "$EDIT" > /etc/wd2l/sender.env
+    echo token > /etc/wd2l/hec.token
+    echo '{"record": "audit"}' > /var/log/wd2l/audit-1.jsonl
+    echo '{}' > /var/lib/wd2l/state.json
+    dnf remove -y -q wd2l wd2l-sender wd2l-receiver
+    for p in wd2l wd2l-sender wd2l-receiver; do ! rpm -q "$p" >/dev/null || fail "$p is still installed"; done
+    for c in wd2l-sender wd2l-receiver wd2l-audit-report; do ! command -v "$c" >/dev/null || fail "$c is still there"; done
+    if ls -d /usr/lib/python3*/site-packages/wd2l 2>/dev/null; then fail "site-packages/wd2l is still there"; fi
+    if ls /usr/lib/systemd/system/wd2l-* 2>/dev/null; then fail "units are still there"; fi
+    mods=$(semodule -l)                           # not piped: grep -q could end it early
+    if grep -qx 'wd2l_container\|wd2l_pcap' <<< "$mods"; then fail "an SELinux module is still loaded"; fi
+    grep -qxF "$EDIT" /etc/wd2l/sender.env.rpmsave || fail "the edited sender.env wasn't kept as .rpmsave"
+    for f in /etc/wd2l/hec.token /var/log/wd2l/audit-1.jsonl /var/lib/wd2l/state.json; do
+      [ -f "$f" ] || fail "$f was removed"
+    done
+    getent passwd wd2l >/dev/null || fail "the wd2l user was removed: its files would be left unowned"
+    getent group wd2l-audit >/dev/null || fail "the wd2l-audit group was removed"
+    echo "install test ($leg): ok"
+    exit 0 ;;
   *) fail "unknown leg" ;;
 esac
 for c in wd2l-sender wd2l-receiver wd2l-audit-report; do "$c" --help >/dev/null || fail "$c --help"; done
