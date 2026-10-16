@@ -69,7 +69,7 @@ truncated:       1 (seq [5001])
 opaque content:  3 (seq [1002, 2003, 3004])
 ...
 link delay (wd2l_rx_time - wd2l_tx_time): median 0.0 ms, p99 4.0 ms, max 11.0 ms
-clock offset (last heartbeat): 0.0 s
+clock offset (lowest of the last 10 heartbeats): 0.0 s
 PASS: every event arrived intact or is accounted for in a reported gap
 ```
 

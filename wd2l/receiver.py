@@ -33,6 +33,11 @@ from .reconcile import StreamReconciler
 log = logging.getLogger("wd2l.receiver")
 
 MAX_GAP_RANGES = 100000
+# The clock offset is the lowest of the last OFFSET_WINDOW heartbeats' readings (about 10 s): a
+# delay before the receiver reads a heartbeat only ever adds to its reading (NTP filters the same
+# way). The skew is judged once OFFSET_MIN_READINGS of them are in (#157).
+OFFSET_WINDOW = 10
+OFFSET_MIN_READINGS = 3
 MAX_STREAMS = 1000
 MAX_RETIRED = 10000
 MAX_REASONS = 32
@@ -146,8 +151,9 @@ class StreamTracker:
         self.boot: Optional[int] = None   # sender restart count, if the sender reports one
         self.linked = False               # its link to the previous stream has been checked
         self.records = False   # the sender's records stream (flags bit 0)
-        self.clock_offset: Optional[float] = None   # receiver minus sender clock, last heartbeat
-        self.last_sender_time: Optional[float] = None   # that heartbeat's sender_time
+        self.clock_offset: Optional[float] = None   # receiver minus sender clock (OFFSET_WINDOW)
+        self.offsets: Deque[float] = deque(maxlen=OFFSET_WINDOW)   # the readings it is made of
+        self.last_sender_time: Optional[float] = None   # the last reading's sender_time
         self.rc = StreamReconciler()
 
     def needed(self, seq: int) -> bool:
@@ -427,6 +433,7 @@ class Receiver:
         self.record_clock = record_clock
         self.rx_time = rx_time
         self.last_clock_offset: Optional[float] = None
+        self.offset_readings = 0        # how many readings last_clock_offset is the lowest of
         self.streams: Dict[int, StreamTracker] = {}
         # Streams no longer tracked in full: stream_id -> [known seq, final]. Enough to drop
         # replayed duplicates and to follow a sender's restart chain.
@@ -698,11 +705,14 @@ class Receiver:
         sent = info.get("sender_time")
         if (isinstance(sent, (int, float)) and not isinstance(sent, bool)
                 and sent != t.last_sender_time):
-            # Clock offset plus the one-way delay, which is well under 1 ms on a direct fiber.
-            # A repeat of the last heartbeat (the final one goes out FINAL_COPIES times) would
-            # add the time between copies, so only the first copy counts (#147).
+            # Each reading is the clock offset plus every delay before the receiver read it:
+            # well under 1 ms on a direct fiber, more on a busy host, so the offset is the lowest
+            # recent reading (#157). A repeat of the last heartbeat (the final one goes out
+            # FINAL_COPIES times) would add the time between copies: only the first counts (#147).
             t.last_sender_time = sent
-            t.clock_offset = self.last_clock_offset = round(self._wall(now) - sent, 3)
+            t.offsets.append(round(self._wall(now) - sent, 3) + 0.0)     # + 0.0: no "-0.0"
+            t.clock_offset = self.last_clock_offset = min(t.offsets)
+            self.offset_readings = len(t.offsets)
         if not t.linked and not t.records:
             self._link(t, info, prev, now)
         was_final = t.final
@@ -914,9 +924,10 @@ class Receiver:
                                 fault_rule=f.rule, fault_detail=f.detail, segments=f.segments,
                                 previous_status=prev.status, previous_segment=prev.segment,
                                 previous_rule=prev.rule)
+        # The skew only once enough readings are in: one heartbeat read late at start-up isn't it.
+        skew = self.last_clock_offset if self.offset_readings >= OFFSET_MIN_READINGS else None
         ts = fault.time_status(self.tq.read() if self.tq is not None else None, hb,
-                               self.last_clock_offset, max_stratum=self.max_stratum,
-                               max_skew_s=self.max_skew_s)
+                               skew, max_stratum=self.max_stratum, max_skew_s=self.max_skew_s)
         if ts != ft.time:
             ft.time = ts
             self._health_record("time_status", now, time_status=ts[0], time_reason=ts[1])
