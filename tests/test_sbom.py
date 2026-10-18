@@ -426,6 +426,7 @@ def test_the_same_finding_from_two_scanners_is_one_row_found_by_both(tmp_path):
         ("trivy", trivy_doc(("CVE-2026-2222", "MEDIUM", "openssl-libs", "3.5.9-0.3.hum1", "")))))
     assert html.count("CVERecord?id=CVE-2026-2222") == 1
     assert "<td>grype, trivy</td>" in html
+    assert "and the scan results of grype, trivy.</footer>" in html
     assert '<div class="tile"><b>1</b><span>known vulnerabilities</span></div>' in html
 
 

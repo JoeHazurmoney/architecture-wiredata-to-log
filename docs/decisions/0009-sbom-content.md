@@ -44,7 +44,9 @@
 
     A component that no rule covers fails the run, so a new dependency can't arrive
     unattributed. The rules match the start of the package ID, so a look-alike name doesn't match.
-  * **wd2l's files.** wd2l is given:
+  * **wd2l's files,** in the SPDX SBOM, which records the component that installed each file
+    (Syft's CycloneDX lists the files, each with its hashes, but not their component). wd2l is
+    given:
     * every file in the wheel's `RECORD`, each with its SHA-256 checked against it;
     * the files the installer writes in its `dist-info` directory;
     * the compiled `.pyc` of its own modules.
@@ -57,8 +59,9 @@
   * **The author and the generation context.** The author is the project
     (`Organization: wd2l project`), and Syft stays named as the tool. When it was made is
     recorded as CycloneDX's `post-build` lifecycle, and as SPDX's creation comment.
-  * **A namespace of our own:** `<repository>/sbom/<image>-<version>-<platform>-<digest>`. The
-    same image always gets the same namespace, and no two images share one.
+  * **An SPDX namespace of our own:** `<repository>/sbom/<image>-<version>-<platform>-<digest>`.
+    The same image always gets the same namespace, and no two images share one. (CycloneDX's
+    serial number stays the random one Syft gives each document, as that format intends.)
 * **A readable page with every release: `wd2l-<version>-sbom.html`**
   ([`sbom_report.py`](../../packaging/release/sbom_report.py)).
   * **What it shows:**
