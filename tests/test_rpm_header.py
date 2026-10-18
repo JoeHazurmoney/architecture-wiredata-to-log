@@ -2,33 +2,12 @@
 signature and main headers, and the headers an RPM database keeps (#190)."""
 
 import sqlite3
-import struct
 
 import pytest
 
-from helpers import load_script
+from helpers import INT16, INT32, STRING, STRING_ARRAY, I18N, load_script, rpm_header_blob as header_blob
 
 rh = load_script("packaging/container/rpm_header.py")
-INT16, INT32, STRING, STRING_ARRAY, I18N = 3, 4, 6, 8, 9
-
-
-def header_blob(tags):
-    """A header's index and store, as rpm writes them: (tag, type, value), sorted by tag."""
-    index, store = b"", b""
-    for tag, typ, value in sorted(tags):
-        if typ == INT32:
-            store += b"\0" * (-len(store) % 4)           # 32-bit values are aligned
-            data, count = struct.pack(">%di" % len(value), *value), len(value)
-        elif typ == INT16:                               # file modes, unsigned 16-bit
-            store += b"\0" * (-len(store) % 2)
-            data, count = struct.pack(">%dH" % len(value), *value), len(value)
-        elif typ == STRING_ARRAY:
-            data, count = b"".join(v.encode() + b"\0" for v in value), len(value)
-        else:
-            data, count = value.encode() + b"\0", 1
-        index += struct.pack(">iiii", tag, typ, len(store), count)
-        store += data
-    return struct.pack(">II", len(tags), len(store)) + index + store
 
 
 def rpm_file(path, main, sig=((273, STRING, "ab" * 32),)):

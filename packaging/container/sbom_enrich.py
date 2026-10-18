@@ -17,7 +17,11 @@
 The SPDX document namespace becomes the repository's, with the version, platform and digest,
 instead of Syft's, with a random UUID.
 
-    sbom_enrich.py --spdx S.json --cdx C.json --wheel W.whl --arch ARCH --repo-url URL
+Package-level hashes (#190), in both formats: with --rpmdb (the image's rpmdb.sqlite), each RPM
+gets its header's SHA-256, the digest rpm itself records for that build (an RPM missing from the
+database is a gap); wd2l gets the SHA-256 of the wheel it was installed from.
+
+    sbom_enrich.py --spdx S.json --cdx C.json --wheel W.whl --arch ARCH --repo-url URL [--rpmdb DB]
 Exit 1 with a line for each gap that remains."""
 
 import argparse
@@ -25,11 +29,14 @@ import base64
 import binascii
 import hashlib
 import json
+import os
 import posixpath
 import re
 import sys
 import zipfile
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 PROJECT = "wd2l project"
 # The supplier of each component, by its package ID's prefix: who built it and ships its fixes.
@@ -44,6 +51,40 @@ PURL_PACKAGE = "pkg:pypi/wd2l@"
 
 def supplier_for(purl: str) -> Optional[str]:
     return next((s for prefix, s in SUPPLIERS if purl.startswith(prefix)), None)
+
+
+RPM_HASH_NOTE = ("SHA256 is the RPM header's SHA-256 digest, from the image's RPM database: "
+                 "rpm -q --qf '%{SHA256HEADER}' gives the same for the installed package.")
+WHEEL_HASH_NOTE = "SHA256 is the SHA-256 of the wheel it was installed from, %s, a release file."
+
+
+def rpm_key(name: str, version: str, purl: str) -> Tuple[str, str, str]:
+    """An RPM by name, version-release (no epoch) and arch, as Syft's SBOMs and the RPM database
+    both name it."""
+    arch = next((q[5:] for q in purl.partition("?")[2].split("&") if q.startswith("arch=")), "")
+    return name, re.sub(r"^\d+:", "", version or ""), arch
+
+
+def rpm_digests(rpmdb: str) -> Dict[Tuple[str, str, str], str]:
+    """Each installed RPM's header SHA-256, by rpm_key. rpm's imported signing keys (gpg-pubkey)
+    have no arch, and Syft's package IDs for them none either."""
+    import rpm_header                                      # a sibling script
+    return {(p["name"], "%s-%s" % (p["version"], p["release"]), p["arch"] or ""): p["header_sha256"]
+            for p in rpm_header.read_rpmdb(rpmdb) if p["header_sha256"]}
+
+
+def package_hashes(name: str, version: str, purl: str, rpms: Optional[Dict[Tuple[str, str, str], str]],
+                   wheel: Optional[Tuple[str, str]]) -> Tuple[Optional[str], str, Optional[str]]:
+    """(SHA-256, what it is, the gap) for one component: an RPM's header digest, or for wd2l the
+    wheel's. (None, "", None) when there's nothing to say."""
+    if purl.startswith("pkg:rpm/") and rpms is not None:
+        key = rpm_key(name, version, purl)
+        if key in rpms:
+            return rpms[key], RPM_HASH_NOTE, None
+        return None, "", "%s %s (%s) isn't in the image's RPM database" % key
+    if purl.startswith(PURL_PACKAGE) and wheel:
+        return wheel[1], WHEEL_HASH_NOTE % wheel[0], None
+    return None, "", None
 
 
 def installed_by(doc: Dict[str, Any]) -> Dict[str, str]:
@@ -107,8 +148,10 @@ def verification_code(sha1s: Sequence[str]) -> str:
 
 
 def complete_spdx(doc: Dict[str, Any], dist_info: str, rec: Dict[str, str], arch: str,
-                  repo_url: str) -> Tuple[List[str], List[str]]:
-    """Completes doc in place. Returns (what was done, the gaps that remain)."""
+                  repo_url: str, rpms: Optional[Dict[Tuple[str, str, str], str]] = None,
+                  wheel: Optional[Tuple[str, str]] = None) -> Tuple[List[str], List[str]]:
+    """Completes doc in place. Returns (what was done, the gaps that remain). rpms: rpm_digests()
+    of the image's RPM database; wheel: (the wheel's name, its SHA-256)."""
     done: List[str] = []
     gaps: List[str] = []
     rels = doc.setdefault("relationships", [])
@@ -131,7 +174,17 @@ def complete_spdx(doc: Dict[str, Any], dist_info: str, rec: Dict[str, str], arch
     roots = described(doc)
     installed = installed_by(doc)
     tally: Dict[str, int] = {}
+    hashed = 0
     for p in doc.get("packages") or []:
+        h, note, gap = package_hashes(p.get("name", ""), p.get("versionInfo", ""), purl_of(p), rpms, wheel)
+        if gap:
+            gaps.append(gap)
+        elif h:
+            p["checksums"] = [{"algorithm": "SHA256", "checksumValue": h}]
+            p["comment"] = note
+            hashed += 1
+            if purl_of(p).startswith(PURL_PACKAGE):
+                p["packageFileName"] = wheel[0] if wheel else None
         s = PROJECT if p["SPDXID"] in roots else (supplier_for(purl_of(p)) or installed.get(purl_of(p).split("?")[0]))
         if not s:
             gaps.append("no supplier rule for %s %s (%s)" % (p.get("name"), p.get("versionInfo"),
@@ -140,6 +193,7 @@ def complete_spdx(doc: Dict[str, Any], dist_info: str, rec: Dict[str, str], arch
         p["supplier"] = "Organization: " + s
         tally[s] = tally.get(s, 0) + 1
     done.append("suppliers: " + ", ".join("%s %d" % kv for kv in sorted(tally.items())))
+    done.append("package-level SHA-256 on %d components" % hashed)
 
     # wd2l's files.
     by_name = {f["fileName"].lstrip("/"): f for f in doc["files"]}
@@ -214,8 +268,11 @@ def complete_spdx(doc: Dict[str, Any], dist_info: str, rec: Dict[str, str], arch
     return done, gaps
 
 
-def complete_cdx(doc: Dict[str, Any], installed: Optional[Dict[str, str]] = None) -> Tuple[List[str], List[str]]:
-    """installed: installed_by() of the SPDX SBOM, which records who installed what."""
+def complete_cdx(doc: Dict[str, Any], installed: Optional[Dict[str, str]] = None,
+                 rpms: Optional[Dict[Tuple[str, str, str], str]] = None,
+                 wheel: Optional[Tuple[str, str]] = None) -> Tuple[List[str], List[str]]:
+    """installed: installed_by() of the SPDX SBOM, which records who installed what; rpms and
+    wheel as for complete_spdx."""
     done: List[str] = []
     gaps: List[str] = []
     tally: Dict[str, int] = {}
@@ -223,6 +280,15 @@ def complete_cdx(doc: Dict[str, Any], installed: Optional[Dict[str, str]] = None
         if c.get("type") == "file":
             continue
         purl = c.get("purl") or ""
+        h, _note, gap = package_hashes(c.get("name", ""), c.get("version", ""), purl, rpms, wheel)
+        if gap:
+            gaps.append(gap)
+        elif h:
+            c["hashes"] = [{"alg": "SHA-256", "content": h}]
+            what = ("the RPM header's SHA-256, from the image's RPM database" if purl.startswith("pkg:rpm/")
+                    else "the SHA-256 of the wheel it was installed from, %s" % (wheel[0] if wheel else ""))
+            c["properties"] = [x for x in c.get("properties") or [] if x.get("name") != "wd2l:hash"] + [
+                {"name": "wd2l:hash", "value": what}]
         s = OS_SUPPLIERS.get(c.get("name", "")) if c.get("type") == "operating-system" \
             else (supplier_for(purl) or (installed or {}).get(purl.split("?")[0]))
         if not s:
@@ -249,13 +315,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--wheel", required=True)
     p.add_argument("--arch", required=True)
     p.add_argument("--repo-url", required=True)
+    p.add_argument("--rpmdb", help="the image's rpmdb.sqlite: each RPM's header SHA-256 as its hash")
     a = p.parse_args(argv)
     dist_info, rec = record(a.wheel)
+    with open(a.wheel, "rb") as f:
+        wheel = (os.path.basename(a.wheel), hashlib.sha256(f.read()).hexdigest())
+    rpms = rpm_digests(a.rpmdb) if a.rpmdb else None
     with open(a.spdx) as f:
         installed = installed_by(json.load(f))
     gaps: List[str] = []
-    for path, fn in ((a.spdx, lambda d: complete_spdx(d, dist_info, rec, a.arch, a.repo_url)),
-                     (a.cdx, lambda d: complete_cdx(d, installed))):
+    for path, fn in ((a.spdx, lambda d: complete_spdx(d, dist_info, rec, a.arch, a.repo_url, rpms, wheel)),
+                     (a.cdx, lambda d: complete_cdx(d, installed, rpms, wheel))):
         with open(path) as f:
             doc = json.load(f)
         done, g = fn(doc)

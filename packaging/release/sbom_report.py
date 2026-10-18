@@ -92,6 +92,8 @@ def load_view(vid: str, label: str, spdx: Dict[str, Any], cdx: Dict[str, Any],
         comps.append({"name": p.get("name"), "version": p.get("versionInfo"), "supplier": org(p.get("supplier")),
                       "license": lic if lic not in NONE else "", "purl": purl_of(p),
                       "verification": (p.get("packageVerificationCode") or {}).get("packageVerificationCodeValue"),
+                      "sha256": next((c["checksumValue"] for c in p.get("checksums") or []
+                                      if c.get("algorithm") == "SHA256"), ""),
                       "files": sorted(owner[p["SPDXID"]], key=lambda f: f["fileName"]),
                       "findings": sorted(by_pkg.pop(key, []), key=lambda f: SEVERITIES.index(f["severity"])
                                          if f["severity"] in SEVERITIES else 9)})
@@ -140,9 +142,11 @@ def minimum_fields(p: Dict[str, Any]) -> List[Tuple[str, str, str]]:
          "%d between components, and each component's files" % p["deps"]),
         ("Author of the SBOM", "Yes" if orgs else "No", ", ".join(orgs) or "not stated"),
         ("Timestamp", "Yes" if p["created"] else "No", p["created"] or "not stated"),
-        ("Component hash", "Partly" if hashed and verified < n else rate(hashed, files_total),
-         "a SHA-256 on %s of %s files; %d of %d components carry a verification code over their files"
-         % ("{:,}".format(hashed), "{:,}".format(files_total), verified, n)),
+        # A component's own hash: its SHA-256 (an RPM's header digest, a wheel's), or SPDX's
+        # verification code over its files. Files' hashes alone are the files', not the component's.
+        ("Component hash", rate(sum(1 for c in comps if c["sha256"] or c["verification"]), n),
+         "a SHA-256 on %d of %d components, a verification code over their files on %d; a SHA-256 on %s of %s files"
+         % (sum(1 for c in comps if c["sha256"]), n, verified, "{:,}".format(hashed), "{:,}".format(files_total))),
         ("License", rate(lic, n), "%d of %d components" % (lic, n)),
         ("Tool", "Yes" if tools else "No", ", ".join(tools) or "not stated"),
         ("Generation context", "Yes" if p["comment"] or p["lifecycles"] else "No",
