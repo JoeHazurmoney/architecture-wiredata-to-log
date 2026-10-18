@@ -98,6 +98,16 @@ jobs:
               fi
               { echo "## wd2l $v ($a)"; cat "summary-$v-$a.md"; } >> "$GITHUB_STEP_SUMMARY"
             done
+            # The comparison image on UBI 9 (#192), from 1.2.0: reported, never an issue.
+            d9=$(jq -r '.comparison_image.digest // empty' "manifest-$v.json")
+            if [ -n "$d9" ]; then
+              packaging/ci/tool grype "registry:ghcr.io/joehazurmoney/wd2l-ubi9@$d9" --platform linux/amd64 -o json --file "/work/grype-ubi9-$v.json" 2>&1 | tee "grype-ubi9-$v.log"
+              packaging/ci/tool trivy image --platform linux/amd64 --cache-dir /work/.cache/trivy --scanners vuln,secret \
+                --format json --output "/work/trivy-ubi9-$v.json" "ghcr.io/joehazurmoney/wd2l-ubi9@$d9" 2>&1 | tee "trivy-ubi9-$v.log"
+              python3 packaging/container/vuln_gate.py --grype "grype-ubi9-$v.json" --trivy "trivy-ubi9-$v.json" \
+                --exceptions packaging/container/vuln-exceptions.json --summary "summary-ubi9-$v.md" --warnings "coverage-ubi9-$v.log"
+              { echo "## wd2l-ubi9 $v (amd64), the comparison image: reported, never an issue"; cat "summary-ubi9-$v.md"; } >> "$GITHUB_STEP_SUMMARY"
+            fi
           done
       - name: Every warning the scanners logged, and each scanner without data for the OS (ADR-0011)
         if: ${{ !cancelled() }}

@@ -592,8 +592,8 @@ def test_every_scanner_and_syft_log_is_kept_and_its_warnings_raised():
             assert m, (name, job, run)
             log = m.group(1).strip('"')
             # Named outright, or (the rescan: one log per release and platform) by a glob.
-            globbed = "for f in %s*.log; do" % log.split("$")[0]
-            assert "=%s" % log in warn or ("$" in log and globbed in warn), (name, job, log)
+            globs = re.findall(r"for f in (\S*)\*\.log; do", warn)
+            assert "=%s" % log in warn or ("$" in log and any(log.startswith(g) for g in globs)), (name, job, log)
 
 
 def test_the_gate_s_coverage_warnings_go_through_the_reviewed_list():
@@ -603,6 +603,16 @@ def test_the_gate_s_coverage_warnings_go_through_the_reviewed_list():
     rescan = jobs(read("image-rescan.yml"))["rescan"]
     assert '--warnings "coverage-$v-$a.log"' in rescan
     assert 'for f in coverage-*.log; do args+=(--log "vuln-gate=$f"); done' in rescan
+
+
+def test_the_rescan_reports_the_comparison_image_and_opens_no_issue_for_it():
+    # #192: wd2l-ubi9, by the digest its release's manifest records, scanned weekly too; its
+    # findings are shown, never an issue (ADR-0004's amendment).
+    scan = jobs(read("image-rescan.yml"))["rescan"]
+    assert "d9=$(jq -r '.comparison_image.digest // empty' \"manifest-$v.json\")" in scan
+    block = scan.split('if [ -n "$d9" ]; then', 1)[1].split("\n            fi\n", 1)[0]
+    assert '"registry:ghcr.io/joehazurmoney/wd2l-ubi9@$d9" --platform linux/amd64' in block
+    assert '--warnings "coverage-ubi9-$v.log"' in block and "gh issue" not in block and "--exit-code" not in block
 
 
 def test_the_weekly_pins_job_notices_when_red_hat_s_trivy_database_becomes_reachable():
