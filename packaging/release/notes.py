@@ -66,6 +66,9 @@ def notes(names: Dict[str, Any], image: str, digest: str, sums_text: str,
             "`wd2l-%s-image-arm64-oci.tar` are the same image, one per platform, "
             "each with its signature and attestations, for enclaves without a registry."
             % (image, " / ".join(names["image_tags"]), doc, v, v),
+            "* **What's in the image:** `wd2l-%s-sbom.html` opens offline in a browser and lists every "
+            "component and file, who supplies each, and what the vulnerability scans found; the SPDX and "
+            "CycloneDX files it is made from stay the authoritative record." % v,
             "* Bringing a release into an enclave: [releasing.md](%s/releasing.md#bringing-a-release-into-an-enclave)."
             % doc, "",
             "## Verify (works offline)", "",

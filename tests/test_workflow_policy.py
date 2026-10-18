@@ -521,6 +521,19 @@ def test_the_image_sbom_names_the_image_lists_every_file_and_is_completed_before
     assert body.index(image) < enrich < body.index("sbom_diff.py") < body.index("upload-artifact")
 
 
+def test_the_release_has_the_readable_sbom_of_both_platforms_listed_and_summed():
+    # #189: wd2l-<v>-sbom.html, made from the released SBOM files and both scanners' results,
+    # before the manifest lists the assets and SHA256SUMS sums them.
+    body = jobs(read("release.yml"))["assets"]
+    report = body.index('python packaging/release/sbom_report.py --version "$V"')
+    assert '--out "assets/wd2l-$V-sbom.html"' in body[report:report + 400]
+    for part in ('--view "$a" "linux/$a" "assets/wd2l-$V-image-$a.spdx.json" "assets/wd2l-$V-image-$a.cdx.json"',
+                 '--scan "$a" "grype=vuln-$a/grype.json"', '--scan "$a" "trivy=vuln-$a/trivy.json"',
+                 "for a in amd64 arm64; do"):
+        assert part in body[body.index("name: The SBOMs and their scans as one readable page"):report], part
+    assert body.index('cp "sbom-$a/wd2l.spdx.json"') < report < body.index("manifest.py generate")
+
+
 def test_the_image_name_and_the_urls_agree_everywhere():
     # Written out in five files (#180): a change to one would push, sign, attest or rescan
     # under another name.
