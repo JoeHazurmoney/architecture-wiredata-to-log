@@ -22,6 +22,10 @@ on:
         description: the index's linux/arm64 image (sha256:...)
         type: string
         required: true
+      image-digest-ubi9:
+        description: the comparison image on UBI 9, ghcr.io/joehazurmoney/wd2l-ubi9 (sha256:...)
+        type: string
+        required: true
     outputs:
       files-url:
         description: the attestation page for the release files (linked from the notes)
@@ -89,17 +93,28 @@ jobs:
           subject-digest: ${{ inputs.image-digest-arm64 }}
           push-to-registry: true
           create-storage-record: false
+      - name: Provenance for the comparison image (UBI 9, amd64)
+        id: image-ubi9
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/joehazurmoney/wd2l-ubi9
+          subject-digest: ${{ inputs.image-digest-ubi9 }}
+          push-to-registry: true
+          create-storage-record: false
       - name: Keyless cosign signatures on the index and each platform image (Sigstore's public instance), checked at once
         env:
           TOOL_ENV: ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN
           D: ${{ inputs.image-digest }}
           DA: ${{ inputs.image-digest-amd64 }}
           DR: ${{ inputs.image-digest-arm64 }}
+          UBI9: ghcr.io/joehazurmoney/wd2l-ubi9
+          DU: ${{ inputs.image-digest-ubi9 }}
         run: |
           echo "$TOKEN" | podman login ghcr.io -u "$ACTOR" --password-stdin
           packaging/ci/tool cosign sign --yes --recursive "$IMAGE@$D"
-          for d in "$D" "$DA" "$DR"; do
-            packaging/ci/tool cosign verify "$IMAGE@$d" \
+          packaging/ci/tool cosign sign --yes "$UBI9@$DU"
+          for ref in "$IMAGE@$D" "$IMAGE@$DA" "$IMAGE@$DR" "$UBI9@$DU"; do
+            packaging/ci/tool cosign verify "$ref" \
               --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/attest.yml@$GITHUB_REF" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
               --certificate-github-workflow-repository "$GITHUB_REPOSITORY" > /dev/null
@@ -111,9 +126,10 @@ jobs:
           IMAGE_BUNDLE: ${{ steps.image.outputs.bundle-path }}
           AMD_BUNDLE: ${{ steps.image-amd64.outputs.bundle-path }}
           ARM_BUNDLE: ${{ steps.image-arm64.outputs.bundle-path }}
+          UBI9_BUNDLE: ${{ steps.image-ubi9.outputs.bundle-path }}
         run: |
           mkdir attestations
-          jq -c . "$FILES_BUNDLE" "$IMAGE_BUNDLE" "$AMD_BUNDLE" "$ARM_BUNDLE" > attestations/attestations.jsonl
+          jq -c . "$FILES_BUNDLE" "$IMAGE_BUNDLE" "$AMD_BUNDLE" "$ARM_BUNDLE" "$UBI9_BUNDLE" > attestations/attestations.jsonl
           wc -l attestations/attestations.jsonl
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

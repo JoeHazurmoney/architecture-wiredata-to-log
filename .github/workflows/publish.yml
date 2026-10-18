@@ -21,6 +21,8 @@ on:
         value: ${{ jobs.publish.outputs.digest_amd64 }}
       digest_arm64:
         value: ${{ jobs.publish.outputs.digest_arm64 }}
+      digest_ubi9:
+        value: ${{ jobs.publish.outputs.digest_ubi9 }}
 defaults:
   run:
     shell: bash
@@ -39,8 +41,11 @@ jobs:
       digest: ${{ steps.push.outputs.digest }}
       digest_amd64: ${{ steps.push.outputs.digest_amd64 }}
       digest_arm64: ${{ steps.push.outputs.digest_arm64 }}
+      digest_ubi9: ${{ steps.push-ubi9.outputs.digest_ubi9 }}
     env:
       IMAGE: ghcr.io/joehazurmoney/wd2l
+      # The comparison image on UBI 9, amd64 only (#192): published and verified like IMAGE.
+      UBI9: ghcr.io/joehazurmoney/wd2l-ubi9
       BASE_MIRROR: ghcr.io/joehazurmoney/wd2l-base/python
       ATT: https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations
     steps:
@@ -96,6 +101,27 @@ jobs:
         with:
           name: vuln-arm64
           path: vuln-arm64
+      # The comparison image's (#192).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-ubi9-amd64
+          path: image-ubi9-amd64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build-info-ubi9-amd64
+          path: build-info-ubi9-amd64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom-ubi9-amd64
+          path: sbom-ubi9-amd64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vuln-ubi9-amd64
+          path: vuln-ubi9-amd64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: base-evidence-ubi9
+          path: base-evidence-ubi9
       - id: v
         run: python3 packaging/release/versions.py --github-output "$GITHUB_OUTPUT"
       - name: Log in to ghcr.io
@@ -127,6 +153,22 @@ jobs:
             [ "$got" = "$D" ] || { echo "::error::$IMAGE:$t serves $got, not the index $D"; exit 1; }
           done
           echo "digest=$D" >> "$GITHUB_OUTPUT"
+      - id: push-ubi9
+        name: Push the comparison image (UBI 9, amd64), with each tag, and check it is the tested image
+        run: |
+          set -- ${{ steps.v.outputs.image_tags }}
+          skopeo copy -q --digestfile ubi9-digest.txt "oci-archive:image-ubi9-amd64/image.oci.tar" "docker://$UBI9:$1"
+          D=$(cat ubi9-digest.txt); shift
+          # The image ID (its config's digest) is what ubi9-checks rebuilt and checked.
+          got=$(skopeo inspect --raw "docker://$UBI9@$D" | jq -r .config.digest)
+          want="sha256:$(jq -r .image_id build-info-ubi9-amd64/build-info.json)"
+          [ "$got" = "$want" ] || { echo "::error::$UBI9@$D holds $got, not the tested $want"; exit 1; }
+          for t in "$@"; do packaging/ci/tool oras tag --registry-config /auth/config.json "$UBI9@$D" "$t"; done
+          for t in ${{ steps.v.outputs.image_tags }}; do
+            got="sha256:$(skopeo inspect --raw "docker://$UBI9:$t" | sha256sum | cut -d' ' -f1)"
+            [ "$got" = "$D" ] || { echo "::error::$UBI9:$t serves $got, not $D"; exit 1; }
+          done
+          echo "digest_ubi9=$D" >> "$GITHUB_OUTPUT"
       - name: Refuse to sign an image an earlier run signed (docs/releasing.md, "When a release run fails")
         run: |
           # A re-run pushes the same digests (the build is reproducible). Signing them again adds
@@ -137,6 +179,9 @@ jobs:
               echo "::error::$IMAGE@$d is already signed by an earlier run: cut a new version"; exit 1
             fi
           done
+          if packaging/ci/tool cosign verify --key /work/cosign.pub --insecure-ignore-tlog "$UBI9@${{ steps.push-ubi9.outputs.digest_ubi9 }}" > /dev/null 2>&1; then
+            echo "::error::$UBI9 is already signed by an earlier run: cut a new version"; exit 1
+          fi
           echo "not signed yet: ok"
       - name: Mirror the base images, their records and the runtime base's sources
         run: |
@@ -175,6 +220,16 @@ jobs:
             S attest --type spdxjson --predicate "/work/sbom-$a/wd2l.spdx.json" "$IMAGE@$c"
             S attest --type "$ATT/vuln-scan/v1" --predicate "/work/vuln-$a/vuln-predicate.json" "$IMAGE@$c"
           done
+          # The comparison image (#192): UBI 9 isn't mirrored, so its provenance names no mirror.
+          DU=${{ steps.push-ubi9.outputs.digest_ubi9 }}
+          python3 packaging/release/provenance.py --wheel dist/*.whl --froms base-evidence-ubi9/froms.json \
+            --containerfile packaging/container/Containerfile.ubi9 \
+            --started "$(jq -r .started build-info-ubi9-amd64/build-info.json)" > provenance-ubi9.json
+          S sign "$UBI9@$DU"
+          S attest --type slsaprovenance1 --predicate /work/provenance-ubi9.json "$UBI9@$DU"
+          S attest --type "$ATT/base-image-record/v2" --predicate /work/base-evidence-ubi9/base-image-record-ubi9.json "$UBI9@$DU"
+          S attest --type spdxjson --predicate /work/sbom-ubi9-amd64/wd2l.spdx.json "$UBI9@$DU"
+          S attest --type "$ATT/vuln-scan/v1" --predicate /work/vuln-ubi9-amd64/vuln-predicate.json "$UBI9@$DU"
       - name: Save each platform's image with its signatures and attestations, for offline enclaves
         run: |
           # One tar per platform: cosign save keeps a platform image's signatures, not an index's.
@@ -186,6 +241,10 @@ jobs:
             packaging/ci/tool cosign save --dir "/work/save-$a/wd2l-oci" "$IMAGE@$c"
             tar -C "save-$a" -cf "wd2l-${{ steps.v.outputs.pep440 }}-image-$a-oci.tar" wd2l-oci
           done
+          DU=${{ steps.push-ubi9.outputs.digest_ubi9 }}
+          mkdir -p save-ubi9
+          packaging/ci/tool cosign save --dir "/work/save-ubi9/wd2l-oci" "$UBI9@$DU"
+          tar -C save-ubi9 -cf "wd2l-${{ steps.v.outputs.pep440 }}-image-ubi9-amd64-oci.tar" wd2l-oci
       - name: Older-format signature on each platform image, for Podman's signature policy
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
@@ -200,12 +259,16 @@ jobs:
             packaging/ci/tool cosign sign --key env://COSIGN_PRIVATE_KEY \
               --new-bundle-format=false --use-signing-config=false --tlog-upload=false --yes "$IMAGE@$c"
           done
+          packaging/ci/tool cosign sign --key env://COSIGN_PRIVATE_KEY \
+            --new-bundle-format=false --use-signing-config=false --tlog-upload=false --yes \
+            "$UBI9@${{ steps.push-ubi9.outputs.digest_ubi9 }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: image-release
           path: |
             wd2l-*-image-*-oci.tar
             provenance.json
+            provenance-ubi9.json
 
   verify-published:
     needs: [publish]
@@ -219,6 +282,8 @@ jobs:
       D: ${{ needs.publish.outputs.digest }}
       CA: ${{ needs.publish.outputs.digest_amd64 }}
       CR: ${{ needs.publish.outputs.digest_arm64 }}
+      UBI9: ghcr.io/joehazurmoney/wd2l-ubi9
+      DU: ${{ needs.publish.outputs.digest_ubi9 }}
       ATT: https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -241,12 +306,19 @@ jobs:
             for t in $CHILD; do V verify-attestation --type "$t" "$IMG@$c" && echo "$c $t: ok"; done
           done
           packaging/ci/tool cosign tree "$IMG@$D"
+          # The comparison image (#192): one platform image, verified the same way.
+          V verify "$UBI9@$DU" && echo "ubi9 signature: ok"
+          V verify --new-bundle-format=false "$UBI9@$DU" && echo "ubi9 older-format signature: ok"
+          for t in $CHILD; do V verify-attestation --type "$t" "$UBI9@$DU" && echo "ubi9 $t: ok"; done
           export TOOL_NETWORK=none
           for a in amd64 arm64; do
             mkdir -p "off-$a" && tar -xf wd2l-*-image-$a-oci.tar -C "off-$a"
             V verify --local-image "/work/off-$a/wd2l-oci" && echo "$a offline signature: ok"
             for t in $CHILD; do V verify-attestation --type "$t" --local-image "/work/off-$a/wd2l-oci" && echo "$a offline $t: ok"; done
           done
+          mkdir -p off-ubi9 && tar -xf wd2l-*-image-ubi9-amd64-oci.tar -C off-ubi9
+          V verify --local-image /work/off-ubi9/wd2l-oci && echo "ubi9 offline signature: ok"
+          for t in $CHILD; do V verify-attestation --type "$t" --local-image /work/off-ubi9/wd2l-oci && echo "ubi9 offline $t: ok"; done
 
   import-check:
     # What a host does with the release: import its platform's tar offline, and pull from the
@@ -290,3 +362,22 @@ jobs:
               signedIdentity: {type: "matchRepository"}}]}, oci: {"": [{type: "insecureAcceptAnything"}]}}}' > policy.json
           skopeo copy -q --remove-signatures --policy policy.json --registries.d regd "docker://$IMG@$D" oci:policy-check
           echo "policy: accepted ($(uname -m))"
+      - name: The comparison image (UBI 9) imports offline and passes Podman's signature policy
+        if: ${{ matrix.arch == 'amd64' }}
+        env:
+          U: ghcr.io/joehazurmoney/wd2l-ubi9
+          DU: ${{ needs.publish.outputs.digest_ubi9 }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p ubi9 && tar -xf wd2l-*-image-ubi9-amd64-oci.tar -C ubi9
+          sudo skopeo copy -q oci:ubi9/wd2l-oci "containers-storage:$U:import-check"
+          for c in wd2l-sender wd2l-receiver wd2l-audit-report; do
+            sudo podman run --rm --pull=never "$U:import-check" "$c" --help > /dev/null
+          done
+          # A new package starts private (docs/releasing.md): read it with this run's token.
+          printf '%s' "$REGISTRY_TOKEN" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+          jq -n --arg k "$PWD/cosign.pub" '{default: [{type: "reject"}],
+            transports: {docker: {"ghcr.io/joehazurmoney/wd2l-ubi9": [{type: "sigstoreSigned", keyPath: $k,
+              signedIdentity: {type: "matchRepository"}}]}, oci: {"": [{type: "insecureAcceptAnything"}]}}}' > policy-ubi9.json
+          skopeo copy -q --remove-signatures --policy policy-ubi9.json --registries.d regd "docker://$U@$DU" oci:policy-check-ubi9
+          echo "policy: accepted (wd2l-ubi9)"

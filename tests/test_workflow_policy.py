@@ -247,6 +247,38 @@ def test_publish_refuses_to_sign_an_image_an_earlier_run_signed():
     assert 'if packaging/ci/tool cosign verify --key /work/cosign.pub --insecure-ignore-tlog "$IMAGE@$d"' in step
 
 
+def test_the_comparison_image_is_published_signed_attested_and_verified_like_the_shipped_one():
+    # #192: wd2l-ubi9 (amd64) is pushed by the digest that was tested, signed with the key (and
+    # in the older format), attested, saved for offline use, and checked online, offline and
+    # under Podman's policy. GitHub attests and signs it keylessly too.
+    pub = jobs(read("publish.yml"))["publish"]
+    for art in ("image-ubi9-amd64", "build-info-ubi9-amd64", "sbom-ubi9-amd64", "vuln-ubi9-amd64",
+                "base-evidence-ubi9"):
+        assert "name: %s" % art in pub, art
+    push = pub.split("- id: push-ubi9", 1)[1].split("\n      - ", 1)[0]
+    assert 'skopeo copy -q --digestfile ubi9-digest.txt "oci-archive:image-ubi9-amd64/image.oci.tar" "docker://$UBI9:$1"' in push
+    assert '"sha256:$(jq -r .image_id build-info-ubi9-amd64/build-info.json)"' in push        # the tested image
+    assert 'echo "digest_ubi9=$D" >> "$GITHUB_OUTPUT"' in push
+    guard = pub.index('"$UBI9@${{ steps.push-ubi9.outputs.digest_ubi9 }}"')
+    assert pub.index("is already signed by an earlier run") - 600 < guard < pub.index('S sign "$UBI9@$DU"')
+    for att in ('--predicate /work/provenance-ubi9.json "$UBI9@$DU"',
+                '--predicate /work/base-evidence-ubi9/base-image-record-ubi9.json "$UBI9@$DU"',
+                '--predicate /work/sbom-ubi9-amd64/wd2l.spdx.json "$UBI9@$DU"',
+                '--predicate /work/vuln-ubi9-amd64/vuln-predicate.json "$UBI9@$DU"'):
+        assert att in pub, att
+    assert pub.index('cosign save --dir "/work/save-ubi9/wd2l-oci" "$UBI9@$DU"') < pub.index("--new-bundle-format=false")
+    assert "digest_ubi9: ${{ steps.push-ubi9.outputs.digest_ubi9 }}" in pub
+    ver = jobs(read("publish.yml"))["verify-published"]
+    assert 'V verify --new-bundle-format=false "$UBI9@$DU"' in ver and "off-ubi9" in ver
+    imp = jobs(read("publish.yml"))["import-check"]
+    assert "if: ${{ matrix.arch == 'amd64' }}" in imp and "wd2l-*-image-ubi9-amd64-oci.tar" in imp
+    assert '"ghcr.io/joehazurmoney/wd2l-ubi9": [{type: "sigstoreSigned"' in imp
+    att = jobs(read("attest.yml"))["attest"]
+    assert "subject-name: ghcr.io/joehazurmoney/wd2l-ubi9" in att and "subject-digest: ${{ inputs.image-digest-ubi9 }}" in att
+    assert 'packaging/ci/tool cosign sign --yes "$UBI9@$DU"' in att
+    assert "image-digest-ubi9: ${{ needs.publish.outputs.digest_ubi9 }}" in jobs(read("release.yml"))["attest"]
+
+
 def test_release_stops_before_signing_when_the_tag_already_has_a_release():
     # gh release create ran last, after everything was signed, and a leftover draft for the
     # tag broke it there (#161).

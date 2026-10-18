@@ -195,6 +195,7 @@ jobs:
       image-digest: ${{ needs.publish.outputs.digest }}
       image-digest-amd64: ${{ needs.publish.outputs.digest_amd64 }}
       image-digest-arm64: ${{ needs.publish.outputs.digest_arm64 }}
+      image-digest-ubi9: ${{ needs.publish.outputs.digest_ubi9 }}
     permissions:
       contents: read
       id-token: write

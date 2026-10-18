@@ -77,6 +77,17 @@ def test_provenance_names_the_commit_the_wheel_and_both_bases():
     json.dumps(p)
 
 
+def test_provenance_of_the_ubi9_image_names_its_containerfile_and_no_mirror():
+    # The comparison image (#192): UBI 9 isn't mirrored; Red Hat's registry keeps it.
+    u9 = [dict(f, name="r/ubi9/ubi", tag="latest") for f in FROMS]
+    p = prov.predicate(ENV, "wd2l-0.3.0-py3-none-any.whl", "c" * 64, u9, None, "t0", "t1",
+                       containerfile="packaging/container/Containerfile.ubi9")
+    deps = p["buildDefinition"]["resolvedDependencies"]
+    assert deps[3] == {"uri": "r/ubi9/ubi:latest", "digest": {"sha256": "2" * 64},
+                       "annotations": {"stage": "runtime"}}
+    assert p["buildDefinition"]["externalParameters"]["containerfile"] == "packaging/container/Containerfile.ubi9"
+
+
 def test_signing_config_names_no_log_and_no_timestamp_service():
     with open(os.path.join(REPO, "packaging", "release", "signing-config.json")) as f:
         sc = json.load(f)

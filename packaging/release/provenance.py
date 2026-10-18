@@ -6,7 +6,8 @@ workflow, the wheel and the exact base images, with their mirrored copies
 workflow and signed with the release key. The SLSA Build L3 provenance is GitHub's attestation,
 made by attest.yml (docs/decisions/0007-slsa-build-l3.md).
 
-    provenance.py --wheel WHL --froms froms.json --mirror REPO --started ISO > provenance.json"""
+    provenance.py --wheel WHL --froms froms.json [--mirror REPO] [--containerfile FILE] --started ISO
+        > provenance.json"""
 
 import argparse
 import hashlib
@@ -18,8 +19,9 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 
 def predicate(env: Mapping[str, str], wheel_name: str, wheel_sha256: str,
-              froms: List[Dict[str, Any]], mirror: str, started: str,
-              finished: str) -> Dict[str, Any]:
+              froms: List[Dict[str, Any]], mirror: Optional[str], started: str,
+              finished: str, containerfile: str = "packaging/container/Containerfile") -> Dict[str, Any]:
+    """mirror: where the bases are mirrored, or None (the comparison image's UBI 9 isn't, #192)."""
     server, repo = env["GITHUB_SERVER_URL"], env["GITHUB_REPOSITORY"]
     workflow = env.get("GITHUB_WORKFLOW_REF", "")
     deps: List[Dict[str, Any]] = [
@@ -27,17 +29,18 @@ def predicate(env: Mapping[str, str], wheel_name: str, wheel_sha256: str,
          "digest": {"gitCommit": env["GITHUB_SHA"]}},
         {"uri": wheel_name, "digest": {"sha256": wheel_sha256}}]
     for f in froms:
+        notes = {"stage": f["stage"] or "runtime"}
+        if mirror:
+            notes["mirror"] = "%s@%s" % (mirror, f["digest"])
         deps.append({"uri": "%s:%s" % (f["name"], f["tag"]),
-                     "digest": {"sha256": f["digest"].split(":", 1)[1]},
-                     "annotations": {"stage": f["stage"] or "runtime",
-                                     "mirror": "%s@%s" % (mirror, f["digest"])}})
+                     "digest": {"sha256": f["digest"].split(":", 1)[1]}, "annotations": notes})
     return {
         "buildDefinition": {
             "buildType": "%s/%s/blob/main/docs/releasing.md#how-a-release-is-built" % (server, repo),
             "externalParameters": {
                 "workflow": {"ref": env["GITHUB_REF"], "repository": "%s/%s" % (server, repo),
                              "path": workflow.split("@")[0].split("/", 2)[-1] if workflow else ""},
-                "containerfile": "packaging/container/Containerfile"},
+                "containerfile": containerfile},
             "internalParameters": {"github": {
                 "event_name": env.get("GITHUB_EVENT_NAME"),
                 "runner_environment": env.get("RUNNER_ENVIRONMENT"),
@@ -55,7 +58,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p = argparse.ArgumentParser(description="SLSA v1 predicate for the image.")
     p.add_argument("--wheel", required=True)
     p.add_argument("--froms", required=True, help="check_containerfile.py --json output")
-    p.add_argument("--mirror", required=True, help="where the base images are mirrored")
+    p.add_argument("--mirror", help="where the base images are mirrored (none for the UBI 9 image)")
+    p.add_argument("--containerfile", default="packaging/container/Containerfile")
     p.add_argument("--started", required=True)
     a = p.parse_args(argv)
     with open(a.wheel, "rb") as f:
@@ -64,7 +68,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         froms = json.load(f)
     finished = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     json.dump(predicate(os.environ, os.path.basename(a.wheel), sha, froms, a.mirror, a.started,
-                        finished), sys.stdout, indent=1)
+                        finished, a.containerfile), sys.stdout, indent=1)
     return 0
 
 
