@@ -24,6 +24,34 @@ def test_the_real_containerfile_passes():
     assert cc.base(real()).startswith(B + ":3.12-fips@sha256:")
 
 
+U = "registry.access.redhat.com/ubi9/ubi"
+UBI9 = ("FROM %s:latest@%s AS build\nRUN true\nFROM %s:latest@%s\nCOPY --from=build /out/ /\n") % (U, D1, U, D1)
+
+
+def real_ubi9():
+    with open(os.path.join(REPO, "packaging", "container", "Containerfile.ubi9")) as f:
+        return f.read()
+
+
+def test_the_real_ubi9_containerfile_passes_its_own_profile_only():
+    # The comparison image (#192): UBI 9, so the Hardened Image rules refuse it, by design.
+    assert cc.problems(real_ubi9(), "ubi9") == []
+    assert cc.base(real_ubi9()).startswith(U + ":latest@sha256:")
+    assert any("not a Red Hat Hardened Image" in p for p in cc.problems(real_ubi9()))
+    assert cc.profile_of("packaging/container/Containerfile.ubi9") == "ubi9"
+    assert cc.profile_of("packaging/container/Containerfile") == "hardened"
+
+
+@pytest.mark.parametrize("bad, why", [
+    (UBI9.replace("@" + D1 + "\nCOPY", "\nCOPY"), "not pinned"),
+    (UBI9.replace(U + ":latest@%s AS" % D1, "registry.access.redhat.com/ubi10/ubi:latest@%s AS" % D1), "not UBI 9"),
+    (UBI9.replace("%s:latest@%s\nCOPY" % (U, D1), "%s:latest@%s\nCOPY" % (U, D2)), "the same digest"),
+    (UBI9 + "COPY --from=quay.io/x/y:1 /a /a\n", "copies from"),
+])
+def test_the_ubi9_profile_refuses(bad, why):
+    assert any(why in p for p in cc.problems(bad, "ubi9")), cc.problems(bad, "ubi9")
+
+
 def test_good():
     assert cc.problems(GOOD) == []
     assert cc.base(GOOD) == "%s:3.12-fips@%s" % (B, D2)
@@ -88,6 +116,27 @@ def test_build_script_passes_labels_and_removes_the_base_product_labels(tmp_path
     unset = [args[i + 1] for i, a in enumerate(args) if a == "--unsetlabel"]
     for label in ("cpe", "com.redhat.component", "io.hummingbird-project.variant"):
         assert label in unset
+    assert "io.k8s.display-name" not in unset           # the shipped image is unchanged
+
+
+def test_build_script_builds_the_ubi9_image_from_its_own_containerfile(tmp_path):
+    log, fake, dist = tmp_path / "args", tmp_path / "podman", tmp_path / "dist"
+    fake.write_text('#!/bin/sh\nfor a in "$@"; do echo "$a"; done > "%s"\n' % log)
+    fake.chmod(0o755)
+    dist.mkdir()
+    ubi9 = os.path.join(REPO, "packaging", "container", "Containerfile.ubi9")
+    r = subprocess.run(["bash", os.path.join(REPO, "packaging", "container", "build.sh"),
+                        str(dist), "localhost/wd2l-ubi9:test", ubi9],
+                       env=dict(os.environ, PODMAN=str(fake), REVISION="c" * 40, EPOCH="1791209000"),
+                       stderr=subprocess.PIPE)
+    assert r.returncode == 0, r.stderr
+    args = log.read_text().splitlines()
+    assert args[args.index("-f") + 1] == ubi9
+    build_args = [args[i + 1] for i, a in enumerate(args) if a == "--build-arg"]
+    assert "BASE_DIGEST=" + cc.base(real_ubi9()).split("@")[1] in build_args
+    unset = [args[i + 1] for i, a in enumerate(args) if a == "--unsetlabel"]
+    for label in ("cpe", "com.redhat.component", "io.k8s.display-name", "io.openshift.tags"):
+        assert label in unset                            # it would claim to be UBI 9 itself
 
 
 import base64
@@ -202,6 +251,56 @@ def test_record_refuses_an_index_without_arm64(tmp_path):
     froms, d, keys = evidence(tmp_path, index_bytes=index)
     _rec, probs = br.record(froms, str(d), str(keys), "now")
     assert any("arm64" in p and "index" in p for p in probs)
+
+
+def ubi9_evidence(tmp_path, att_digest=None):
+    """UBI 9's evidence, as base-verify writes it (#192): its index, the amd64 config, the Red Hat
+    signature, and the signed SBOM attestation on the amd64 image, with that SBOM. Red Hat
+    publishes no provenance for UBI 9."""
+    d, keys = tmp_path / "evidence-ubi9", tmp_path / "keys"
+    d.mkdir()
+    keys.mkdir(exist_ok=True)
+    (keys / "redhat-release3.pub").write_text("rh")
+    amd = "sha256:" + hashlib.sha256(b"ubi9 amd").hexdigest()
+    index = json.dumps({"manifests": [{"digest": amd, "platform": {"os": "linux", "architecture": "amd64"}},
+                                      {"digest": "sha256:" + "b" * 64,
+                                       "platform": {"os": "linux", "architecture": "arm64"}}]}).encode()
+    digest = "sha256:" + hashlib.sha256(index).hexdigest()
+    (d / "index-0.json").write_bytes(index)
+    (d / "config-0-amd64.json").write_text(json.dumps({"config": {"Labels": {"version": "9.8", "release": "1791888712"}}}))
+    (d / "signature-0.json").write_text(json.dumps([{"critical": {"image": {"docker-manifest-digest": digest}}}]))
+    sbom = {"spdxVersion": "SPDX-2.3", "packages": [{"name": "glibc"}, {"name": "python3"}]}
+    statement = {"_type": "https://in-toto.io/Statement/v0.1", "predicateType": "https://spdx.dev/Document",
+                 "subject": [{"name": "quay.io/redhat-prod/ubi9----ubi",
+                              "digest": {"sha256": (att_digest or amd).split(":")[1]}}], "predicate": sbom}
+    (d / "sbom-attestation-0-amd64.json").write_text(json.dumps({
+        "payloadType": "application/vnd.in-toto+json",
+        "payload": base64.b64encode(json.dumps(statement).encode()).decode()}) + "\n")
+    (d / "sbom-0-amd64.spdx.json").write_text(json.dumps(sbom))
+    for f in list(d.iterdir()):                  # both FROMs (build and runtime) are the one image
+        (d / f.name.replace("-0", "-1", 1)).write_bytes(f.read_bytes())
+    U9 = "registry.access.redhat.com/ubi9/ubi"
+    froms = [{"ref": "%s:latest@%s" % (U9, digest), "stage": "build", "name": U9, "tag": "latest", "digest": digest},
+             {"ref": "%s:latest@%s" % (U9, digest), "stage": None, "name": U9, "tag": "latest", "digest": digest}]
+    return froms, d, keys, amd
+
+
+def test_record_of_ubi9_names_its_signed_sbom_and_no_provenance(tmp_path):
+    froms, d, keys, amd = ubi9_evidence(tmp_path)
+    rec, probs = br.record(froms, str(d), str(keys), "now", "ubi9")
+    assert probs == []
+    img = rec["images"][1]
+    assert img["signature"]["verified"] and set(img["platforms"]) == {"amd64", "arm64"}
+    assert img["provenance"] is None and img["mirror"] is None
+    assert img["signed_sbom"]["subjects"] == [amd] and img["signed_sbom"]["key"] == "redhat-release3.pub"
+    assert set(img["sboms"]) == {"amd64"} and img["sboms"]["amd64"]["packages"] == 2
+    assert img["release"] == "1791888712" and list(rec["keys"]) == ["redhat-release3.pub"]
+
+
+def test_record_of_ubi9_refuses_a_signed_sbom_about_another_image(tmp_path):
+    froms, d, keys, _amd = ubi9_evidence(tmp_path, att_digest="sha256:" + "7" * 64)
+    _rec, probs = br.record(froms, str(d), str(keys), "now", "ubi9")
+    assert any("signed SBOM is about" in p for p in probs)
 
 
 import stat
@@ -345,6 +444,53 @@ def test_non_fips_policy_and_changed_rpmdb_are_refused(tmp_path):
         f.write(b"one more package")
     text = "\n".join(ci.check_filesystem(root, base))
     assert "not FIPS" in text and "rpm database differs" in text
+
+
+def ubi9_rootfs(tmp_path):
+    """The comparison image's case: UBI 9 has a shell, dnf, setuid files and the DEFAULT policy,
+    and keeps its RPM database in /var/lib/rpm."""
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    for r in (root, base):
+        os.makedirs(os.path.join(r, "var/lib/rpm"))
+        with open(os.path.join(r, "var/lib/rpm/rpmdb.sqlite"), "wb") as f:
+            f.write(b"UBI 9's rpmdb")
+        with open(os.path.join(r, "etc/crypto-policies/config"), "w") as f:
+            f.write("DEFAULT\n")
+    for p in ("usr/bin/bash", "usr/bin/dnf", "usr/bin/su"):
+        open(os.path.join(root, p), "w").close()
+    os.chmod(os.path.join(root, "usr/bin/su"), 0o4755)
+    return whl, root, base
+
+
+def test_the_ubi9_profile_skips_the_minimal_image_rules_by_design(tmp_path):
+    whl, root, base = ubi9_rootfs(tmp_path)
+    assert ci.check_filesystem(root, base, "ubi9") == []
+    text = "\n".join(ci.check_filesystem(root, base))                       # the shipped image's rules
+    for refused in ("shell present", "package manager present: /usr/bin/dnf", "setuid", "not FIPS"):
+        assert refused in text, refused
+
+
+def test_the_ubi9_profile_still_refuses_pip_and_added_packages(tmp_path):
+    whl, root, base = ubi9_rootfs(tmp_path)
+    os.makedirs(os.path.join(root, "usr/lib/python3.9/site-packages/pip"))
+    with open(os.path.join(root, "var/lib/rpm/rpmdb.sqlite"), "wb") as f:
+        f.write(b"one more package")
+    text = "\n".join(ci.check_filesystem(root, base, "ubi9"))
+    assert "package manager present: /usr/lib/python3.9/site-packages/pip" in text
+    assert "rpm database differs" in text
+
+
+def test_the_ubi9_image_is_named_wd2l_ubi9_and_drops_ubi9_s_own_labels():
+    u9 = "%s:latest@%s" % (U, D1)
+    good = config(User="65532:65532", labels={"name": "wd2l-ubi9", "org.opencontainers.image.title": "wd2l-ubi9",
+                                               "org.opencontainers.image.base.name": U + ":latest",
+                                               "org.opencontainers.image.base.digest": D1})
+    assert ci.check_config(good, "0.3.0", SHA, u9, "ubi9") == []
+    bad = config(User="65532:65532", labels={"io.k8s.display-name": "Red Hat Universal Base Image 9",
+                                              "org.opencontainers.image.base.name": U + ":latest",
+                                              "org.opencontainers.image.base.digest": D1})
+    text = "\n".join(ci.check_config(bad, "0.3.0", SHA, u9, "ubi9"))
+    assert "label name is 'wd2l', expected 'wd2l-ubi9'" in text and "io.k8s.display-name" in text
 
 
 def test_changed_wd2l_file_and_wrong_build_are_refused(tmp_path):
@@ -615,6 +761,10 @@ def test_the_same_finding_from_both_scanners_is_merged_with_both_named():
     ("grype", grype_doc(distro="wolfi"), "wolfi 20251124", False),         # an OS we have no evidence for
     ("trivy", trivy_real("none"), "", False),                              # upstream Trivy on Hummingbird
     ("trivy", trivy_real("hummingbird"), "hummingbird 20251124", False),   # Red Hat's build: recognized, no data
+    # UBI 9 (2026-10-18, the comparison image): Grype 527 findings in redhat:distro:redhat:9,
+    # Trivy 534 in its os-pkgs result.
+    ("grype", grype_doc(distro="redhat"), "redhat 20251124", True),
+    ("trivy", trivy_real("redhat"), "redhat 20251124", True),
 ])
 def test_coverage_is_judged_by_the_scanner_s_data_not_by_recognizing_the_os(name, doc, os_name, covered):
     c = vg.coverage(name, doc)

@@ -19,7 +19,7 @@ publishes it.
 ```mermaid
 flowchart LR
   tag["tag vX.Y.Z"] --> tests["tests<br/>pytest 3.9 and 3.12, lab"]
-  tag --> image["image.yml<br/>lint, base-verify, wheel, build, reproducible,<br/>hardening, vuln-scan, security-review,<br/>sbom, functional, fips-tests"]
+  tag --> image["image.yml<br/>lint, base-verify, wheel, build, reproducible,<br/>hardening, vuln-scan, security-review,<br/>sbom, functional, fips-tests,<br/>and the UBI 9 comparison image's jobs"]
   image --> rpm["rpm.yml<br/>EL9 and EL10 builds, 6 install tests"]
   tests --> publish["publish.yml<br/>push, mirror the bases, sign, attest,<br/>verify-published"]
   image --> publish
@@ -43,9 +43,9 @@ proves:
   ([`packaging/ci/test-requirements.txt`](../packaging/ci/test-requirements.txt); the 3.9 leg
   uses [`packaging/ci-py39/`](../packaging/ci-py39/test-requirements.txt), since pytest 9 needs
   3.10).
-* **lint**: hadolint and Trivy accept the Containerfile, and every `FROM` is a Hardened Image,
-  a FIPS variant, pinned by digest
-  ([`check_containerfile.py`](../packaging/container/check_containerfile.py)).
+* **lint**: hadolint and Trivy accept both Containerfiles. Every `FROM` in the shipped one is a
+  Hardened Image, a FIPS variant, pinned by digest; every `FROM` in `Containerfile.ubi9` is UBI
+  9, pinned the same way ([`check_containerfile.py`](../packaging/container/check_containerfile.py)).
 * **base-verify**: each base image carries Red Hat's signature, SLSA provenance from Red Hat's
   build pipeline, and an SBOM for each platform, all for the pinned digest. The result is
   `base-image-record.json` ([`base_record.py`](../packaging/container/base_record.py), keys in
@@ -86,6 +86,16 @@ proves:
   A gap fails the run ([ADR-0009](decisions/0009-sbom-content.md)). The image's SBOM must be the
   base's, plus wd2l, less pip ([`sbom_diff.py`](../packaging/container/sbom_diff.py)).
 * **functional**: the lab passes with the sender and receiver running from the image.
+* **The comparison image** (`base-verify-ubi9`, `ubi9-build`, `ubi9-checks`, `ubi9-scan`): the same
+  wheel on UBI 9, amd64 only, for comparison, not deployment
+  ([ADR-0004's amendment](decisions/0004-container-base-image.md#amendment-2026-10-18-a-comparison-image-on-ubi-9-192)).
+  * UBI 9's Red Hat signature, and the SBOM Red Hat signs on its amd64 image. Red Hat publishes
+    no provenance for UBI 9.
+  * The same image ID again on a fresh runner.
+  * The hardening checks by its own profile, and each command.
+  * Both scanners, and its SBOMs, completed and checked against UBI 9.
+
+  Its findings are shown in the run's summary and never pause it.
 * **fips-tests**: the whole test suite passes in the FIPS builder image, again with none
   skipped.
 * **rpm** ([`rpm.yml`](../.github/workflows/rpm.yml)): the RPMs build on UBI 9 and UBI 10
@@ -100,12 +110,19 @@ proves:
   ([`provenance.py`](../packaging/release/provenance.py)) and the base record to all three, and
   each platform's SBOM and scan results to its own image; and saves each platform's image, with
   its signatures and attestations, as `wd2l-<version>-image-<arch>-oci.tar`.
-* **verify-published**: checks the pushed images (each platform image's older `.sig` too) and the
-  saved copies as a consumer would, the second time with no network.
+  * **The comparison image, `ghcr.io/joehazurmoney/wd2l-ubi9`:** the same, for its one image.
+  * **Pushed:** with the same tags, after checking that it's the image `ubi9-checks` rebuilt.
+  * **Signed and attested:** signed both ways, and attested with its provenance (no base
+    mirror), base record, SBOM and scan.
+  * **Saved:** as `wd2l-<version>-image-ubi9-amd64-oci.tar`.
+* **verify-published**: checks the pushed images (each platform image's older `.sig` too, and the
+  comparison image's) and the saved copies as a consumer would, the second time with no network.
 * **import-check**: on each platform's own runner, imports that platform's tar offline and
-  pulls the image from the registry under Podman's signature policy.
-* **assets**: every release file; `wd2l-<version>-sbom.html`, both platforms' SBOMs and scan
-  results as one page that opens offline
+  pulls the image from the registry under Podman's signature policy. On amd64 it does the same
+  for the comparison image.
+* **assets**: every release file; `wd2l-<version>-sbom.html`, the SBOMs and scan results of both
+  platforms and of the comparison image, as one page with a tab for each and a table comparing
+  them, that opens offline
   ([`sbom_report.py`](../packaging/release/sbom_report.py)); the changelog (git-cliff,
   [`cliff.toml`](../cliff.toml)), a full-history `git bundle` of the source, and `verify-release`
   ([`verify_release.py`](../packaging/release/verify_release.py)); then the **release manifest**
@@ -185,7 +202,7 @@ work had merged. It's linked from that PR's description and dated by the PR's me
    older base. Then check that every pin still resolves:
 
    ```bash
-   packaging/ci/pin-images.sh --check packaging/container/Containerfile packaging/ci/tools.Containerfile
+   packaging/ci/pin-images.sh --check packaging/container/Containerfile packaging/container/Containerfile.ubi9 packaging/ci/tools.Containerfile
    ```
 
 2. Set `__version__` in `wd2l/__init__.py`, and the `Image=` tag in both `.container` files
@@ -306,6 +323,10 @@ names as served.
     `gh release verify-asset v<version> FILE` check it (gh 2.81.0 or later).
 * **Packages.** `wd2l` and `wd2l-base/python` are public, like the repository. Enclaves still
   use the release assets, not the registry.
+  * **`wd2l-ubi9`, the comparison image,** is created private by its first push (1.2.0rc1).
+  * Then, once: Packages, `wd2l-ubi9`, Package settings, **Change visibility** to public. Check
+    that it is linked to this repository.
+  * Until then the release still verifies it, logged in.
 
 ## Bringing a release into an enclave
 
@@ -447,9 +468,11 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
   the SARIF files after each push to `main`, even when another image check failed).
 * **A run's Summary tab.** Whether a security review is needed, then every finding and why
   (for example "review", "exception" or "passed: no fix yet"). A release carries the same table
-  for each platform as `wd2l-<version>-vuln-summary-<arch>.md`.
-* **A release's SBOM page.** `wd2l-<version>-sbom.html` opens in any browser, offline. It has a tab
-  per platform: the image's components, each expanding to its files; each component's findings
+  for each platform as `wd2l-<version>-vuln-summary-<arch>.md`, and for the comparison image as
+  `wd2l-<version>-vuln-summary-ubi9-amd64.md` (shown, never gated).
+* **A release's SBOM page.** `wd2l-<version>-sbom.html` opens in any browser, offline. It starts
+  with a table comparing its views, the comparison image on UBI 9 included. It has a tab per
+  view: the image's components, each expanding to its files; each component's findings
   and the scanner that found each one; and which of the fields an SBOM is expected to carry it
   has. A dry run's copy is in its `release-assets` artifact. The page is a view: the SPDX and
   CycloneDX files are the record.
@@ -550,7 +573,7 @@ The PR's pipeline does the checking. Read its results rather than trusting the t
 * **Check** that every pin resolves, at any time:
 
   ```bash
-  packaging/ci/pin-images.sh --check packaging/container/Containerfile packaging/ci/tools.Containerfile
+  packaging/ci/pin-images.sh --check packaging/container/Containerfile packaging/container/Containerfile.ubi9 packaging/ci/tools.Containerfile
   ```
 
 * **Pin only from a registry that keeps retired digests.** quay.io deletes each `fedora:44`

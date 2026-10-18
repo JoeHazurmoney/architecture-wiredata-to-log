@@ -15,6 +15,12 @@ Both platforms must be in the index, FIPS where the tag says so, and the same re
 cosign has already verified the signatures (it exits non-zero otherwise). This script checks
 that they are about the pinned digests, so nothing else could have been verified instead.
 
+For the comparison image's base, UBI 9 (Containerfile.ubi9, #192), Red Hat publishes a signature
+and a signed SBOM attestation on each platform image, and no provenance. The record says so. EVIDENCE
+then holds index-<i>.json, config-<i>-amd64.json, signature-<i>.json, and
+sbom-attestation-<i>-amd64.json (`cosign verify-attestation --type spdxjson` output on the amd64
+image) with sbom-<i>-amd64.spdx.json, its predicate. Only amd64 is built.
+
     base_record.py --containerfile FILE --evidence DIR --keys DIR --out FILE"""
 
 import argparse
@@ -61,7 +67,7 @@ def provenance_subjects(text: str) -> Tuple[Set[str], Set[str]]:
     return digests, types
 
 
-def _entry(i: int, f: Dict[str, Any], ev: str, probs: List[str]) -> Dict[str, Any]:
+def _entry(i: int, f: Dict[str, Any], ev: str, probs: List[str], profile: str = "hardened") -> Dict[str, Any]:
     def path(name: str) -> Optional[str]:
         p = os.path.join(ev, name % i)
         if not os.path.isfile(p):
@@ -69,10 +75,12 @@ def _entry(i: int, f: Dict[str, Any], ev: str, probs: List[str]) -> Dict[str, An
             return None
         return p
 
+    ubi9 = profile == "ubi9"
+    arches = ("amd64",) if ubi9 else ARCHES
     digest = f["digest"]
     out: Dict[str, Any] = {"ref": f["ref"], "stage": f["stage"] or "runtime",
                            "index_digest": digest,
-                           "mirror": MIRROR + f["name"][len(REGISTRY):] + "@" + digest}
+                           "mirror": None if ubi9 else MIRROR + f["name"][len(REGISTRY):] + "@" + digest}
     p = path("index-%d.json")
     if p:
         got = "sha256:" + _sha256(p)
@@ -80,12 +88,12 @@ def _entry(i: int, f: Dict[str, Any], ev: str, probs: List[str]) -> Dict[str, An
             probs.append("%s: the index fetched (%s) is not the pinned digest" % (f["ref"], got))
         with open(p) as fh:
             out["platforms"] = platform_digests(json.load(fh))
-        for arch in ARCHES:
+        for arch in arches:
             if arch not in out["platforms"]:
                 probs.append("%s: the index has no linux/%s image" % (f["ref"], arch))
     known = {digest} | set(out.get("platforms", {}).values())
     configs: Dict[str, Dict[str, Any]] = {}
-    for arch in ARCHES:
+    for arch in arches:
         p = path("config-%d-" + arch + ".json")
         if not p:
             continue
@@ -102,7 +110,7 @@ def _entry(i: int, f: Dict[str, Any], ev: str, probs: List[str]) -> Dict[str, An
     if configs:
         first = configs[sorted(configs)[0]]
         out["version"], out["release"] = first["version"], first["release"]
-        out["source_image"] = "%s:%s-source" % (f["name"], first["release"])
+        out["source_image"] = None if ubi9 else "%s:%s-source" % (f["name"], first["release"])
     p = path("signature-%d.json")
     if p:
         with open(p) as fh:
@@ -111,16 +119,28 @@ def _entry(i: int, f: Dict[str, Any], ev: str, probs: List[str]) -> Dict[str, An
         if not ok:
             probs.append("%s: the Red Hat signature verified is not for %s" % (f["ref"], digest))
         out["signature"] = {"key": SIGNING_KEY, "verified": ok, "evidence_sha256": _sha256(p)}
-    p = path("provenance-%d.json")
-    if p:
-        with open(p) as fh:
-            subjects, types = provenance_subjects(fh.read())
-        if not subjects & known:
-            probs.append("%s: the provenance is about %s, not this image" % (f["ref"], sorted(subjects)))
-        out["provenance"] = {"key": PROVENANCE_KEY, "predicate_type": ",".join(sorted(types)),
-                             "subjects": sorted(subjects), "evidence_sha256": _sha256(p)}
+    if ubi9:
+        out["provenance"] = None                      # Red Hat publishes none for UBI 9
+        p = path("sbom-attestation-%d-amd64.json")
+        if p:
+            with open(p) as fh:
+                subjects, types = provenance_subjects(fh.read())
+            amd = out.get("platforms", {}).get("amd64")
+            if not subjects or subjects - {amd}:
+                probs.append("%s: the signed SBOM is about %s, not the amd64 image %s" % (f["ref"], sorted(subjects), amd))
+            out["signed_sbom"] = {"key": SIGNING_KEY, "predicate_type": ",".join(sorted(types)),
+                                  "subjects": sorted(subjects), "evidence_sha256": _sha256(p)}
+    else:
+        p = path("provenance-%d.json")
+        if p:
+            with open(p) as fh:
+                subjects, types = provenance_subjects(fh.read())
+            if not subjects & known:
+                probs.append("%s: the provenance is about %s, not this image" % (f["ref"], sorted(subjects)))
+            out["provenance"] = {"key": PROVENANCE_KEY, "predicate_type": ",".join(sorted(types)),
+                                 "subjects": sorted(subjects), "evidence_sha256": _sha256(p)}
     sboms: Dict[str, Dict[str, Any]] = {}
-    for arch in ARCHES:
+    for arch in arches:
         p = path("sbom-%d-" + arch + ".spdx.json")
         if not p:
             continue
@@ -135,10 +155,10 @@ def _entry(i: int, f: Dict[str, Any], ev: str, probs: List[str]) -> Dict[str, An
 
 
 def record(froms: List[Dict[str, Any]], evidence: str, keys: str,
-           now: str) -> Tuple[Dict[str, Any], List[str]]:
+           now: str, profile: str = "hardened") -> Tuple[Dict[str, Any], List[str]]:
     probs: List[str] = []
     rec: Dict[str, Any] = {"created": now, "keys": {}, "images": []}
-    for k in (SIGNING_KEY, PROVENANCE_KEY):
+    for k in (SIGNING_KEY,) if profile == "ubi9" else (SIGNING_KEY, PROVENANCE_KEY):
         p = os.path.join(keys, k)
         rec["keys"][k] = _sha256(p) if os.path.isfile(p) else None
         if rec["keys"][k] is None:
@@ -147,7 +167,7 @@ def record(froms: List[Dict[str, Any]], evidence: str, keys: str,
         if not f.get("digest"):
             probs.append("%s: not pinned" % f["ref"])
             continue
-        rec["images"].append(_entry(i, f, evidence, probs))
+        rec["images"].append(_entry(i, f, evidence, probs, profile))
     return rec, probs
 
 
@@ -161,7 +181,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     with open(a.containerfile) as fh:
         froms = check_containerfile.froms(fh.read())
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    rec, probs = record(froms, a.evidence, a.keys, now)
+    rec, probs = record(froms, a.evidence, a.keys, now, check_containerfile.profile_of(a.containerfile))
     for x in probs:
         print("base: " + x, file=sys.stderr)
     with open(a.out, "w") as fh:

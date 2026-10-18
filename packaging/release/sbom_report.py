@@ -327,6 +327,22 @@ document.documentElement.classList.add('js');
 """
 
 
+def compare_html(views: Sequence[Dict[str, Any]]) -> str:
+    """The views side by side: what each base brings (#192: the Hardened image beside UBI 9)."""
+    rows = []
+    for v in views:
+        f = v["findings"]
+        sev = [sum(1 for x in f if x["severity"] in s)
+               for s in (("CRITICAL",), ("HIGH",), ("MEDIUM",), ("LOW", "NEGLIGIBLE", "UNKNOWN"))]
+        vulns = ([len(f)] + sev + [sum(1 for x in f if x["fixed_in"])]) if v["scanners"] else ["&#8212;"] * 6
+        rows.append("<tr><td>%s</td><td>%d</td><td>%s</td>%s</tr>" % (
+            esc(v["label"]), len(v["components"]), "{:,}".format(v["file_count"]),
+            "".join("<td>%s</td>" % x for x in vulns)))
+    return ('<h2>Side by side</h2><table class="compare"><thead><tr><th>View</th><th>Components</th><th>Files</th>'
+            '<th>Known vulnerabilities</th><th>Critical</th><th>High</th><th>Medium</th><th>Low and other</th>'
+            '<th>With a fix</th></tr></thead><tbody>%s</tbody></table>' % "".join(rows))
+
+
 def and_join(items: Sequence[str]) -> str:
     return items[0] if len(items) == 1 else "%s and %s" % (", ".join(items[:-1]), items[-1])
 
@@ -356,8 +372,10 @@ def page(views: Sequence[Dict[str, Any]], title: str, lede: str,
     else:
         intro.append('<p><b>Where this page comes from.</b> It is generated from the SPDX and CycloneDX SBOMs named '
                      'in each view, which stay the authoritative record.</p>')
-    intro += ['</div>',
-              '<div class="controls" role="toolbar" aria-label="View"><span id="tabs" role="group" aria-label="View"></span>'
+    intro.append('</div>')
+    if len(views) > 1:
+        intro.append(compare_html(views))
+    intro += ['<div class="controls" role="toolbar" aria-label="View"><span id="tabs" role="group" aria-label="View"></span>'
               '<input id="q" type="search" placeholder="Search components and files" aria-label="Search components and files">'
               '<button id="all" type="button" aria-pressed="false">Show every entry</button>'
               '<span id="count" class="muted" aria-live="polite"></span></div>']

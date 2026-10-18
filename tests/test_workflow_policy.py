@@ -247,6 +247,38 @@ def test_publish_refuses_to_sign_an_image_an_earlier_run_signed():
     assert 'if packaging/ci/tool cosign verify --key /work/cosign.pub --insecure-ignore-tlog "$IMAGE@$d"' in step
 
 
+def test_the_comparison_image_is_published_signed_attested_and_verified_like_the_shipped_one():
+    # #192: wd2l-ubi9 (amd64) is pushed by the digest that was tested, signed with the key (and
+    # in the older format), attested, saved for offline use, and checked online, offline and
+    # under Podman's policy. GitHub attests and signs it keylessly too.
+    pub = jobs(read("publish.yml"))["publish"]
+    for art in ("image-ubi9-amd64", "build-info-ubi9-amd64", "sbom-ubi9-amd64", "vuln-ubi9-amd64",
+                "base-evidence-ubi9"):
+        assert "name: %s" % art in pub, art
+    push = pub.split("- id: push-ubi9", 1)[1].split("\n      - ", 1)[0]
+    assert 'skopeo copy -q --digestfile ubi9-digest.txt "oci-archive:image-ubi9-amd64/image.oci.tar" "docker://$UBI9:$1"' in push
+    assert '"sha256:$(jq -r .image_id build-info-ubi9-amd64/build-info.json)"' in push        # the tested image
+    assert 'echo "digest_ubi9=$D" >> "$GITHUB_OUTPUT"' in push
+    guard = pub.index('"$UBI9@${{ steps.push-ubi9.outputs.digest_ubi9 }}"')
+    assert pub.index("is already signed by an earlier run") - 600 < guard < pub.index('S sign "$UBI9@$DU"')
+    for att in ('--predicate /work/provenance-ubi9.json "$UBI9@$DU"',
+                '--predicate /work/base-evidence-ubi9/base-image-record-ubi9.json "$UBI9@$DU"',
+                '--predicate /work/sbom-ubi9-amd64/wd2l.spdx.json "$UBI9@$DU"',
+                '--predicate /work/vuln-ubi9-amd64/vuln-predicate.json "$UBI9@$DU"'):
+        assert att in pub, att
+    assert pub.index('cosign save --dir "/work/save-ubi9/wd2l-oci" "$UBI9@$DU"') < pub.index("--new-bundle-format=false")
+    assert "digest_ubi9: ${{ steps.push-ubi9.outputs.digest_ubi9 }}" in pub
+    ver = jobs(read("publish.yml"))["verify-published"]
+    assert 'V verify --new-bundle-format=false "$UBI9@$DU"' in ver and "off-ubi9" in ver
+    imp = jobs(read("publish.yml"))["import-check"]
+    assert "if: ${{ matrix.arch == 'amd64' }}" in imp and "wd2l-*-image-ubi9-amd64-oci.tar" in imp
+    assert '"ghcr.io/joehazurmoney/wd2l-ubi9": [{type: "sigstoreSigned"' in imp
+    att = jobs(read("attest.yml"))["attest"]
+    assert "subject-name: ghcr.io/joehazurmoney/wd2l-ubi9" in att and "subject-digest: ${{ inputs.image-digest-ubi9 }}" in att
+    assert 'packaging/ci/tool cosign sign --yes "$UBI9@$DU"' in att
+    assert "image-digest-ubi9: ${{ needs.publish.outputs.digest_ubi9 }}" in jobs(read("release.yml"))["attest"]
+
+
 def test_release_stops_before_signing_when_the_tag_already_has_a_release():
     # gh release create ran last, after everything was signed, and a leftover draft for the
     # tag broke it there (#161).
@@ -513,7 +545,28 @@ def tool_runs(body: str):
 
 
 SCAN_JOBS = (("image.yml", "lint"), ("image.yml", "vuln-scan"), ("image.yml", "sbom"),
-             ("image-rescan.yml", "rescan"))
+             ("image.yml", "ubi9-scan"), ("image-rescan.yml", "rescan"))
+
+
+def test_the_comparison_image_is_built_checked_and_scanned_but_never_pauses_a_run():
+    # wd2l on UBI 9 (#192): built from the same wheel, checked by its own profile, scanned and
+    # described, and published; its findings are shown, never gated (ADR-0004's amendment).
+    image = jobs(read("image.yml"))
+    assert "needs: [wheel, lint, base-verify-ubi9]" in image["ubi9-build"]
+    assert "packaging/container/build.sh dist localhost/wd2l-ubi9:ci packaging/container/Containerfile.ubi9" in image["ubi9-build"]
+    assert "--containerfile packaging/container/Containerfile.ubi9" in image["base-verify-ubi9"]
+    assert "--type spdxjson" in image["base-verify-ubi9"]
+    checks = image["ubi9-checks"]
+    assert "packaging/container/build.sh dist localhost/wd2l-ubi9:again packaging/container/Containerfile.ubi9" in checks
+    assert "--profile ubi9" in checks and "for c in wd2l-sender wd2l-receiver wd2l-audit-report" in checks
+    scan = image["ubi9-scan"]
+    assert "--source-name ghcr.io/joehazurmoney/wd2l-ubi9" in scan
+    assert "sbom_enrich.py" in scan and "sbom_diff.py" in scan and "vuln_gate.py" in scan
+    assert "name: vuln-ubi9-amd64" in scan and "name: sbom-ubi9-amd64" in scan
+    assert "ubi9" not in image["vuln-review"] and "ubi9" not in image["security-review"]
+    for check in ("check_containerfile.py packaging/container/Containerfile.ubi9",
+                  "/work/packaging/container/Containerfile.ubi9"):
+        assert check in image["lint"], check
 
 
 def test_no_scanner_or_syft_runs_quietly():
@@ -539,8 +592,8 @@ def test_every_scanner_and_syft_log_is_kept_and_its_warnings_raised():
             assert m, (name, job, run)
             log = m.group(1).strip('"')
             # Named outright, or (the rescan: one log per release and platform) by a glob.
-            globbed = "for f in %s*.log; do" % log.split("$")[0]
-            assert "=%s" % log in warn or ("$" in log and globbed in warn), (name, job, log)
+            globs = re.findall(r"for f in (\S*)\*\.log; do", warn)
+            assert "=%s" % log in warn or ("$" in log and any(log.startswith(g) for g in globs)), (name, job, log)
 
 
 def test_the_gate_s_coverage_warnings_go_through_the_reviewed_list():
@@ -550,6 +603,16 @@ def test_the_gate_s_coverage_warnings_go_through_the_reviewed_list():
     rescan = jobs(read("image-rescan.yml"))["rescan"]
     assert '--warnings "coverage-$v-$a.log"' in rescan
     assert 'for f in coverage-*.log; do args+=(--log "vuln-gate=$f"); done' in rescan
+
+
+def test_the_rescan_reports_the_comparison_image_and_opens_no_issue_for_it():
+    # #192: wd2l-ubi9, by the digest its release's manifest records, scanned weekly too; its
+    # findings are shown, never an issue (ADR-0004's amendment).
+    scan = jobs(read("image-rescan.yml"))["rescan"]
+    assert "d9=$(jq -r '.comparison_image.digest // empty' \"manifest-$v.json\")" in scan
+    block = scan.split('if [ -n "$d9" ]; then', 1)[1].split("\n            fi\n", 1)[0]
+    assert '"registry:ghcr.io/joehazurmoney/wd2l-ubi9@$d9" --platform linux/amd64' in block
+    assert '--warnings "coverage-ubi9-$v.log"' in block and "gh issue" not in block and "--exit-code" not in block
 
 
 def test_the_weekly_pins_job_notices_when_red_hat_s_trivy_database_becomes_reachable():
@@ -588,6 +651,22 @@ def test_the_release_has_the_readable_sbom_of_both_platforms_listed_and_summed()
     assert body.index('cp "sbom-$a/wd2l.spdx.json"') < report < body.index("manifest.py generate")
 
 
+def test_the_release_carries_the_comparison_image_s_files_tab_and_record():
+    # #192: its SBOMs, scan summary, base record and tar are release files, listed and summed;
+    # the SBOM page has its tab; the manifest records the image by the digest publish pushed.
+    body = jobs(read("release.yml"))["assets"]
+    assert "sbom-ubi9-amd64,vuln-ubi9-amd64,base-evidence-ubi9" in body
+    for part in ('cp sbom-ubi9-amd64/wd2l.spdx.json "assets/wd2l-$V-image-ubi9-amd64.spdx.json"',
+                 'cp sbom-ubi9-amd64/wd2l.cdx.json "assets/wd2l-$V-image-ubi9-amd64.cdx.json"',
+                 'cp vuln-ubi9-amd64/vuln-summary.md "assets/wd2l-$V-vuln-summary-ubi9-amd64.md"',
+                 "cp base-evidence-ubi9/base-image-record-ubi9.json assets/",
+                 '--view ubi9 "UBI 9 (amd64)" "assets/wd2l-$V-image-ubi9-amd64.spdx.json" "assets/wd2l-$V-image-ubi9-amd64.cdx.json"',
+                 '--scan ubi9 grype=vuln-ubi9-amd64/grype.json --scan ubi9 trivy=vuln-ubi9-amd64/trivy.json',
+                 '--comparison-digest "$DIGEST_UBI9" --comparison-base-record assets/base-image-record-ubi9.json',
+                 "DIGEST_UBI9: ${{ needs.publish.outputs.digest_ubi9 }}"):
+        assert part in body, part
+
+
 def test_the_image_name_and_the_urls_agree_everywhere():
     # Written out in five files (#180): a change to one would push, sign, attest or rescan
     # under another name.
@@ -602,7 +681,7 @@ def test_the_image_name_and_the_urls_agree_everywhere():
     names = {"ghcr.io/%s/%s" % m for t in texts.values()
              for m in re.findall(r"ghcr\.io/([\w.-]+)/(wd2l[\w.-]*)", t)
              if not m[1].startswith("wd2l-base")}             # the base images' mirror
-    assert names == {manifest.IMAGE}
+    assert names == {manifest.IMAGE, manifest.UBI9_IMAGE}      # and the comparison image (#192)
     atts = {m for t in texts.values()
             for m in re.findall(r"https://github\.com/[\w.-]+/[\w.-]+/attestations", t)}
     assert atts == {manifest.ATT}

@@ -166,6 +166,55 @@ def test_a_component_no_rule_covers_is_a_gap(tmp_path):
     assert package(doc, "SPDXRef-Package-x")["supplier"] == "NOASSERTION"
 
 
+REQ_PURL, REQ_RPM_PURL = "pkg:pypi/requests@2.25.1", "pkg:rpm/redhat/python3-requests@2.25.1-10.el9?arch=noarch"
+
+
+def with_rpm_installed_python(doc, owned_by_rpm=True):
+    """UBI 9's case: an RPM (python3-requests) installed a Python package (requests), whose
+    metadata Syft reads and records as the evidence for it."""
+    meta = spdx_file("usr/lib/python3.9/site-packages/requests-2.25.1.dist-info/METADATA", b"Name: requests\n")
+    doc["files"].append(meta)
+    doc["packages"] += [spdx_package("requests", "2.25.1", REQ_PURL, "SPDXRef-Package-python-requests"),
+                        spdx_package("python3-requests", "2.25.1-10.el9", REQ_RPM_PURL, "SPDXRef-Package-rpm-req")]
+    doc["relationships"].append({"spdxElementId": "SPDXRef-Package-python-requests", "relatedSpdxElement": meta["SPDXID"],
+                                 "relationshipType": "OTHER",
+                                 "comment": "evident-by: indicates the package's existence is evident by the given file"})
+    if owned_by_rpm:
+        doc["relationships"].append({"spdxElementId": "SPDXRef-Package-rpm-req", "relatedSpdxElement": meta["SPDXID"],
+                                     "relationshipType": "CONTAINS"})
+    return doc
+
+
+def test_a_language_package_an_os_package_installed_takes_that_package_s_supplier(tmp_path):
+    doc, _, gaps = enrich(tmp_path, with_rpm_installed_python(syft_spdx()))
+    assert gaps == []
+    assert package(doc, "SPDXRef-Package-python-requests")["supplier"] == "Organization: Red Hat, Inc."
+
+
+def test_a_language_package_no_os_package_installed_is_still_a_gap(tmp_path):
+    _, _, gaps = enrich(tmp_path, with_rpm_installed_python(syft_spdx(), owned_by_rpm=False))
+    assert gaps == ["no supplier rule for requests 2.25.1 (pkg:pypi/requests@2.25.1)"]
+
+
+def test_a_language_package_two_suppliers_installed_is_still_a_gap(tmp_path):
+    doc = with_rpm_installed_python(syft_spdx())
+    meta = next(f for f in doc["files"] if f["fileName"].endswith("requests-2.25.1.dist-info/METADATA"))
+    doc["relationships"].append({"spdxElementId": WD2L, "relatedSpdxElement": meta["SPDXID"],
+                                 "relationshipType": "CONTAINS"})          # wd2l project's too
+    doc, _, gaps = enrich(tmp_path, doc)
+    assert "no supplier rule for requests 2.25.1 (pkg:pypi/requests@2.25.1)" in gaps
+
+
+def test_cdx_gives_an_installed_language_package_the_same_supplier(tmp_path):
+    cdx = syft_cdx()
+    cdx["components"].append({"bom-ref": REQ_PURL + "?package-id=1", "type": "library", "name": "requests",
+                              "version": "2.25.1", "purl": REQ_PURL})
+    spdx = with_rpm_installed_python(syft_spdx())
+    rc, _s, c = run_enrich(tmp_path, spdx, cdx)
+    assert rc == 0
+    assert next(x for x in c["components"] if x["name"] == "requests")["supplier"] == {"name": "Red Hat, Inc."}
+
+
 def test_a_lookalike_package_id_gets_no_supplier(tmp_path):
     """The rules match a package ID's start: a wd2l-named package from elsewhere isn't ours."""
     doc = syft_spdx()
@@ -459,6 +508,27 @@ def test_when_no_scan_covered_the_os_packages_the_page_says_so(tmp_path):
     html = report(tmp_path, *one_view(tmp_path, ("grype", blind), ("trivy", trivy_doc())))
     assert ("No scan covered the operating system's packages, so they weren't checked for known "
             "vulnerabilities.") in html
+
+
+def test_the_page_compares_its_views_at_the_top(tmp_path):
+    # #192: the Hardened image beside UBI 9: components, files, findings by severity and fixable.
+    s1, c1 = report_inputs(tmp_path, "amd64")
+    s2, c2 = report_inputs(tmp_path, "ubi9-amd64")
+    g1 = write_json(tmp_path / "g1.json", grype_doc(("CVE-1", "High", "openssl-libs", "1:3.5.9-0.3.hum1", ())))
+    g2 = write_json(tmp_path / "g2.json", grype_doc(("CVE-2", "Critical", "openssl-libs", "1:3.5.9-0.3.hum1", ("3.6",)),
+                                                    ("CVE-3", "Medium", "zlib", "1.3", ())))
+    html = report(tmp_path, "--view", "amd64", "linux/amd64", s1, c1, "--scan", "amd64", "grype=" + g1,
+                  "--view", "ubi9", "UBI 9 (amd64)", s2, c2, "--scan", "ubi9", "grype=" + g2)
+    table = re.search(r'<table class="compare">.*?</table>', html).group(0)
+    assert html.index('<table class="compare">') < html.index('<section class="view"')
+    assert ("<tr><td>linux/amd64</td><td>2</td><td>10</td><td>1</td><td>0</td><td>1</td><td>0</td>"
+            "<td>0</td><td>0</td></tr>") in table
+    assert ("<tr><td>UBI 9 (amd64)</td><td>2</td><td>10</td><td>2</td><td>1</td><td>0</td><td>1</td>"
+            "<td>0</td><td>1</td></tr>") in table
+
+
+def test_one_view_has_no_comparison(tmp_path):
+    assert '<table class="compare">' not in report(tmp_path, *one_view(tmp_path))
 
 
 def test_a_view_with_no_scans_says_so(tmp_path):

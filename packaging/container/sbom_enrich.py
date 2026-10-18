@@ -46,6 +46,28 @@ def supplier_for(purl: str) -> Optional[str]:
     return next((s for prefix, s in SUPPLIERS if purl.startswith(prefix)), None)
 
 
+def installed_by(doc: Dict[str, Any]) -> Dict[str, str]:
+    """The supplier of each language package that an OS package installed, by package ID: the
+    files Syft found it by (its "evident-by" relationships) are that OS package's, as on UBI 9,
+    whose RPMs install Python packages (python3-requests installs requests). Only one supplier,
+    and only one with a rule, counts."""
+    by_id = {p["SPDXID"]: p for p in doc.get("packages") or []}
+    rels = doc.get("relationships") or []
+    owners: Dict[str, Set[str]] = {}
+    for r in rels:
+        if r.get("relationshipType") == "CONTAINS":
+            s = supplier_for(purl_of(by_id.get(r["spdxElementId"], {})))
+            if s:
+                owners.setdefault(r["relatedSpdxElement"], set()).add(s)
+    found: Dict[str, Set[str]] = {}
+    for r in rels:
+        p = by_id.get(r["spdxElementId"])
+        if (p and r.get("relationshipType") == "OTHER" and str(r.get("comment", "")).startswith("evident-by")
+                and not supplier_for(purl_of(p))):
+            found.setdefault(purl_of(p).split("?")[0], set()).update(owners.get(r["relatedSpdxElement"], set()))
+    return {purl: next(iter(s)) for purl, s in found.items() if purl and len(s) == 1}
+
+
 def purl_of(pkg: Dict[str, Any]) -> str:
     return next((r["referenceLocator"] for r in pkg.get("externalRefs") or []
                  if r.get("referenceType") == "purl"), "")
@@ -107,9 +129,10 @@ def complete_spdx(doc: Dict[str, Any], dist_info: str, rec: Dict[str, str], arch
 
     # Suppliers, and the project as the supplier of the image itself.
     roots = described(doc)
+    installed = installed_by(doc)
     tally: Dict[str, int] = {}
     for p in doc.get("packages") or []:
-        s = PROJECT if p["SPDXID"] in roots else supplier_for(purl_of(p))
+        s = PROJECT if p["SPDXID"] in roots else (supplier_for(purl_of(p)) or installed.get(purl_of(p).split("?")[0]))
         if not s:
             gaps.append("no supplier rule for %s %s (%s)" % (p.get("name"), p.get("versionInfo"),
                                                              purl_of(p) or "no package ID"))
@@ -191,15 +214,17 @@ def complete_spdx(doc: Dict[str, Any], dist_info: str, rec: Dict[str, str], arch
     return done, gaps
 
 
-def complete_cdx(doc: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+def complete_cdx(doc: Dict[str, Any], installed: Optional[Dict[str, str]] = None) -> Tuple[List[str], List[str]]:
+    """installed: installed_by() of the SPDX SBOM, which records who installed what."""
     done: List[str] = []
     gaps: List[str] = []
     tally: Dict[str, int] = {}
     for c in doc.get("components") or []:
         if c.get("type") == "file":
             continue
+        purl = c.get("purl") or ""
         s = OS_SUPPLIERS.get(c.get("name", "")) if c.get("type") == "operating-system" \
-            else supplier_for(c.get("purl") or "")
+            else (supplier_for(purl) or (installed or {}).get(purl.split("?")[0]))
         if not s:
             gaps.append("no supplier rule for %s %s (%s)" % (c.get("name"), c.get("version"),
                                                              c.get("purl") or c.get("type")))
@@ -226,9 +251,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--repo-url", required=True)
     a = p.parse_args(argv)
     dist_info, rec = record(a.wheel)
+    with open(a.spdx) as f:
+        installed = installed_by(json.load(f))
     gaps: List[str] = []
     for path, fn in ((a.spdx, lambda d: complete_spdx(d, dist_info, rec, a.arch, a.repo_url)),
-                     (a.cdx, complete_cdx)):
+                     (a.cdx, lambda d: complete_cdx(d, installed))):
         with open(path) as f:
             doc = json.load(f)
         done, g = fn(doc)

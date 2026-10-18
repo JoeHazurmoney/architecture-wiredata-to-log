@@ -110,7 +110,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: "{dist,rpms-el9,rpms-el10,sbom-amd64,sbom-arm64,base-evidence,vuln-amd64,vuln-arm64,image-release}"
+          pattern: "{dist,rpms-el9,rpms-el10,sbom-amd64,sbom-arm64,base-evidence,vuln-amd64,vuln-arm64,image-release,sbom-ubi9-amd64,vuln-ubi9-amd64,base-evidence-ubi9}"
       - name: Assemble the assets
         run: |
           mkdir assets
@@ -122,6 +122,12 @@ jobs:
             cp "vuln-$a/vuln-summary.md" "assets/wd2l-$V-vuln-summary-$a.md"
           done
           cp base-evidence/base-image-record.json assets/
+          # The comparison image on UBI 9 (#192): its SBOMs, scan summary and base record (its tar
+          # is in image-release, with the others).
+          cp sbom-ubi9-amd64/wd2l.spdx.json "assets/wd2l-$V-image-ubi9-amd64.spdx.json"
+          cp sbom-ubi9-amd64/wd2l.cdx.json "assets/wd2l-$V-image-ubi9-amd64.cdx.json"
+          cp vuln-ubi9-amd64/vuln-summary.md "assets/wd2l-$V-vuln-summary-ubi9-amd64.md"
+          cp base-evidence-ubi9/base-image-record-ubi9.json assets/
           if [ -f cosign.pub ]; then
             cp cosign.pub assets/
           elif [ "$REAL" = true ]; then
@@ -142,6 +148,8 @@ jobs:
             views+=(--view "$a" "linux/$a" "assets/wd2l-$V-image-$a.spdx.json" "assets/wd2l-$V-image-$a.cdx.json"
                     --scan "$a" "grype=vuln-$a/grype.json" --scan "$a" "trivy=vuln-$a/trivy.json")
           done
+          views+=(--view ubi9 "UBI 9 (amd64)" "assets/wd2l-$V-image-ubi9-amd64.spdx.json" "assets/wd2l-$V-image-ubi9-amd64.cdx.json"
+                  --scan ubi9 grype=vuln-ubi9-amd64/grype.json --scan ubi9 trivy=vuln-ubi9-amd64/trivy.json)
           python packaging/release/sbom_report.py --version "$V" --commit "$(git rev-parse HEAD)" \
             --repo-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --out "assets/wd2l-$V-sbom.html" "${views[@]}"
       - name: The changelog, the source bundle and verify-release, to retrieve the release offline
@@ -163,6 +171,7 @@ jobs:
           DIGEST: ${{ needs.publish.outputs.digest }}
           DIGEST_AMD64: ${{ needs.publish.outputs.digest_amd64 }}
           DIGEST_ARM64: ${{ needs.publish.outputs.digest_arm64 }}
+          DIGEST_UBI9: ${{ needs.publish.outputs.digest_ubi9 }}
         run: |
           python -m pip install -q --require-hashes -r packaging/release/requirements.txt
           dry=(); [ "$REAL" = true ] || dry=(--dry-run)
@@ -170,6 +179,7 @@ jobs:
           python packaging/release/manifest.py generate --assets assets \
             --base-record assets/base-image-record.json --image-digest "$DIGEST" \
             --platform-digest "amd64=$DIGEST_AMD64" --platform-digest "arm64=$DIGEST_ARM64" \
+            --comparison-digest "$DIGEST_UBI9" --comparison-base-record assets/base-image-record-ubi9.json \
             --changelog "assets/wd2l-$V-changelog.md" "${dry[@]}" > "wd2l-$V-release-manifest.json"
           python packaging/release/manifest.py validate "wd2l-$V-release-manifest.json"
           python packaging/release/manifest.py render "wd2l-$V-release-manifest.json" > "wd2l-$V-release-manifest.md"
@@ -195,6 +205,7 @@ jobs:
       image-digest: ${{ needs.publish.outputs.digest }}
       image-digest-amd64: ${{ needs.publish.outputs.digest_amd64 }}
       image-digest-arm64: ${{ needs.publish.outputs.digest_arm64 }}
+      image-digest-ubi9: ${{ needs.publish.outputs.digest_ubi9 }}
     permissions:
       contents: read
       id-token: write

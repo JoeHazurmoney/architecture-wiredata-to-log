@@ -77,6 +77,17 @@ def test_provenance_names_the_commit_the_wheel_and_both_bases():
     json.dumps(p)
 
 
+def test_provenance_of_the_ubi9_image_names_its_containerfile_and_no_mirror():
+    # The comparison image (#192): UBI 9 isn't mirrored; Red Hat's registry keeps it.
+    u9 = [dict(f, name="r/ubi9/ubi", tag="latest") for f in FROMS]
+    p = prov.predicate(ENV, "wd2l-0.3.0-py3-none-any.whl", "c" * 64, u9, None, "t0", "t1",
+                       containerfile="packaging/container/Containerfile.ubi9")
+    deps = p["buildDefinition"]["resolvedDependencies"]
+    assert deps[3] == {"uri": "r/ubi9/ubi:latest", "digest": {"sha256": "2" * 64},
+                       "annotations": {"stage": "runtime"}}
+    assert p["buildDefinition"]["externalParameters"]["containerfile"] == "packaging/container/Containerfile.ubi9"
+
+
 def test_signing_config_names_no_log_and_no_timestamp_service():
     with open(os.path.join(REPO, "packaging", "release", "signing-config.json")) as f:
         sc = json.load(f)
@@ -324,6 +335,19 @@ def test_notes_mark_retroactive_issues_and_link_the_attestation_pages():
         "image index": "https://github.com/o/r/attestations/2", "release files": "", }))
     assert "/issues/79) † | bug |" in text and "† Recorded after its work had merged." in text
     assert "Attestation pages: [image index](https://github.com/o/r/attestations/2)." in text
+
+
+def test_notes_name_the_comparison_image_as_not_for_deployment():
+    # #192: wd2l on UBI 9, published for comparison; the notes say what it is for, and isn't.
+    man = example_manifest()
+    text = notes.notes(versions.names("1.1.0"), **dict(ARGS, man=man))
+    section = text.split("## Comparison image (not for deployment)", 1)[1].split("\n## ", 1)[0]
+    assert "`ghcr.io/joehazurmoney/wd2l-ubi9@%s`" % man["comparison_image"]["digest"] in section
+    assert "`wd2l-1.1.0-image-ubi9-amd64-oci.tar`" in section and "`wd2l-1.1.0-sbom.html`" in section
+    assert "not hardened" in section and "not FIPS" in section and "Deploy `ghcr.io/joehazurmoney/wd2l`" in section
+    assert text.index("## Image") < text.index("## Comparison image") < text.index("## Assets")
+    man["comparison_image"] = None
+    assert "## Comparison image" not in notes.notes(versions.names("1.1.0"), **dict(ARGS, man=man))
 
 
 def test_notes_without_a_manifest_are_unchanged():

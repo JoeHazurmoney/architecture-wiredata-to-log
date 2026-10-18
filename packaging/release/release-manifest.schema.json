@@ -6,13 +6,14 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "release", "source", "generated", "summary", "changes", "known_issues",
-               "deliverables", "image", "base_images", "build_environment", "changelog", "approvals",
+               "deliverables", "image", "base_images", "comparison_image", "build_environment", "changelog", "approvals",
                "verification"],
   "if": {"properties": {"release": {"properties": {"dry_run": {"const": false}}}}},
   "then": {
-    "description": "a real release: the image was published for both platforms, and its changelog, its summary and the release gate's approval are recorded",
+    "description": "a real release: the image was published for both platforms, and the comparison image, and its changelog, its summary and the release gate's approval are recorded",
     "properties": {
       "image": {"type": "object", "properties": {"platforms": {"required": ["amd64", "arm64"]}}},
+      "comparison_image": {"type": "object"},
       "changelog": {"type": "object"},
       "summary": {"type": "object"},
       "approvals": {"contains": {"type": "object", "required": ["environment", "state"],
@@ -37,6 +38,19 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {"amd64": {"$ref": "#/definitions/digest"}, "arm64": {"$ref": "#/definitions/digest"}}
+    },
+    "baseImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "ref", "index_digest", "platforms", "release", "source_image"],
+      "properties": {
+        "stage": {"type": ["string", "null"]},
+        "ref": {"type": "string"},
+        "index_digest": {"$ref": "#/definitions/digest"},
+        "platforms": {"$ref": "#/definitions/basePlatforms"},
+        "release": {"type": ["string", "null"]},
+        "source_image": {"type": ["string", "null"]}
+      }
     },
     "basePlatforms": {
       "description": "every Linux platform in a base image's index: ours, and any others it ships (s390x, #171)",
@@ -218,21 +232,25 @@
         }
       ]
     },
-    "base_images": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["stage", "ref", "index_digest", "platforms", "release", "source_image"],
-        "properties": {
-          "stage": {"type": ["string", "null"]},
-          "ref": {"type": "string"},
-          "index_digest": {"$ref": "#/definitions/digest"},
-          "platforms": {"$ref": "#/definitions/basePlatforms"},
-          "release": {"type": ["string", "null"]},
-          "source_image": {"type": ["string", "null"]}
+    "base_images": {"type": "array", "items": {"$ref": "#/definitions/baseImage"}},
+    "comparison_image": {
+      "description": "wd2l on UBI 9, amd64 only, for comparison: not hardened, not FIPS (#192). null on a dry run",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "tags", "digest", "platform", "base_images", "purpose"],
+          "properties": {
+            "name": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "digest": {"$ref": "#/definitions/digest"},
+            "platform": {"const": "linux/amd64"},
+            "base_images": {"type": "array", "items": {"$ref": "#/definitions/baseImage"}, "minItems": 1},
+            "purpose": {"type": "string"}
+          }
         }
-      }
+      ]
     },
     "build_environment": {
       "description": "what built it, as pinned at the commit",

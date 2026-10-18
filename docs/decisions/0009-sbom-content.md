@@ -40,7 +40,10 @@
   * **Suppliers, by rule, failing closed.** Each component's supplier comes from its package ID:
     * `pkg:rpm/redhat/` and `pkg:rpm/hummingbird/`: Red Hat, Inc.;
     * `pkg:pypi/wd2l@`, and the image itself: wd2l project;
-    * CycloneDX's operating-system entry, by distribution (`hummingbird`, `rhel`): Red Hat, Inc.
+    * CycloneDX's operating-system entry, by distribution (`hummingbird`, `rhel`): Red Hat, Inc.;
+    * a language package that an OS package installed, such as UBI 9's Python packages from
+      Red Hat's RPMs: that package's supplier. The files Syft found it by must be that one
+      package's, and only one supplier's.
 
     A component that no rule covers fails the run, so a new dependency can't arrive
     unattributed. The rules match the start of the package ID, so a look-alike name doesn't match.

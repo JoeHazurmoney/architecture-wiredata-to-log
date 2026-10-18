@@ -10,6 +10,9 @@
     {"tool": "trivy", "text": "Third-party SBOM may lead to inaccurate vulnerability detection",
      "reason": "Trivy reads the SBOM Red Hat ships inside the base image. Its findings are compared with Grype's, which reads the image itself, in every scan summary.",
      "expires": "2027-01-15", "approved_by": "system owner"},
+    {"tool": "trivy", "text": "Using severities from other vendors for some vulnerabilities",
+     "reason": "On UBI 9 (the comparison image), Red Hat gives some vulnerabilities no severity of its own, and Trivy then uses another source's rating, as its documentation describes. The rating Trivy reports is the one each summary shows.",
+     "expires": "2027-01-15", "approved_by": "system owner"},
     {"tool": "trivy", "text": "Recommend using Trivy to generate SBOMs",
      "reason": "wd2l's SBOMs are made by Syft, which lists every RPM with a package ID and every file with its SHA-256; Trivy's own SBOM of the image does neither (docs/decisions/0010-sbom-generator.md).",
      "expires": "2027-01-15", "approved_by": "system owner"}

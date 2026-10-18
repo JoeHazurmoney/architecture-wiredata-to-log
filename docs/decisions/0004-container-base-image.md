@@ -233,6 +233,54 @@ they change with every rebuild and every new disclosure.
   3. FIPS validation is needed on hosts that aren't RHEL in FIPS mode.
   4. wd2l needs a package the Hardened Images repositories don't have.
 
+## Amendment, 2026-10-18: a comparison image on UBI 9 (#192)
+
+* **Why.** A reviewer reasonably asks what a minimal base buys. The answer is clearer when it's
+  measured than when it's argued. So each release also publishes the same wd2l on a
+  general-purpose base, beside the shipped image, built from the same wheel. The base is then
+  the only difference. Built from 1.1.0's wheel, on 2026-10-18:
+
+  | | wd2l (Hardened, FIPS) | wd2l-ubi9 (UBI 9) |
+  |---|---|---|
+  | Components | 65 | 207 |
+  | Files | 4,752 | 8,532 |
+  | Known vulnerabilities | 7 (3 High) | 535 (27 High) |
+  | With a fix available | 0 | 0 |
+  | Shell, package manager | no | yes |
+  | Crypto policy | FIPS | DEFAULT |
+  | Size, unpacked | 127 MB | 315 MB |
+
+* **What it is.** `ghcr.io/joehazurmoney/wd2l-ubi9`, linux/amd64 only:
+  * on `registry.access.redhat.com/ubi9/ubi`, pinned by digest, which Dependabot moves;
+  * its Python is 3.9;
+  * pip comes from the base's own RPM-shipped wheel (`ensurepip`), in the build stage only, so
+    the base's digest pins it too;
+  * it runs as 65532:65532.
+
+  See [`Containerfile.ubi9`](../../packaging/container/Containerfile.ubi9).
+* **What it gets, as the shipped image does:**
+  * a reproducible build;
+  * hardening checks by its own profile: 65532, no pip, no added RPM, wd2l's files exactly the
+    wheel's, labels that name it;
+  * both scanners, whose data both cover UBI 9 ([ADR-0011](0011-vulnerability-scanners.md));
+  * completed SBOMs ([ADR-0009](0009-sbom-content.md));
+  * signatures (the key, and keyless) and attestations;
+  * verification online, offline and under Podman's policy;
+  * an offline tar, an entry in the release manifest, a tab on the SBOM page, and the weekly
+    rescan.
+* **What it doesn't get, by design:**
+  * **It isn't hardened.** UBI 9's shell, package manager and setuid files stay: they're the
+    difference it shows.
+  * **It isn't FIPS.** Its crypto policy is DEFAULT.
+  * **No functional lab.** It runs the same wd2l, and its commands are checked.
+  * **No gate.** Its findings are shown, and never pause a run or open an issue.
+  * **No base mirror.** UBI 9 stays on Red Hat's registry.
+  * **No base provenance.** Red Hat publishes none for UBI 9. Its signature and its signed SBOM
+    are checked instead.
+* **The Hardened FIPS image stays the one to deploy.** Nothing in this repository deploys
+  `wd2l-ubi9`, and the release notes and manifest say it is for comparison only.
+* **Revisit** if building and publishing it costs more than the comparison is worth.
+
 ## Action items
 
 1. [ ] **Receiver capture container.** The archive is the recovery source, so it must stay

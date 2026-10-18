@@ -75,6 +75,16 @@ image that way. Pulling by the index digest checks your platform's image. The re
 checks this policy on both platforms (`import-check`); it was also checked on AlmaLinux 10
 (Podman 5.8).
 
+**The comparison image, `ghcr.io/joehazurmoney/wd2l-ubi9`,** is the same wd2l on UBI 9 (amd64),
+not hardened and not FIPS. It is for comparing bases, not for these hosts
+([ADR-0004](../decisions/0004-container-base-image.md)). To pull it on a workstation under the
+same policy, add its own entry beside the one above:
+
+```json
+"ghcr.io/joehazurmoney/wd2l-ubi9": [{"type": "sigstoreSigned", "keyPath": "/etc/pki/wd2l/cosign.pub",
+                                     "signedIdentity": {"type": "matchRepository"}}]
+```
+
 ## Install the unit
 
 ```bash

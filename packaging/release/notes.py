@@ -107,7 +107,16 @@ def notes(names: Dict[str, Any], image: str, digest: str, sums_text: str,
         out.append("| %s | `%s` | `%s` |" % (b.get("stage"), b.get("ref"), b.get("source_image")))
     out += ["", "The bases, their Red Hat signatures, SBOMs, provenance and sources are mirrored "
             "in `ghcr.io/joehazurmoney/wd2l-base/python` ([why](%s/decisions/0006-release-artifacts-and-signing.md))."
-            % doc, "", "## Assets", "", "| File | SHA-256 |", "|---|---|"]
+            % doc, ""]
+    ci = (man or {}).get("comparison_image")
+    if ci:
+        out += ["## Comparison image (not for deployment)", "",
+                "`%s@%s` (linux/amd64; offline: `wd2l-%s-image-ubi9-amd64-oci.tar`) is the same wd2l on UBI 9, "
+                "to show what a general-purpose base adds, in packages and known vulnerabilities: compare its "
+                "tab in `wd2l-%s-sbom.html`. It is not hardened and not FIPS, and it is signed and verified like "
+                "the image above. Deploy `%s` ([why](%s/decisions/0004-container-base-image.md))."
+                % (ci["name"], ci["digest"], v, v, image, doc), ""]
+    out += ["## Assets", "", "| File | SHA-256 |", "|---|---|"]
     for line in sums_text.splitlines():
         if line.strip():
             h, name = line.split(None, 1)
