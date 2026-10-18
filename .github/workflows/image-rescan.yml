@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Every pinned digest still resolves
         run: |
-          if packaging/ci/pin-images.sh --check packaging/container/Containerfile packaging/ci/tools.Containerfile 2> pins.txt; then
+          if packaging/ci/pin-images.sh --check packaging/container/Containerfile packaging/container/Containerfile.ubi9 packaging/ci/tools.Containerfile 2> pins.txt; then
             cat pins.txt; exit 0
           fi
           { echo 'The registry no longer serves these pins. Re-pin each (docs/releasing.md, "Keeping the pins current"):'
