@@ -653,15 +653,45 @@ def test_a_finding_one_scanner_missed_though_it_covers_that_kind_is_a_disagreeme
     assert (d["id"], d["package"], d["found_by"], d["missed_by"]) == ("CVE-2026-97687", "urllib3", ["trivy"], ["grype"])
 
 
-def test_annotations_name_each_scanner_without_os_data(tmp_path, capsys):
-    for name, doc in (("g", grype_doc()), ("t", trivy_real("none")), ("e", {"exceptions": []})):
+tw = load_script("packaging/container/tool_warnings.py")
+
+
+def coverage_warnings(tmp_path, grype, trivy):
+    for name, doc in (("g", grype), ("t", trivy), ("e", {"exceptions": []})):
         (tmp_path / (name + ".json")).write_text(json.dumps(doc))
+    w = tmp_path / "coverage.log"
     vg.main(["--grype", str(tmp_path / "g.json"), "--trivy", str(tmp_path / "t.json"), "--exceptions",
-             str(tmp_path / "e.json"), "--today", TODAY, "--summary", str(tmp_path / "s.md"), "--annotate"])
-    out = capsys.readouterr().out
-    assert out == ("::warning title=trivy::trivy has no advisory data for this image's operating system "
-                   "(not recognized), so it checked only language packages and secrets. grype covered the "
-                   "OS packages.\n")
+             str(tmp_path / "e.json"), "--today", TODAY, "--summary", str(tmp_path / "s.md"), "--warnings", str(w)])
+    return tw.warnings_in("vuln-gate", w.read_text())
+
+
+def test_each_scanner_without_os_data_is_a_warning_for_tool_warnings(tmp_path, capsys):
+    # Written for tool_warnings.py, so the same reviewed list decides which are expected (#191).
+    assert coverage_warnings(tmp_path, grype_doc(), trivy_real("none")) == [
+        ("vuln-gate", "WARN", "trivy has no advisory data for this image's operating system (not recognized), "
+                              "so it checked only language packages and secrets.")]
+    assert capsys.readouterr().out == ""
+
+
+def test_no_scanner_covering_the_os_is_a_warning_of_its_own(tmp_path):
+    found = coverage_warnings(tmp_path, grype_doc(distro=None), trivy_real("hummingbird"))
+    assert [m for _t, _l, m in found] == [
+        "grype has no advisory data for this image's operating system (not recognized), so it checked only "
+        "language packages.",
+        "trivy has no advisory data for this image's operating system (hummingbird 20251124), so it checked "
+        "only language packages and secrets.",
+        "No scanner covered the operating system's packages: a security review is needed."]
+
+
+def test_the_committed_list_expects_only_trivy_not_recognizing_the_os(tmp_path):
+    with open(os.path.join(REPO, "packaging", "container", "tool-warnings.json"), encoding="utf-8") as f:
+        known, _ = tw.load_known(json.load(f), "2026-10-17")          # when the entries were reviewed
+    def expected(msg):
+        return any(k["tool"] == "vuln-gate" and k["text"] in msg for k in known)
+    ok, = coverage_warnings(tmp_path, grype_doc(), trivy_real("none"))
+    assert expected(ok[2])
+    for _t, _l, msg in coverage_warnings(tmp_path, grype_doc(distro=None), trivy_real("hummingbird")):
+        assert not expected(msg), msg
 
 
 def test_the_summary_shows_coverage_found_by_and_disagreements():

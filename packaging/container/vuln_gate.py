@@ -18,10 +18,11 @@ package, didn't: the scanners differ in their data and in how they find packages
 should look at those.
 
     vuln_gate.py --grype G.json --trivy T.json --exceptions E.json [--today YYYY-MM-DD]
-                 [--summary OUT.md] [--predicate OUT.json] [--annotate] [--exit-code N]
+                 [--summary OUT.md] [--predicate OUT.json] [--warnings OUT.log] [--exit-code N]
 
---annotate prints a GitHub warning for each scanner without data for the image's OS. Without
---summary, the summary goes to stdout. Exit 0, or N with --exit-code when a review is needed (the
+--warnings writes a warning for each scanner without data for the image's OS, in a log that
+tool_warnings.py reads, so the same reviewed list decides which are expected. Without --summary,
+the summary goes to stdout. Exit 0, or N with --exit-code when a review is needed (the
 weekly rescan opens an issue)."""
 
 import argparse
@@ -146,14 +147,15 @@ def annotation(title: str, message: str) -> str:
     return "::warning title=%s::%s" % (data(title).replace(":", "%3A").replace(",", "%2C"), data(message))
 
 
-def annotations(covers: Sequence[Dict[str, Any]]) -> List[str]:
-    covering = [c["scanner"] for c in covers if c["os_packages"]]
-    return [annotation(c["scanner"], "%s has no advisory data for this image's operating system (%s), so it "
-                                     "checked only language packages%s. %s" % (
-                           c["scanner"], c["os"] or "not recognized", " and secrets" if c["secrets"] else "",
-                           "%s covered the OS packages." % " and ".join(covering) if covering else
-                           "No scanner covered the OS packages: a security review is needed."))
-            for c in covers if not c["os_packages"]]
+def coverage_warnings(covers: Sequence[Dict[str, Any]]) -> List[str]:
+    """One warning for each scanner without data for the image's OS, and one more when none had
+    any. tool_warnings.py raises them, unless tool-warnings.json expects one."""
+    out = ["%s has no advisory data for this image's operating system (%s), so it checked only language "
+           "packages%s." % (c["scanner"], c["os"] or "not recognized", " and secrets" if c["secrets"] else "")
+           for c in covers if not c["os_packages"]]
+    if not any(c["os_packages"] for c in covers):
+        out.append("No scanner covered the operating system's packages: a security review is needed.")
+    return out
 
 
 def load_exceptions(doc: Dict[str, Any], today: str) -> Tuple[List[Dict[str, Any]], List[str]]:
@@ -265,8 +267,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--today", default=datetime.now(timezone.utc).date().isoformat())
     p.add_argument("--summary")
     p.add_argument("--predicate")
-    p.add_argument("--annotate", action="store_true",
-                   help="print a GitHub warning for each scanner without data for the image's OS")
+    p.add_argument("--warnings", metavar="OUT.log",
+                   help="write a warning for each scanner without data for the image's OS, for tool_warnings.py")
     p.add_argument("--exit-code", type=int, default=0, metavar="N",
                    help="exit N when a review is needed (default 0: findings never fail)")
     a = p.parse_args(argv)
@@ -284,9 +286,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     review = bool(gated or probs or uncovered)
     text = summary(gated, excepted, probs, {"grype": len(g), "trivy": len(t)}, found,
                    coverage=covers, disagreements=dis)
-    if a.annotate:
-        for line in annotations(covers):
-            print(line)
+    if a.warnings:
+        with open(a.warnings, "w") as f:
+            f.writelines("[0000]  WARN %s\n" % w for w in coverage_warnings(covers))     # Grype's log format
     if a.summary:
         with open(a.summary, "w") as f:
             f.write(text)
