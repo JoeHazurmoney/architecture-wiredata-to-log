@@ -278,3 +278,13 @@ def rpmdb_file(path, packages):
     con.commit()
     con.close()
     return str(path)
+
+
+def rpm_file(path, main, sig=((273, STRING, "ab" * 32),)):
+    """An RPM file: the 96-byte lead, the signature header padded to 8 bytes, the main header."""
+    magic = b"\x8e\xad\xe8\x01\0\0\0\0"
+    lead = b"\xed\xab\xee\xdb" + b"\0" * 92
+    s = magic + rpm_header_blob(list(sig))
+    with open(str(path), "wb") as f:
+        f.write(lead + s + b"\0" * (-len(s) % 8) + magic + rpm_header_blob(list(main)) + b"payload")
+    return str(path)

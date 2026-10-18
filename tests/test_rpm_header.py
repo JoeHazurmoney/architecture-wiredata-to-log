@@ -5,19 +5,9 @@ import sqlite3
 
 import pytest
 
-from helpers import INT16, INT32, STRING, STRING_ARRAY, I18N, load_script, rpm_header_blob as header_blob
+from helpers import INT16, INT32, STRING, STRING_ARRAY, I18N, load_script, rpm_file, rpm_header_blob as header_blob
 
 rh = load_script("packaging/container/rpm_header.py")
-
-
-def rpm_file(path, main, sig=((273, STRING, "ab" * 32),)):
-    """An RPM file: the 96-byte lead, the signature header padded to 8 bytes, the main header."""
-    magic = b"\x8e\xad\xe8\x01\0\0\0\0"
-    lead = b"\xed\xab\xee\xdb" + b"\0" * 92
-    s = magic + header_blob(list(sig))
-    with open(path, "wb") as f:
-        f.write(lead + s + b"\0" * (-len(s) % 8) + magic + header_blob(list(main)) + b"payload")
-    return str(path)
 
 
 SENDER = [(1000, STRING, "wd2l-sender"), (1001, STRING, "1.1.0"), (1002, STRING, "1.el9"),
