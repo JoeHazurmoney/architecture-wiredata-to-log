@@ -510,6 +510,27 @@ def test_when_no_scan_covered_the_os_packages_the_page_says_so(tmp_path):
             "vulnerabilities.") in html
 
 
+def test_the_page_compares_its_views_at_the_top(tmp_path):
+    # #192: the Hardened image beside UBI 9: components, files, findings by severity and fixable.
+    s1, c1 = report_inputs(tmp_path, "amd64")
+    s2, c2 = report_inputs(tmp_path, "ubi9-amd64")
+    g1 = write_json(tmp_path / "g1.json", grype_doc(("CVE-1", "High", "openssl-libs", "1:3.5.9-0.3.hum1", ())))
+    g2 = write_json(tmp_path / "g2.json", grype_doc(("CVE-2", "Critical", "openssl-libs", "1:3.5.9-0.3.hum1", ("3.6",)),
+                                                    ("CVE-3", "Medium", "zlib", "1.3", ())))
+    html = report(tmp_path, "--view", "amd64", "linux/amd64", s1, c1, "--scan", "amd64", "grype=" + g1,
+                  "--view", "ubi9", "UBI 9 (amd64)", s2, c2, "--scan", "ubi9", "grype=" + g2)
+    table = re.search(r'<table class="compare">.*?</table>', html).group(0)
+    assert html.index('<table class="compare">') < html.index('<section class="view"')
+    assert ("<tr><td>linux/amd64</td><td>2</td><td>10</td><td>1</td><td>0</td><td>1</td><td>0</td>"
+            "<td>0</td><td>0</td></tr>") in table
+    assert ("<tr><td>UBI 9 (amd64)</td><td>2</td><td>10</td><td>2</td><td>1</td><td>0</td><td>1</td>"
+            "<td>0</td><td>1</td></tr>") in table
+
+
+def test_one_view_has_no_comparison(tmp_path):
+    assert '<table class="compare">' not in report(tmp_path, *one_view(tmp_path))
+
+
 def test_a_view_with_no_scans_says_so(tmp_path):
     html = report(tmp_path, *one_view(tmp_path))
     assert "No scan results were given for this view." in html
