@@ -28,7 +28,7 @@
       "type": "ds.search",
       "name": "ds_latest",
       "options": {
-        "query": "index=wd2l sourcetype=wd2l:health type=health | head 1"
+        "query": "index=wd2l sourcetype=wd2l:health type=health | head 1 | fields *"
       }
     },
     "ds_status": {
@@ -170,7 +170,7 @@
       "type": "ds.search",
       "name": "ds_sender",
       "options": {
-        "query": "index=wd2l sourcetype=wd2l:sender:health type=health | head 1"
+        "query": "index=wd2l sourcetype=wd2l:sender:health type=health | head 1 | fields *"
       }
     },
     "ds_d_input": {

@@ -32,6 +32,17 @@ def test_references_resolve_and_everything_is_placed():
         assert 0 <= p["x"] and p["x"] + p["w"] <= width, b["item"]
 
 
+def test_every_chain_base_keeps_its_fields():
+    """#203: a base search that returns raw events hands its chains only the fields it names, so
+    `| head 1` alone left every chained panel empty. Each base must keep or make its fields."""
+    ds = load()["dataSources"]
+    bases = {s["options"]["extend"] for s in ds.values() if s["type"] == "ds.chain"}
+    assert bases
+    for b in sorted(bases):
+        cmds = [c.strip().split(" ")[0] for c in ds[b]["options"]["query"].split("|")[1:]]
+        assert set(cmds) & {"fields", "table", "stats", "timechart", "chart", "tstats"}, (b, cmds)
+
+
 def test_dashboard_panels_match_the_state_of_health_page():
     with open(DOC, encoding="utf-8") as f:
         doc_titles = set(re.findall(r"^\| *\d+[a-z]? *\| \*\*(.+?)\*\* \|", f.read(), re.M))

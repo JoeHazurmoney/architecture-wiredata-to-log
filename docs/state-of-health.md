@@ -140,7 +140,10 @@ retention server in Enclave 1 ([operations.md](operations.md#re-sending-from-enc
 
 The Splunk example is `deploy/receiver/splunk/wd2l-health-dashboard.json`, for Dashboard Studio.
 To load it: Dashboards → Create new → Dashboard Studio → Source, paste the file, save. Its panel
-titles are the bold titles in the [Panels](#panels) table.
+titles are the bold titles in the [Panels](#panels) table. The panels that show the latest health
+record share one search for it, and each picks its own fields from that. The shared search ends in
+`| fields *`: without it, Splunk passes on only the fields the search names, and those panels stay
+empty (#203).
 
 For another SIEM, the data contract is the field list in the [Panels](#panels) table. The receiver
 does the reasoning, so every panel is a latest value or a count over time. Adjust the index names
