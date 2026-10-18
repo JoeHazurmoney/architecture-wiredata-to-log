@@ -36,8 +36,9 @@ PROJECT = "wd2l project"
 # The base's RPMs are Red Hat's; Syft has named their namespace both ways.
 SUPPLIERS = (("pkg:rpm/redhat/", "Red Hat, Inc."), ("pkg:rpm/hummingbird/", "Red Hat, Inc."),
              ("pkg:pypi/wd2l@", PROJECT))
-# CycloneDX's operating-system component has no package ID: its supplier, by distribution.
-OS_SUPPLIERS = {"hummingbird": "Red Hat, Inc."}
+# CycloneDX's operating-system component has no package ID: its supplier, by distribution
+# (rhel: UBI 9, the comparison image).
+OS_SUPPLIERS = {"hummingbird": "Red Hat, Inc.", "rhel": "Red Hat, Inc."}
 PURL_PACKAGE = "pkg:pypi/wd2l@"
 
 
@@ -128,8 +129,10 @@ def complete_spdx(doc: Dict[str, Any], dist_info: str, rec: Dict[str, str], arch
         owned = {r["relatedSpdxElement"] for r in rels
                  if r["spdxElementId"] == pkg["SPDXID"] and r.get("relationshipType") == "CONTAINS"}
         mine: Dict[str, Dict[str, Any]] = {}
+        listed = set()
         for path, hexd in rec.items():
             full = posixpath.normpath(posixpath.join(site, path))
+            listed.add(full)
             f = by_name.get(full)
             if f is None:
                 gaps.append("in wd2l's RECORD but not in the SBOM: /" + full)
@@ -141,7 +144,7 @@ def complete_spdx(doc: Dict[str, Any], dist_info: str, rec: Dict[str, str], arch
         modules = {posixpath.splitext(posixpath.basename(p))[0] + "|" + posixpath.dirname(p)
                    for p in rec if p.endswith(".py")}
         for name, f in by_name.items():
-            if not name.startswith(site + "/") or name in mine:
+            if not name.startswith(site + "/") or name in listed:
                 continue
             rel = name[len(site) + 1:]
             if rel.startswith(dist_info + "/"):
