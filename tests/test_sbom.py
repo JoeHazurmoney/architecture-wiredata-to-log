@@ -166,6 +166,55 @@ def test_a_component_no_rule_covers_is_a_gap(tmp_path):
     assert package(doc, "SPDXRef-Package-x")["supplier"] == "NOASSERTION"
 
 
+REQ_PURL, REQ_RPM_PURL = "pkg:pypi/requests@2.25.1", "pkg:rpm/redhat/python3-requests@2.25.1-10.el9?arch=noarch"
+
+
+def with_rpm_installed_python(doc, owned_by_rpm=True):
+    """UBI 9's case: an RPM (python3-requests) installed a Python package (requests), whose
+    metadata Syft reads and records as the evidence for it."""
+    meta = spdx_file("usr/lib/python3.9/site-packages/requests-2.25.1.dist-info/METADATA", b"Name: requests\n")
+    doc["files"].append(meta)
+    doc["packages"] += [spdx_package("requests", "2.25.1", REQ_PURL, "SPDXRef-Package-python-requests"),
+                        spdx_package("python3-requests", "2.25.1-10.el9", REQ_RPM_PURL, "SPDXRef-Package-rpm-req")]
+    doc["relationships"].append({"spdxElementId": "SPDXRef-Package-python-requests", "relatedSpdxElement": meta["SPDXID"],
+                                 "relationshipType": "OTHER",
+                                 "comment": "evident-by: indicates the package's existence is evident by the given file"})
+    if owned_by_rpm:
+        doc["relationships"].append({"spdxElementId": "SPDXRef-Package-rpm-req", "relatedSpdxElement": meta["SPDXID"],
+                                     "relationshipType": "CONTAINS"})
+    return doc
+
+
+def test_a_language_package_an_os_package_installed_takes_that_package_s_supplier(tmp_path):
+    doc, _, gaps = enrich(tmp_path, with_rpm_installed_python(syft_spdx()))
+    assert gaps == []
+    assert package(doc, "SPDXRef-Package-python-requests")["supplier"] == "Organization: Red Hat, Inc."
+
+
+def test_a_language_package_no_os_package_installed_is_still_a_gap(tmp_path):
+    _, _, gaps = enrich(tmp_path, with_rpm_installed_python(syft_spdx(), owned_by_rpm=False))
+    assert gaps == ["no supplier rule for requests 2.25.1 (pkg:pypi/requests@2.25.1)"]
+
+
+def test_a_language_package_two_suppliers_installed_is_still_a_gap(tmp_path):
+    doc = with_rpm_installed_python(syft_spdx())
+    meta = next(f for f in doc["files"] if f["fileName"].endswith("requests-2.25.1.dist-info/METADATA"))
+    doc["relationships"].append({"spdxElementId": WD2L, "relatedSpdxElement": meta["SPDXID"],
+                                 "relationshipType": "CONTAINS"})          # wd2l project's too
+    doc, _, gaps = enrich(tmp_path, doc)
+    assert "no supplier rule for requests 2.25.1 (pkg:pypi/requests@2.25.1)" in gaps
+
+
+def test_cdx_gives_an_installed_language_package_the_same_supplier(tmp_path):
+    cdx = syft_cdx()
+    cdx["components"].append({"bom-ref": REQ_PURL + "?package-id=1", "type": "library", "name": "requests",
+                              "version": "2.25.1", "purl": REQ_PURL})
+    spdx = with_rpm_installed_python(syft_spdx())
+    rc, _s, c = run_enrich(tmp_path, spdx, cdx)
+    assert rc == 0
+    assert next(x for x in c["components"] if x["name"] == "requests")["supplier"] == {"name": "Red Hat, Inc."}
+
+
 def test_a_lookalike_package_id_gets_no_supplier(tmp_path):
     """The rules match a package ID's start: a wd2l-named package from elsewhere isn't ours."""
     doc = syft_spdx()
