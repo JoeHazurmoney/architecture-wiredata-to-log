@@ -39,6 +39,21 @@ jobs:
           else gh issue create --title "$title" --body-file body.md; fi
           cat body.md >> "$GITHUB_STEP_SUMMARY"
           exit 1
+      - name: Whether Red Hat's Trivy database for Hummingbird has become reachable (ADR-0011)
+        run: |
+          # Red Hat's Trivy build was left out because this database refuses anonymous access, so
+          # the build silently uses upstream's, which has no Hummingbird advisories. An issue says
+          # when that changes.
+          if ! packaging/ci/tool oras manifest fetch quay.io/hummingbird-ci/trivy-db:2 > /dev/null 2> oras.log; then
+            echo "Still not reachable: $(tail -1 oras.log)"; exit 0
+          fi
+          title="Red Hat's Trivy database for Hummingbird is reachable: revisit ADR-0011"
+          printf '%s\n\n%s\n' "quay.io/hummingbird-ci/trivy-db:2 now answers anonymously." \
+            "Red Hat's Trivy build (the trivy RPM in the Hummingbird repository) may now cover the Hardened image's OS packages. Check it on an image with known fixed findings, then revisit docs/decisions/0011-vulnerability-scanners.md." > trivy-db.md
+          n=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then gh issue comment "$n" --body-file trivy-db.md
+          else gh issue create --title "$title" --body-file trivy-db.md; fi
+          cat trivy-db.md >> "$GITHUB_STEP_SUMMARY"
 
   rescan:
     runs-on: ubuntu-24.04
@@ -66,14 +81,14 @@ jobs:
             [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::$tag's manifest names no image digest"; exit 1; }
             ref="ghcr.io/joehazurmoney/wd2l@$d"
             for a in amd64 arm64; do
-              packaging/ci/tool grype "registry:$ref" --platform "linux/$a" -q -o json --file "/work/grype-$v-$a.json"
-              packaging/ci/tool trivy image --platform "linux/$a" --quiet --cache-dir /work/.cache/trivy --scanners vuln \
-                --format json --output "/work/trivy-$v-$a.json" "$ref"
+              packaging/ci/tool grype "registry:$ref" --platform "linux/$a" -o json --file "/work/grype-$v-$a.json" 2>&1 | tee "grype-$v-$a.log"
+              packaging/ci/tool trivy image --platform "linux/$a" --cache-dir /work/.cache/trivy --scanners vuln,secret \
+                --format json --output "/work/trivy-$v-$a.json" "$ref" 2>&1 | tee "trivy-$v-$a.log"
               # Findings don't fail the run (#175): one that needs a review (exit 3) opens its
               # issue, or comments on the open one. Any other exit is the gate itself failing.
               rc=0
               python3 packaging/container/vuln_gate.py --grype "grype-$v-$a.json" --trivy "trivy-$v-$a.json" \
-                --exceptions packaging/container/vuln-exceptions.json --summary "summary-$v-$a.md" --exit-code 3 > /dev/null || rc=$?
+                --exceptions packaging/container/vuln-exceptions.json --summary "summary-$v-$a.md" --warnings "coverage-$v-$a.log" --exit-code 3 || rc=$?
               [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || exit "$rc"
               if [ "$rc" -eq 3 ]; then
                 title="Image rescan: wd2l $v ($a) needs a security review"
@@ -84,3 +99,23 @@ jobs:
               { echo "## wd2l $v ($a)"; cat "summary-$v-$a.md"; } >> "$GITHUB_STEP_SUMMARY"
             done
           done
+      - name: Every warning the scanners logged, and each scanner without data for the OS (ADR-0011)
+        if: ${{ !cancelled() }}
+        run: |
+          # Raised on the run, never failing it, unless packaging/container/tool-warnings.json expects it.
+          args=()
+          for f in grype-*.log; do args+=(--log "grype=$f"); done
+          for f in trivy-*.log; do args+=(--log "trivy=$f"); done
+          for f in coverage-*.log; do args+=(--log "vuln-gate=$f"); done
+          python3 packaging/container/tool_warnings.py --known packaging/container/tool-warnings.json \
+            "${args[@]}" --summary tool-warnings.md
+          cat tool-warnings.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: rescan
+          path: |
+            *.log
+            *.md
+            grype-*.json
+            trivy-*.json

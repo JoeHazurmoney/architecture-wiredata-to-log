@@ -22,7 +22,14 @@ jobs:
       - name: hadolint
         run: packaging/ci/tool hadolint /bin/hadolint /work/packaging/container/Containerfile
       - name: trivy config (High and Critical), on the shipped Containerfile
-        run: packaging/ci/tool trivy config --quiet --exit-code 1 --severity HIGH,CRITICAL /work/packaging/container/Containerfile
+        run: |
+          packaging/ci/tool trivy config --exit-code 1 --severity HIGH,CRITICAL /work/packaging/container/Containerfile 2>&1 | tee trivy-config.log
+      - name: Every warning Trivy logged (docs/decisions/0011-vulnerability-scanners.md)
+        if: ${{ !cancelled() }}
+        run: |
+          python3 packaging/container/tool_warnings.py --known packaging/container/tool-warnings.json \
+            --log trivy=trivy-config.log --summary tool-warnings.md
+          cat tool-warnings.md >> "$GITHUB_STEP_SUMMARY"
 
   base-verify:
     runs-on: ubuntu-24.04
@@ -222,23 +229,32 @@ jobs:
         with:
           name: image-${{ matrix.arch }}
           path: image
-      - name: Grype and Trivy
+      - name: Grype and Trivy, each tool's log kept
         run: |
           mkdir -p vuln .cache
-          packaging/ci/tool grype oci-archive:/work/image/image.oci.tar -q \
-            -o json=/work/vuln/grype.json -o sarif=/work/vuln/grype.sarif
+          packaging/ci/tool grype oci-archive:/work/image/image.oci.tar \
+            -o json=/work/vuln/grype.json -o sarif=/work/vuln/grype.sarif 2>&1 | tee vuln/grype.log
           # Trivy reads an OCI directory (or a docker archive), not an OCI archive tar.
           mkdir -p image/oci && tar -xf image/image.oci.tar -C image/oci
-          packaging/ci/tool trivy image --quiet --cache-dir /work/.cache/trivy --input /work/image/oci \
-            --scanners vuln,secret --format json --output /work/vuln/trivy.json
-          packaging/ci/tool trivy convert --format sarif --output /work/vuln/trivy.sarif /work/vuln/trivy.json
-      - name: Record the findings, and whether they need a security review (fixable High/Critical, or a secret)
+          packaging/ci/tool trivy image --cache-dir /work/.cache/trivy --input /work/image/oci \
+            --scanners vuln,secret --format json --output /work/vuln/trivy.json 2>&1 | tee vuln/trivy.log
+          packaging/ci/tool trivy convert --format sarif --output /work/vuln/trivy.sarif /work/vuln/trivy.json 2>&1 | tee -a vuln/trivy.log
+      - name: Record the findings, what each scanner covered, and whether they need a security review
         run: |
-          # Findings never fail the build (#175): vuln-review and security-review decide.
+          # Findings never fail the build (#175): vuln-review and security-review decide. A review
+          # is needed for a fixable High/Critical, a secret, or no scanner covering the OS packages.
           python3 packaging/container/vuln_gate.py --grype vuln/grype.json --trivy vuln/trivy.json \
             --exceptions packaging/container/vuln-exceptions.json \
-            --summary vuln/vuln-summary.md --predicate vuln/vuln-predicate.json > /dev/null
+            --summary vuln/vuln-summary.md --predicate vuln/vuln-predicate.json --warnings vuln/coverage.log
           { echo "### ${{ matrix.arch }}"; cat vuln/vuln-summary.md; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Every warning the scanners logged, and each scanner without data for the OS (ADR-0011)
+        if: ${{ !cancelled() }}
+        run: |
+          # Raised on the run, never failing it, unless packaging/container/tool-warnings.json expects it.
+          python3 packaging/container/tool_warnings.py --known packaging/container/tool-warnings.json \
+            --log grype=vuln/grype.log --log trivy=vuln/trivy.log --log vuln-gate=vuln/coverage.log \
+            --summary vuln/tool-warnings.md
+          { echo "### ${{ matrix.arch }}"; cat vuln/tool-warnings.md; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -304,12 +320,18 @@ jobs:
           mkdir -p sbom
           WHEEL=$(ls dist/wd2l-*-py3-none-any.whl); V=${WHEEL#dist/wd2l-}; V=${V%-py3-none-any.whl}
           echo "WHEEL=$WHEEL" >> "$GITHUB_ENV"
-          TOOL_ENV=SYFT_FILE_METADATA_SELECTION packaging/ci/tool syft oci-archive:/work/image/image.oci.tar -q \
+          TOOL_ENV=SYFT_FILE_METADATA_SELECTION packaging/ci/tool syft oci-archive:/work/image/image.oci.tar \
             --source-name ghcr.io/joehazurmoney/wd2l --source-version "$V" \
-            -o spdx-json=/work/sbom/wd2l.spdx.json -o cyclonedx-json=/work/sbom/wd2l.cdx.json
+            -o spdx-json=/work/sbom/wd2l.spdx.json -o cyclonedx-json=/work/sbom/wd2l.cdx.json 2>&1 | tee sbom/syft.log
           BASE=$(python3 packaging/container/check_containerfile.py --base)
           podman pull -q --arch ${{ matrix.arch }} "$BASE" && podman save -q --format oci-archive -o base.oci.tar "$BASE"
-          packaging/ci/tool syft oci-archive:/work/base.oci.tar -q -o spdx-json=/work/sbom/base.spdx.json
+          packaging/ci/tool syft oci-archive:/work/base.oci.tar -o spdx-json=/work/sbom/base.spdx.json 2>&1 | tee -a sbom/syft.log
+      - name: Every warning Syft logged (docs/decisions/0011-vulnerability-scanners.md)
+        if: ${{ !cancelled() }}
+        run: |
+          python3 packaging/container/tool_warnings.py --known packaging/container/tool-warnings.json \
+            --log syft=sbom/syft.log --summary sbom/tool-warnings.md
+          { echo "### ${{ matrix.arch }}"; cat sbom/tool-warnings.md; } >> "$GITHUB_STEP_SUMMARY"
       - name: Complete the image's SBOMs (docs/decisions/0009-sbom-content.md); a gap fails the run
         run: |
           python3 packaging/container/sbom_enrich.py --spdx sbom/wd2l.spdx.json --cdx sbom/wd2l.cdx.json --wheel "$WHEEL" --arch ${{ matrix.arch }} \
