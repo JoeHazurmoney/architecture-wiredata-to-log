@@ -81,6 +81,8 @@ proves:
   as it's published, completed by [`sbom_enrich.py`](../packaging/container/sbom_enrich.py):
   * each component's supplier, by rule;
   * wd2l's files, each checked against the wheel;
+  * a hash on each component: an RPM's header SHA-256, from the image's own RPM database, and
+    for wd2l the wheel's SHA-256;
   * the author and when the SBOM was made.
 
   A gap fails the run ([ADR-0009](decisions/0009-sbom-content.md)). The image's SBOM must be the
@@ -120,9 +122,13 @@ proves:
 * **import-check**: on each platform's own runner, imports that platform's tar offline and
   pulls the image from the registry under Podman's signature policy. On amd64 it does the same
   for the comparison image.
-* **assets**: every release file; `wd2l-<version>-sbom.html`, the SBOMs and scan results of both
-  platforms and of the comparison image, as one page with a tab for each and a table comparing
-  them, that opens offline
+* **assets**: every release file, and three more SBOMs, each in SPDX and CycloneDX:
+  `wd2l-<version>-rpms-el9`, `-rpms-el10` and `-python`
+  ([`package_sbom.py`](../packaging/release/package_sbom.py)). They're made from the release's
+  own RPMs, wheel and sdist: each package's files and digests, what each RPM needs from the
+  host, and the tools that built the Python package. Then `wd2l-<version>-sbom.html`: the SBOMs
+  and scan results of both platforms, of the comparison image and of those packages, as one page
+  with a tab for each and a table comparing them, that opens offline
   ([`sbom_report.py`](../packaging/release/sbom_report.py)); the changelog (git-cliff,
   [`cliff.toml`](../cliff.toml)), a full-history `git bundle` of the source, and `verify-release`
   ([`verify_release.py`](../packaging/release/verify_release.py)); then the **release manifest**

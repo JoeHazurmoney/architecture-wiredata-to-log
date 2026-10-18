@@ -65,10 +65,37 @@
   * **An SPDX namespace of our own:** `<repository>/sbom/<image>-<version>-<platform>-<digest>`.
     The same image always gets the same namespace, and no two images share one. (CycloneDX's
     serial number stays the random one Syft gives each document, as that format intends.)
+  * **A hash on each component (#190), in both formats.**
+    * Each RPM gets its header's SHA-256: the digest rpm records for that exact build, read
+      from the image's own RPM database (`rpm -q --qf '%{SHA256HEADER}'` gives the same on a
+      host). An RPM missing from the database is a gap.
+    * wd2l gets the SHA-256 of the wheel it was installed from.
+    * Red Hat's own SBOM of the base hashes 2 of its 224 packages, so there was none to reuse.
+* **SBOMs of the release's own packages (#190):** `wd2l-<version>-rpms-el9`, `-rpms-el10` and
+  `-python`, each in SPDX and CycloneDX, made at release by
+  [`package_sbom.py`](../../packaging/release/package_sbom.py) from the packages' own metadata
+  ([ADR-0010](0010-sbom-generator.md)).
+  * **Each RPM:**
+    * its file's SHA-256 and SHA-1, and its payload's and header's digests;
+    * its license;
+    * every file it installs, with its SHA-1 and SHA-256. The files are hashed from its payload
+      and checked against the header's digests, so a mismatch fails the release.
+  * **What an RPM needs from the host:** its `Requires`, less rpm's internal `rpmlib()` entries
+    and what the set provides itself. Each need is a package of its own, marked "required from
+    the host, not shipped", with its version range: SPDX `DEPENDS_ON`, and CycloneDX `isExternal`
+    with a `versionRange`. The set's own RPMs depend on each other.
+  * **The Python package:** the wheel and the sdist, each with its files (the wheel's checked
+    against its RECORD). The hash-pinned tools that built them are recorded as build
+    dependencies (CycloneDX scope `excluded`), never as runtime ones. wd2l itself needs nothing
+    at run time.
+  * **Determinism:** the supplier and author are the wd2l project, and the generation context
+    is `build`. The time is the commit's, and the namespace and serial number follow from the
+    files. So the same files give the same SBOMs.
 * **A readable page with every release: `wd2l-<version>-sbom.html`**
   ([`sbom_report.py`](../../packaging/release/sbom_report.py)).
   * **What it shows:**
-    * one tab per image;
+    * one tab per image, and per package set (each RPM's host needs, and the Python package's
+      build tools, listed under it), with a table comparing them at the top;
     * the components by default, each expanding to the files it installed, with their SHA-256;
     * "Show every entry", and a search box;
     * each component's known vulnerabilities, merged across the scanners, with which scanner
@@ -138,14 +165,16 @@ need a renderer in the pipeline.
     gap, instead of shipping a weaker SBOM.
 * **The sizes:** about 3.7 MB of SPDX and 1.5 MB of CycloneDX per platform, about what 1.1.0
   shipped. The page is about 1.7 MB for both platforms.
-* **Not yet covered** (#190):
-  * SBOMs of the RPMs, the wheel and the sdist;
-  * package-level hashes: CycloneDX components have none, and SPDX's verification code is on
-    57 of the 66 packages.
+* **Component hashes, measured on 1.1.0's images:**
+  * the Hardened image has a SHA-256 on all 65 of its components;
+  * UBI 9 has one on 189 of 207. Its Python packages that RPMs installed have none of their
+    own; their RPMs' hashes cover them.
+* **The package SBOMs, on 1.1.0's files:** each RPM set has 3 RPMs and 91 files. It needs, for
+  example, `python3 >= 3.9`, systemd, nftables and tcpdump from the host.
 
 ## Action items
 
 1. [x] The enrichment, the page, their tests, and both in the release (#188, #189).
 2. [ ] Proven on 1.2.0rc1, then this ADR becomes Accepted.
-3. [ ] The UBI 9 image's tab (#192).
-4. [ ] The RPMs', wheel's and sdist's SBOMs, and package hashes (#190).
+3. [x] The UBI 9 image's tab (#192).
+4. [x] The RPMs', wheel's and sdist's SBOMs, and package hashes (#190).
