@@ -103,6 +103,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           # Raised on the run, never failing it, unless packaging/container/tool-warnings.json expects it.
+          shopt -s nullglob
           args=()
           for f in grype-*.log; do args+=(--log "grype=$f"); done
           for f in trivy-*.log; do args+=(--log "trivy=$f"); done
