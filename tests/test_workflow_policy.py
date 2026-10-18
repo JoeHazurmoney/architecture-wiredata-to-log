@@ -513,7 +513,28 @@ def tool_runs(body: str):
 
 
 SCAN_JOBS = (("image.yml", "lint"), ("image.yml", "vuln-scan"), ("image.yml", "sbom"),
-             ("image-rescan.yml", "rescan"))
+             ("image.yml", "ubi9-scan"), ("image-rescan.yml", "rescan"))
+
+
+def test_the_comparison_image_is_built_checked_and_scanned_but_never_pauses_a_run():
+    # wd2l on UBI 9 (#192): built from the same wheel, checked by its own profile, scanned and
+    # described, and published; its findings are shown, never gated (ADR-0004's amendment).
+    image = jobs(read("image.yml"))
+    assert "needs: [wheel, lint, base-verify-ubi9]" in image["ubi9-build"]
+    assert "packaging/container/build.sh dist localhost/wd2l-ubi9:ci packaging/container/Containerfile.ubi9" in image["ubi9-build"]
+    assert "--containerfile packaging/container/Containerfile.ubi9" in image["base-verify-ubi9"]
+    assert "--type spdxjson" in image["base-verify-ubi9"]
+    checks = image["ubi9-checks"]
+    assert "packaging/container/build.sh dist localhost/wd2l-ubi9:again packaging/container/Containerfile.ubi9" in checks
+    assert "--profile ubi9" in checks and "for c in wd2l-sender wd2l-receiver wd2l-audit-report" in checks
+    scan = image["ubi9-scan"]
+    assert "--source-name ghcr.io/joehazurmoney/wd2l-ubi9" in scan
+    assert "sbom_enrich.py" in scan and "sbom_diff.py" in scan and "vuln_gate.py" in scan
+    assert "name: vuln-ubi9-amd64" in scan and "name: sbom-ubi9-amd64" in scan
+    assert "ubi9" not in image["vuln-review"] and "ubi9" not in image["security-review"]
+    for check in ("check_containerfile.py packaging/container/Containerfile.ubi9",
+                  "/work/packaging/container/Containerfile.ubi9"):
+        assert check in image["lint"], check
 
 
 def test_no_scanner_or_syft_runs_quietly():
@@ -602,7 +623,7 @@ def test_the_image_name_and_the_urls_agree_everywhere():
     names = {"ghcr.io/%s/%s" % m for t in texts.values()
              for m in re.findall(r"ghcr\.io/([\w.-]+)/(wd2l[\w.-]*)", t)
              if not m[1].startswith("wd2l-base")}             # the base images' mirror
-    assert names == {manifest.IMAGE}
+    assert names == {manifest.IMAGE, manifest.UBI9_IMAGE}      # and the comparison image (#192)
     atts = {m for t in texts.values()
             for m in re.findall(r"https://github\.com/[\w.-]+/[\w.-]+/attestations", t)}
     assert atts == {manifest.ATT}

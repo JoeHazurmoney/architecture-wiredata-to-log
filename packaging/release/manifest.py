@@ -34,7 +34,8 @@ import check_title  # noqa: E402
 
 SCHEMA = os.path.join(HERE, "release-manifest.schema.json")
 IMAGE = "ghcr.io/joehazurmoney/wd2l"
-ATT = "https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations"
+UBI9_IMAGE = "ghcr.io/joehazurmoney/wd2l-ubi9"        # the comparison image, amd64 only (#192)
+ATT ="https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations"
 # The workflows a release runs, for the build environment (tests/test_workflow_policy.py).
 RELEASE_PATH = ("tests.yml", "image.yml", "rpm.yml", "publish.yml", "release.yml", "attest.yml")
 # One category per issue, from its labels: the first match in this order.
