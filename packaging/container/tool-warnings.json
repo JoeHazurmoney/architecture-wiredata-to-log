@@ -1,0 +1,14 @@
+{
+  "_how": "A warning a scanner or Syft logs on every run, reviewed and expected (docs/decisions/0011-vulnerability-scanners.md). packaging/container/tool_warnings.py lists a matching warning as expected instead of raising it on the run: the tool, text found in the warning, why it is expected, who reviewed it, and when the review expires (YYYY-MM-DD, at most 90 days out). An expired entry raises its warning again, so each one gets looked at again.",
+  "warnings": [
+    {"tool": "trivy", "text": "Unsupported os family=\"none\"",
+     "reason": "Upstream Trivy doesn't recognize Red Hat Hardened Images' operating system (Hummingbird) and has no advisories for it, so it checks only language packages and secrets. Grype covers the OS packages; vuln_gate.py records each scanner's coverage and needs a review if none covers them.",
+     "expires": "2027-01-15", "approved_by": "system owner"},
+    {"tool": "trivy", "text": "Third-party SBOM may lead to inaccurate vulnerability detection",
+     "reason": "Trivy reads the SBOM Red Hat ships inside the base image. Its findings are compared with Grype's, which reads the image itself, in every scan summary.",
+     "expires": "2027-01-15", "approved_by": "system owner"},
+    {"tool": "trivy", "text": "Recommend using Trivy to generate SBOMs",
+     "reason": "wd2l's SBOMs are made by Syft, which lists every RPM with a package ID and every file with its SHA-256; Trivy's own SBOM of the image does neither (docs/decisions/0010-sbom-generator.md).",
+     "expires": "2027-01-15", "approved_by": "system owner"}
+  ]
+}
