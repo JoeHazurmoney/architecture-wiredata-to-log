@@ -1,0 +1,45 @@
+# wd2l on UBI 9, for comparison only (#192, docs/decisions/0004-container-base-image.md): the same
+# wheel as the shipped image, on a general-purpose base, so the base is the only difference. It is
+# not hardened (a shell, a package manager) and not FIPS. Build it with
+# packaging/container/build.sh DIST TAG packaging/container/Containerfile.ubi9. Both stages are
+# one base, pinned by digest; Dependabot proposes new digests.
+FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:16e9e43d99e181463513cc84a514859b1abb9460f1c4d9e208da4b4e51cd5cc3 AS build
+# Root only in this build stage, to write /out; the runtime stage runs as 65532.
+# hadolint ignore=DL3002
+USER 0
+COPY wd2l-*-py3-none-any.whl /tmp/
+# pip from the wheel the base's own RPM ships (ensurepip), so the base digest pins it too, and it
+# never reaches the image. Compiled with checked hashes, with their real path, as in Containerfile.
+RUN python3 -m ensurepip --root /pip \
+ && PYTHONPATH=/pip/usr/local/lib/python3.9/site-packages python3 -m pip install --no-deps --no-index \
+      --no-cache-dir --no-compile --root /out --prefix /usr /tmp/wd2l-*-py3-none-any.whl \
+ && python3 -m compileall -q --invalidation-mode checked-hash -s /out -p / \
+      /out/usr/lib/python3.9/site-packages/wd2l
+
+FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:16e9e43d99e181463513cc84a514859b1abb9460f1c4d9e208da4b4e51cd5cc3
+ARG VERSION=dev
+ARG REVISION=unknown
+ARG BASE_NAME=unknown
+ARG BASE_DIGEST=unknown
+LABEL name="wd2l-ubi9" \
+      vendor="wd2l project" \
+      maintainer="wd2l project" \
+      version="${VERSION}" \
+      summary="wd2l on UBI 9, for comparison: not hardened, not FIPS" \
+      description="The same wd2l as ghcr.io/joehazurmoney/wd2l, on UBI 9, to compare bases. Deploy ghcr.io/joehazurmoney/wd2l." \
+      io.k8s.description="The same wd2l as ghcr.io/joehazurmoney/wd2l, on UBI 9, to compare bases. Deploy ghcr.io/joehazurmoney/wd2l." \
+      url="https://github.com/JoeHazurmoney/architecture-wiredata-to-log" \
+      org.opencontainers.image.title="wd2l-ubi9" \
+      org.opencontainers.image.description="wd2l on UBI 9, for comparison: not hardened, not FIPS" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.source="https://github.com/JoeHazurmoney/architecture-wiredata-to-log" \
+      org.opencontainers.image.url="https://github.com/JoeHazurmoney/architecture-wiredata-to-log" \
+      org.opencontainers.image.vendor="wd2l project" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.base.name="${BASE_NAME}" \
+      org.opencontainers.image.base.digest="${BASE_DIGEST}"
+COPY --from=build /out/ /
+# UBI 9 has no user 65532: name the group too, or it runs in group 0 (root).
+USER 65532:65532
+CMD ["wd2l-receiver", "--help"]

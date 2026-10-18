@@ -24,6 +24,34 @@ def test_the_real_containerfile_passes():
     assert cc.base(real()).startswith(B + ":3.12-fips@sha256:")
 
 
+U = "registry.access.redhat.com/ubi9/ubi"
+UBI9 = ("FROM %s:latest@%s AS build\nRUN true\nFROM %s:latest@%s\nCOPY --from=build /out/ /\n") % (U, D1, U, D1)
+
+
+def real_ubi9():
+    with open(os.path.join(REPO, "packaging", "container", "Containerfile.ubi9")) as f:
+        return f.read()
+
+
+def test_the_real_ubi9_containerfile_passes_its_own_profile_only():
+    # The comparison image (#192): UBI 9, so the Hardened Image rules refuse it, by design.
+    assert cc.problems(real_ubi9(), "ubi9") == []
+    assert cc.base(real_ubi9()).startswith(U + ":latest@sha256:")
+    assert any("not a Red Hat Hardened Image" in p for p in cc.problems(real_ubi9()))
+    assert cc.profile_of("packaging/container/Containerfile.ubi9") == "ubi9"
+    assert cc.profile_of("packaging/container/Containerfile") == "hardened"
+
+
+@pytest.mark.parametrize("bad, why", [
+    (UBI9.replace("@" + D1 + "\nCOPY", "\nCOPY"), "not pinned"),
+    (UBI9.replace(U + ":latest@%s AS" % D1, "registry.access.redhat.com/ubi10/ubi:latest@%s AS" % D1), "not UBI 9"),
+    (UBI9.replace("%s:latest@%s\nCOPY" % (U, D1), "%s:latest@%s\nCOPY" % (U, D2)), "the same digest"),
+    (UBI9 + "COPY --from=quay.io/x/y:1 /a /a\n", "copies from"),
+])
+def test_the_ubi9_profile_refuses(bad, why):
+    assert any(why in p for p in cc.problems(bad, "ubi9")), cc.problems(bad, "ubi9")
+
+
 def test_good():
     assert cc.problems(GOOD) == []
     assert cc.base(GOOD) == "%s:3.12-fips@%s" % (B, D2)
@@ -88,6 +116,27 @@ def test_build_script_passes_labels_and_removes_the_base_product_labels(tmp_path
     unset = [args[i + 1] for i, a in enumerate(args) if a == "--unsetlabel"]
     for label in ("cpe", "com.redhat.component", "io.hummingbird-project.variant"):
         assert label in unset
+    assert "io.k8s.display-name" not in unset           # the shipped image is unchanged
+
+
+def test_build_script_builds_the_ubi9_image_from_its_own_containerfile(tmp_path):
+    log, fake, dist = tmp_path / "args", tmp_path / "podman", tmp_path / "dist"
+    fake.write_text('#!/bin/sh\nfor a in "$@"; do echo "$a"; done > "%s"\n' % log)
+    fake.chmod(0o755)
+    dist.mkdir()
+    ubi9 = os.path.join(REPO, "packaging", "container", "Containerfile.ubi9")
+    r = subprocess.run(["bash", os.path.join(REPO, "packaging", "container", "build.sh"),
+                        str(dist), "localhost/wd2l-ubi9:test", ubi9],
+                       env=dict(os.environ, PODMAN=str(fake), REVISION="c" * 40, EPOCH="1791209000"),
+                       stderr=subprocess.PIPE)
+    assert r.returncode == 0, r.stderr
+    args = log.read_text().splitlines()
+    assert args[args.index("-f") + 1] == ubi9
+    build_args = [args[i + 1] for i, a in enumerate(args) if a == "--build-arg"]
+    assert "BASE_DIGEST=" + cc.base(real_ubi9()).split("@")[1] in build_args
+    unset = [args[i + 1] for i, a in enumerate(args) if a == "--unsetlabel"]
+    for label in ("cpe", "com.redhat.component", "io.k8s.display-name", "io.openshift.tags"):
+        assert label in unset                            # it would claim to be UBI 9 itself
 
 
 import base64
