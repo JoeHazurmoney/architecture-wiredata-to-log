@@ -141,6 +141,28 @@ jobs:
           # files that way first, so SHA256SUMS lists what a download gets. Only pre-release
           # RPMs have one (X.Y.Z~rcN); the package inside keeps its version.
           for f in assets/*~*; do if [ -e "$f" ]; then mv -- "$f" "${f//\~/.}"; fi; done
+      - name: SBOMs of the RPMs and the Python package (docs/decisions/0009-sbom-content.md)
+        run: |
+          # One per set, from the release's own files (#190). rpm2archive unpacks copies, outside
+          # assets/, so no payload becomes a release file. The commit's time makes the same SBOMs
+          # from the same files.
+          created="$(date -u -d "@$(git log -1 --format=%ct)" +%Y-%m-%dT%H:%M:%SZ)"
+          for el in el9 el10; do
+            mkdir -p "pkg-sbom/$el"
+            cp assets/*."$el".noarch.rpm "pkg-sbom/$el/"
+            args=()
+            for r in "pkg-sbom/$el"/*.rpm; do
+              packaging/ci/tool ubi9 rpm2archive -n "/work/$r"
+              args+=(--rpm "$r")
+            done
+            python packaging/release/package_sbom.py rpms --set "$el" "${args[@]}" --version "$V" \
+              --repo-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --created "$created" \
+              --out-spdx "assets/wd2l-$V-rpms-$el.spdx.json" --out-cdx "assets/wd2l-$V-rpms-$el.cdx.json"
+          done
+          python packaging/release/package_sbom.py python --wheel "assets/wd2l-$V-py3-none-any.whl" --sdist "assets/wd2l-$V.tar.gz" \
+            --build-tools packaging/build-tools/requirements.txt --version "$V" \
+            --repo-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --created "$created" \
+            --out-spdx "assets/wd2l-$V-python.spdx.json" --out-cdx "assets/wd2l-$V-python.cdx.json"
       - name: The SBOMs and their scans as one readable page (docs/decisions/0009-sbom-content.md)
         run: |
           views=()
@@ -150,6 +172,10 @@ jobs:
           done
           views+=(--view ubi9 "UBI 9 (amd64)" "assets/wd2l-$V-image-ubi9-amd64.spdx.json" "assets/wd2l-$V-image-ubi9-amd64.cdx.json"
                   --scan ubi9 grype=vuln-ubi9-amd64/grype.json --scan ubi9 trivy=vuln-ubi9-amd64/trivy.json)
+          for el in el9 el10; do
+            views+=(--view "rpms-$el" "RPMs (${el^^})" "assets/wd2l-$V-rpms-$el.spdx.json" "assets/wd2l-$V-rpms-$el.cdx.json")
+          done
+          views+=(--view python "Python package" "assets/wd2l-$V-python.spdx.json" "assets/wd2l-$V-python.cdx.json")
           python packaging/release/sbom_report.py --version "$V" --commit "$(git rev-parse HEAD)" \
             --repo-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --out "assets/wd2l-$V-sbom.html" "${views[@]}"
       - name: The changelog, the source bundle and verify-release, to retrieve the release offline
