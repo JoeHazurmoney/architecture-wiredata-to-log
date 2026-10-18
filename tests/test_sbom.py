@@ -342,3 +342,185 @@ def test_the_command_fails_and_names_each_gap(tmp_path, capsys):
     assert rc == 1
     out = capsys.readouterr().out
     assert "no supplier rule for requests 2.32.0" in out and "no supplier rule for alpine 1" in out
+
+
+# --- The report ---
+
+rep = load_script("packaging/release/sbom_report.py")
+
+
+def grype_doc(*matches):
+    """Grype's JSON: (id, severity, package, version, fixed versions)."""
+    return {"matches": [{"vulnerability": {"id": i, "severity": sev, "fix": {"versions": list(fix),
+                                                                          "state": "fixed" if fix else ""}},
+                         "artifact": {"name": pkg, "version": ver, "type": "rpm", "purl": "pkg:rpm/redhat/" + pkg}}
+                        for i, sev, pkg, ver, fix in matches],
+            "source": {"type": "image"}, "distro": {"name": "hummingbird", "version": "20251124"},
+            "descriptor": {"name": "grype", "version": "0.119.0"}}
+
+
+def trivy_doc(*vulns):
+    """Trivy's JSON: (id, severity, package, version, fixed version)."""
+    return {"SchemaVersion": 2, "Trivy": {"Version": "0.75.0"}, "ArtifactName": "/work/image/oci",
+            "ArtifactType": "container_image", "Metadata": {"OS": {"Family": "none", "Name": ""}},
+            "Results": [{"Target": "Python", "Class": "lang-pkgs", "Type": "python-pkg",
+                         "Vulnerabilities": [{"VulnerabilityID": i, "Severity": sev, "PkgName": pkg,
+                                              "InstalledVersion": ver, "FixedVersion": fix}
+                                             for i, sev, pkg, ver, fix in vulns]}]}
+
+
+def report_inputs(tmp_path, name="amd64", spdx=None):
+    """An enriched SPDX and CycloneDX pair, written as the release names them."""
+    doc = syft_spdx() if spdx is None else spdx
+    dist_info, rec = en.record(make_wheel(tmp_path / "wd2l-9.9.0-py3-none-any.whl"))
+    en.complete_spdx(doc, dist_info, rec, "amd64", REPO_URL)
+    cdx = syft_cdx()
+    en.complete_cdx(cdx)
+    return (write_json(tmp_path / ("wd2l-9.9.0-image-%s.spdx.json" % name), doc),
+            write_json(tmp_path / ("wd2l-9.9.0-image-%s.cdx.json" % name), cdx))
+
+
+WD2L_ARGS = ["--version", "9.9.0", "--commit", "e" * 40, "--repo-url", REPO_URL]
+
+
+def report(tmp_path, *args, release=True):
+    out = tmp_path / "report.html"
+    rc = rep.main(["--out", str(out)] + (WD2L_ARGS if release else []) + list(args))
+    assert rc == 0
+    return out.read_text(encoding="utf-8")
+
+
+def one_view(tmp_path, *scans, spdx=None):
+    s, c = report_inputs(tmp_path, spdx=spdx)
+    args = ["--view", "amd64", "linux/amd64", s, c]
+    for name, doc in scans:
+        args += ["--scan", "amd64", "%s=%s" % (name, write_json(tmp_path / (name + ".json"), doc))]
+    return args
+
+
+def test_each_view_is_a_section_with_its_label_and_its_own_sbom_files(tmp_path):
+    s1, c1 = report_inputs(tmp_path, "amd64")
+    s2, c2 = report_inputs(tmp_path, "ubi9-amd64")
+    html = report(tmp_path, "--view", "amd64", "linux/amd64", s1, c1,
+                  "--view", "ubi9", "UBI 9 (amd64)", s2, c2)
+    assert html.count('<section class="view"') == 2
+    assert "<h2>linux/amd64</h2>" in html and "<h2>UBI 9 (amd64)</h2>" in html
+    assert 'data-view="ubi9" data-label="UBI 9 (amd64)"' in html
+    assert "<code>wd2l-9.9.0-image-ubi9-amd64.spdx.json</code> (SPDX 2.3)" in html
+    assert "<code>wd2l-9.9.0-image-amd64.cdx.json</code> (CycloneDX 1.7)" in html
+
+
+def test_a_scan_is_read_by_its_shape_and_shown_by_its_name(tmp_path):
+    html = report(tmp_path, *one_view(tmp_path, ("trivy-redhat", trivy_doc(
+        ("CVE-2026-1111", "HIGH", "openssl-libs", "3.5.9-0.3.hum1", "3.5.10-0.1.hum1")))))
+    row = re.search(r'<tr><td><a href="https://www.cve.org/CVERecord\?id=CVE-2026-1111">.*?</tr>', html).group(0)
+    assert "<td>openssl-libs</td>" in row and "<td>3.5.10-0.1.hum1</td>" in row
+    assert row.endswith("<td>trivy-redhat</td></tr>")
+    assert "From the scans with trivy-redhat." in html
+
+
+def test_the_same_finding_from_two_scanners_is_one_row_found_by_both(tmp_path):
+    """Grype names the RPM's epoch and Trivy doesn't: the same finding all the same."""
+    html = report(tmp_path, *one_view(
+        tmp_path, ("grype", grype_doc(("CVE-2026-2222", "Medium", "openssl-libs", "1:3.5.9-0.3.hum1", ()))),
+        ("trivy", trivy_doc(("CVE-2026-2222", "MEDIUM", "openssl-libs", "3.5.9-0.3.hum1", "")))))
+    assert html.count("CVERecord?id=CVE-2026-2222") == 1
+    assert "<td>grype, trivy</td>" in html
+    assert '<div class="tile"><b>1</b><span>known vulnerabilities</span></div>' in html
+
+
+def test_findings_are_shown_on_their_component_and_unmatched_ones_are_counted(tmp_path):
+    html = report(tmp_path, *one_view(tmp_path, ("grype", grype_doc(
+        ("CVE-2026-3333", "High", "openssl-libs", "1:3.5.9-0.3.hum1", ()),
+        ("CVE-2026-4444", "Low", "zlib", "1.3", ("1.3.1",))))))
+    ssl = re.search(r'<details class="comp" role="listitem" data-search="openssl-libs .*?</summary>', html).group(0)
+    assert '<span class="sev sev-high">High</span>' in ssl
+    wd2l = re.search(r'<details class="comp" role="listitem" data-search="wd2l .*?</summary>', html).group(0)
+    assert '<span class="muted">none</span>' in wd2l
+    assert "1 of them name a component this SBOM doesn't list by that name and version." in html
+    assert "1 High, 1 Low." in html
+
+
+def test_a_view_with_no_scans_says_so(tmp_path):
+    html = report(tmp_path, *one_view(tmp_path))
+    assert "No scan results were given for this view." in html
+    assert "<p>None.</p>" not in html
+    assert '<div class="tile"><b>&#8212;</b><span>not scanned for vulnerabilities</span></div>' in html
+    assert "known vulnerabilities</span></div>" not in html
+
+
+def test_text_from_the_sboms_is_escaped(tmp_path):
+    doc = syft_spdx()
+    doc["packages"].append(spdx_package('<script>alert("x")</script>', "1", "pkg:rpm/redhat/x@1", "SPDXRef-Package-x"))
+    html = report(tmp_path, *one_view(tmp_path, spdx=doc))
+    assert "<script>alert" not in html
+    assert "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" in html
+
+
+def test_the_page_loads_nothing_from_outside(tmp_path):
+    html = report(tmp_path, *one_view(tmp_path, ("grype", grype_doc())))
+    assert not re.search(r"<link\b|\bsrc\s*=|@import|url\(", html, re.I)
+    csp = re.search(r'<meta http-equiv="Content-Security-Policy" content="([^"]+)">', html).group(1)
+    assert "default-src 'none'" in csp and "connect-src" not in csp
+    assert html.count("<script>") == 1                    # the page's own, inline
+
+
+def test_the_field_check_rates_each_field_from_the_components(tmp_path):
+    full = report(tmp_path, *one_view(tmp_path))
+    assert '<tr><td>Supplier</td><td class="ok-yes">Yes</td><td>2 of 2 components</td></tr>' in full
+    doc = syft_spdx()
+    doc["packages"].append(spdx_package("x", "1", "pkg:generic/x@1", "SPDXRef-Package-x"))
+    s, c = report_inputs(tmp_path, spdx=doc)                      # x keeps NOASSERTION: a gap
+    partial = report(tmp_path, "--view", "amd64", "linux/amd64", s, c)
+    assert '<tr><td>Supplier</td><td class="ok-partly">Partly</td><td>2 of 3 components</td></tr>' in partial
+
+
+def test_a_file_in_two_components_is_counted_once(tmp_path):
+    doc = syft_spdx()
+    lib = next(f for f in doc["files"] if f["fileName"] == "usr/lib64/libssl.so.3")
+    doc["relationships"].append({"spdxElementId": WD2L, "relatedSpdxElement": lib["SPDXID"],
+                                 "relationshipType": "CONTAINS"})
+    html = report(tmp_path, *one_view(tmp_path, spdx=doc))
+    assert '<div class="tile"><b>10</b><span>files, each with a SHA-256</span></div>' in html
+    assert "1 files belong to two components, and are listed under both." in html
+
+
+def test_wd2l_s_page_has_its_title_and_the_release_s_facts(tmp_path):
+    html = report(tmp_path, *one_view(tmp_path))
+    assert "<title>wd2l 9.9.0: software bill of materials</title>" in html
+    assert "What is inside the wd2l 9.9.0 container image, for linux/amd64:" in html
+    assert '<code>%s</code> of <a href="%s">' % ("e" * 40, REPO_URL) in html
+    assert REPO_URL + "/blob/v9.9.0/docs/decisions/0009-sbom-content.md" in html
+    assert "signed <code>SHA256SUMS</code>" in html
+
+
+def test_a_page_for_another_system_has_its_own_title_and_none_of_wd2l_s_release_facts(tmp_path):
+    html = report(tmp_path, "--title", "AlmaLinux 9 <Server>", "--intro", "A full server, for comparison.",
+                  *one_view(tmp_path), release=False)
+    assert "<title>AlmaLinux 9 &lt;Server&gt;</title>" in html and "<h1>AlmaLinux 9 &lt;Server&gt;</h1>" in html
+    assert '<p class="lede">A full server, for comparison.</p>' in html
+    for wd2l_only in ("SHA256SUMS", "release manifest", "Built from", "every week", "ADR-0009"):
+        assert wd2l_only not in html, wd2l_only
+
+
+@pytest.mark.parametrize("bad", [
+    ["--scan", "arm64", "grype=G"],                               # no such view
+    ["--scan", "amd64", "grype"],                                 # no file
+])
+def test_a_scan_that_names_no_view_or_file_is_refused(tmp_path, bad):
+    with pytest.raises(SystemExit) as e:
+        rep.main(["--out", str(tmp_path / "r.html")] + WD2L_ARGS + one_view(tmp_path) + bad)
+    assert e.value.code == 2
+
+
+def test_a_scan_file_that_is_neither_grype_nor_trivy_is_refused(tmp_path):
+    args = one_view(tmp_path, ("grype", {"bomFormat": "CycloneDX"}))
+    with pytest.raises(SystemExit) as e:
+        rep.main(["--out", str(tmp_path / "r.html")] + WD2L_ARGS + args)
+    assert e.value.code == 2
+
+
+def test_without_a_title_the_version_is_required(tmp_path):
+    with pytest.raises(SystemExit) as e:
+        rep.main(["--out", str(tmp_path / "r.html")] + one_view(tmp_path))
+    assert e.value.code == 2

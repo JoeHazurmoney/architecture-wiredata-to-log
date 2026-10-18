@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """The release's SBOMs as one page a person can read: wd2l-<version>-sbom.html
-(docs/decisions/0009-sbom-content.md). It is made from each platform's SPDX and CycloneDX SBOMs
-(completed by packaging/container/sbom_enrich.py) and the release's Grype and Trivy results.
+(docs/decisions/0009-sbom-content.md). It is made from each view's SPDX and CycloneDX SBOMs
+(completed by packaging/container/sbom_enrich.py) and its vulnerability scans.
 
+A view is one image (or system): wd2l's are one per platform. Each scan is a Grype or Trivy JSON
+result, read by its shape and shown by the name given, so two builds of one scanner stay apart.
 The page works offline and loads nothing: no external stylesheet, script, font or image, and a
-Content-Security-Policy that forbids them. Without JavaScript it shows every platform in turn,
-each component expanding to its files; JavaScript adds platform tabs, a search box and a switch
-between the components and every entry. The JSON SBOMs stay the authoritative record.
+Content-Security-Policy that forbids them. Without JavaScript it shows every view in turn, each
+component expanding to its files; JavaScript adds tabs, a search box and a switch between the
+components and every entry. The JSON SBOMs stay the authoritative record.
 
     sbom_report.py --version V --commit C --repo-url URL --out wd2l-V-sbom.html \\
-        --platform ARCH SPDX.json CDX.json GRYPE.json TRIVY.json [--platform ...]"""
+        --view ID LABEL SPDX.json CDX.json [--view ...] [--scan ID NAME=SCAN.json ...]
+
+With --commit and --repo-url, the page states the release's facts (the commit, the signed
+SHA256SUMS, ADR-0009). Without them, --title (and --intro) describe some other system: the
+briefing's comparison pages use this."""
 
 import argparse
 import html
@@ -48,8 +54,20 @@ def org(s: str) -> str:
     return re.sub(r"^(Organization|Person|Tool): ", "", s or "")
 
 
-def load_platform(arch: str, spdx: Dict[str, Any], cdx: Dict[str, Any], grype: Dict[str, Any],
-                  trivy: Dict[str, Any]) -> Dict[str, Any]:
+def findings_of(name: str, doc: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """A scan's findings, normalized as the review gate sees them, credited to NAME."""
+    if "matches" in doc:
+        found = vuln_gate.grype_findings(doc)
+    elif "SchemaVersion" in doc and "ArtifactName" in doc:
+        found = vuln_gate.trivy_findings(doc)
+    else:
+        raise ValueError("%s: not a Grype or Trivy JSON result" % name)
+    return [dict(f, scanner=name) for f in found]
+
+
+def load_view(vid: str, label: str, spdx: Dict[str, Any], cdx: Dict[str, Any],
+              scans: Sequence[Tuple[str, Dict[str, Any]]], names: Dict[str, str]) -> Dict[str, Any]:
+    """One view: its SBOMs (names: the names they are released under) and its scans."""
     roots = {r["relatedSpdxElement"] for r in spdx.get("relationships") or []
              if r.get("spdxElementId") == "SPDXRef-DOCUMENT" and r.get("relationshipType") == "DESCRIBES"}
     files = {f["SPDXID"]: f for f in spdx.get("files") or []}
@@ -66,7 +84,7 @@ def load_platform(arch: str, spdx: Dict[str, Any], cdx: Dict[str, Any], grype: D
         elif t in ("DEPENDS_ON", "DEPENDENCY_OF"):
             deps += 1
 
-    findings = vuln_gate.grype_findings(grype) + vuln_gate.trivy_findings(trivy)
+    findings = [f for name, doc in scans for f in findings_of(name, doc)]
     merged: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
     for f in findings:
         key = (f["id"] or "", f["package"] or "", bare_version(f["version"] or ""))
@@ -93,7 +111,8 @@ def load_platform(arch: str, spdx: Dict[str, Any], cdx: Dict[str, Any], grype: D
     info = spdx.get("creationInfo") or {}
     sha = next((c["checksumValue"] for c in root.get("checksums") or [] if c.get("algorithm") == "SHA256"), "")
     return {
-        "arch": arch, "image": root.get("name"), "version": root.get("versionInfo"), "digest": sha,
+        "id": vid, "label": label, "assets": names, "scanners": [name for name, _ in scans],
+        "image": root.get("name"), "version": root.get("versionInfo"), "digest": sha,
         "created": info.get("created"), "creators": info.get("creators") or [], "comment": info.get("comment"),
         "lifecycles": [x.get("phase") for x in (cdx.get("metadata") or {}).get("lifecycles") or []],
         "os": os_comp, "components": comps, "unowned": sorted((f for i, f in files.items() if i not in owned),
@@ -160,16 +179,17 @@ def files_table(files: Sequence[Dict[str, Any]]) -> str:
             % rows) if files else '<p class="muted">No files of its own.</p>'
 
 
-def platform_html(p: Dict[str, Any], v: str, assets: Dict[str, str]) -> str:
-    comps, a = p["components"], p["arch"]
+def view_html(p: Dict[str, Any], release: bool) -> str:
+    comps, assets = p["components"], p["assets"]
     by_sup: Dict[str, int] = {}
     for c in comps:
         by_sup[c["supplier"] or "not stated"] = by_sup.get(c["supplier"] or "not stated", 0) + 1
     by_sev: Dict[str, int] = {}
     for f in p["findings"]:
         by_sev[f["severity"]] = by_sev.get(f["severity"], 0) + 1
-    out = ['<section class="platform" id="platform-%s" data-arch="%s">' % (esc(a), esc(a)),
-           '<h2>linux/%s</h2>' % esc(a),
+    out = ['<section class="view" id="view-%s" data-view="%s" data-label="%s">' % (
+               esc(p["id"]), esc(p["id"]), esc(p["label"])),
+           '<h2>%s</h2>' % esc(p["label"]),
            '<dl class="facts">',
            '<dt>Image</dt><dd><code>%s:%s</code></dd>' % (esc(p["image"]), esc(p["version"])),
            '<dt>Digest</dt><dd><code class="wrap">sha256:%s</code></dd>' % esc(p["digest"]),
@@ -185,7 +205,8 @@ def platform_html(p: Dict[str, Any], v: str, assets: Dict[str, str]) -> str:
            '<div class="tile"><b>%d</b><span>components</span></div>' % len(comps),
            '<div class="tile"><b>%s</b><span>files, each with a SHA-256</span></div>' % "{:,}".format(p["file_count"]),
            '<div class="tile"><b>%d</b><span>files in no component</span></div>' % len(p["unowned"]),
-           '<div class="tile"><b>%d</b><span>known vulnerabilities</span></div>' % len(p["findings"]),
+           '<div class="tile"><b>%d</b><span>known vulnerabilities</span></div>' % len(p["findings"])
+           if p["scanners"] else '<div class="tile"><b>&#8212;</b><span>not scanned for vulnerabilities</span></div>',
            '</div>',
            '<p class="suppliers">Suppliers: %s.%s</p>' % (
                ", ".join("%s (%d)" % (esc(k), n) for k, n in sorted(by_sup.items(), key=lambda kv: -kv[1])),
@@ -195,10 +216,13 @@ def platform_html(p: Dict[str, Any], v: str, assets: Dict[str, str]) -> str:
            '<table class="check"><thead><tr><th>Field</th><th>Present</th><th>In this SBOM</th></tr></thead><tbody>']
     for field, ok, detail in minimum_fields(p):
         out.append('<tr><td>%s</td><td class="ok-%s">%s</td><td>%s</td></tr>' % (esc(field), esc(ok.lower()), esc(ok), esc(detail)))
-    out += ['</tbody></table>',
-            '<h3>Known vulnerabilities</h3>',
-            '<p>From the release\'s scans with Grype and Trivy. A finding with no fix yet stays listed until '
-            'its supplier ships one; the rescan after release checks again every week.</p>']
+    out += ['</tbody></table>', '<h3>Known vulnerabilities</h3>']
+    if not p["scanners"]:
+        out.append('<p>No scan results were given for this view.</p>')
+    else:
+        out.append('<p>From the scans with %s. A finding with no fix yet stays listed until its supplier '
+                   'ships one%s.</p>' % (esc(", ".join(p["scanners"])),
+                                         "; the rescan after release checks again every week" if release else ""))
     if p["findings"]:
         out.append('<p class="suppliers">%s.</p>' % ", ".join("%d %s" % (by_sev[s], s.title()) for s in SEVERITIES if s in by_sev))
         out.append('<table class="vulns"><thead><tr><th>ID</th><th>Severity</th><th>Component</th><th>Version</th>'
@@ -211,7 +235,7 @@ def platform_html(p: Dict[str, Any], v: str, assets: Dict[str, str]) -> str:
         if p["unmatched"]:
             out.append('<p class="muted">%d of them name a component this SBOM doesn\'t list by that name and version.</p>'
                        % len(p["unmatched"]))
-    else:
+    elif p["scanners"]:
         out.append('<p>None.</p>')
     out += ['<h3>Components</h3>',
             '<p>Each component expands to the files it installed, each with its SHA-256.</p>',
@@ -266,22 +290,22 @@ border-bottom:1px solid var(--line);z-index:1}.js .controls{display:flex}
 .controls input[type=search]{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);min-width:260px}
 .controls button{font:inherit;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer}
 .controls button[aria-pressed=true]{background:var(--accent);color:var(--bg);border-color:var(--accent)}
-.js .platform{display:none}.js .platform.shown{display:block}.hidden{display:none!important}footer{margin-top:40px;color:var(--muted);font-size:13px}
+.js .view{display:none}.js .view.shown{display:block}.hidden{display:none!important}footer{margin-top:40px;color:var(--muted);font-size:13px}
 @media (max-width:820px){.row{grid-template-columns:1fr 1fr}.row.head{display:none}.row>span:nth-child(n+3){font-size:13px}}
-@media print{.controls{display:none!important}.js .platform{display:block}.comp>summary .name::before{content:""}body{font-size:11px}
-.platform{break-before:page}}
+@media print{.controls{display:none!important}.js .view{display:block}.comp>summary .name::before{content:""}body{font-size:11px}
+.view{break-before:page}}
 """
 
 JS = """
 document.documentElement.classList.add('js');
 (function(){
-  var plats=[].slice.call(document.querySelectorAll('.platform'));
+  var views=[].slice.call(document.querySelectorAll('.view'));
   var tabs=document.getElementById('tabs'), q=document.getElementById('q'), all=document.getElementById('all'), count=document.getElementById('count');
-  function show(a){plats.forEach(function(p){p.classList.toggle('shown',p.dataset.arch===a)});
-    [].forEach.call(tabs.querySelectorAll('button'),function(b){b.setAttribute('aria-pressed',b.dataset.arch===a)});filter()}
-  plats.forEach(function(p){var b=document.createElement('button');b.type='button';b.textContent='linux/'+p.dataset.arch;
-    b.dataset.arch=p.dataset.arch;b.onclick=function(){show(p.dataset.arch)};tabs.appendChild(b)});
-  function filter(){var t=q.value.trim().toLowerCase(),n=0,shown=document.querySelector('.platform.shown');if(!shown)return;
+  function show(v){views.forEach(function(p){p.classList.toggle('shown',p.dataset.view===v)});
+    [].forEach.call(tabs.querySelectorAll('button'),function(b){b.setAttribute('aria-pressed',b.dataset.view===v)});filter()}
+  views.forEach(function(p){var b=document.createElement('button');b.type='button';b.textContent=p.dataset.label;
+    b.dataset.view=p.dataset.view;b.onclick=function(){show(p.dataset.view)};tabs.appendChild(b)});
+  function filter(){var t=q.value.trim().toLowerCase(),n=0,shown=document.querySelector('.view.shown');if(!shown)return;
     [].forEach.call(shown.querySelectorAll('details.comp'),function(d){var hit=!t||d.dataset.search.indexOf(t)>=0,fileHit=false;
       [].forEach.call(d.querySelectorAll('.files tbody tr'),function(r){var m=!t||hit||r.firstChild.textContent.toLowerCase().indexOf(t)>=0;
         r.classList.toggle('hidden',!m);if(t&&m&&!hit)fileHit=true});
@@ -291,67 +315,108 @@ document.documentElement.classList.add('js');
   all.onclick=function(){var open=all.getAttribute('aria-pressed')!=='true';all.setAttribute('aria-pressed',open);
     all.textContent=open?'Show components only':'Show every entry';
     [].forEach.call(document.querySelectorAll('details.comp'),function(d){d.open=open})};
-  if(plats.length)show(plats[0].dataset.arch);
+  if(views.length)show(views[0].dataset.view);
 })();
 """
 
 
-def page(platforms: Sequence[Dict[str, Any]], version: str, commit: str, repo_url: str) -> str:
-    assets = {p["arch"]: {"spdx": "wd2l-%s-image-%s.spdx.json" % (version, p["arch"]),
-                          "cdx": "wd2l-%s-image-%s.cdx.json" % (version, p["arch"])} for p in platforms}
-    doc = "%s/blob/v%s/docs" % (repo_url.rstrip("/"), version)
+def and_join(items: Sequence[str]) -> str:
+    return items[0] if len(items) == 1 else "%s and %s" % (", ".join(items[:-1]), items[-1])
+
+
+def page(views: Sequence[Dict[str, Any]], title: str, lede: str,
+         release: Optional[Dict[str, str]] = None) -> str:
+    """release: the version, commit and repo_url of the wd2l release the page is part of."""
     head = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; '
             'script-src \'unsafe-inline\'; img-src data:; base-uri \'none\'; form-action \'none\'">'
-            '<title>wd2l %s: software bill of materials</title><style>%s</style></head><body><main>' % (esc(version), CSS))
-    intro = ['<h1>wd2l %s: software bill of materials</h1>' % esc(version),
-             '<p class="lede">What is inside the wd2l %s container image, for %s: every component, who supplies it, '
-             'its license and version, the files it installed, and what the release\'s vulnerability scans found.</p>' % (
-                 esc(version), esc(" and ".join("linux/" + p["arch"] for p in platforms))),
+            '<title>%s</title><style>%s</style></head><body><main>' % (esc(title), CSS))
+    intro = ['<h1>%s</h1>' % esc(title), '<p class="lede">%s</p>' % esc(lede),
              '<div class="intro">',
              '<p><b>What an SBOM is.</b> A software bill of materials lists every component inside one version of a '
              'product, and every file those components install. Scanners match its package IDs against vulnerability '
-             'databases, and each file\'s SHA-256 proves exactly which bytes shipped.</p>',
-             '<p><b>Where this page comes from.</b> The release pipeline generates it from the SPDX and CycloneDX SBOMs '
-             'released alongside it, which stay the authoritative record. Like every release file, it is listed in the '
-             'release manifest and its checksum is in the signed <code>SHA256SUMS</code>.</p>',
-             '<p><b>Built from</b> commit <code>%s</code> of <a href="%s">%s</a>. How the SBOM is made: '
-             '<a href="%s/decisions/0009-sbom-content.md">ADR-0009</a>.</p>' % (
-                 esc(commit), esc(repo_url), esc(repo_url.split("//")[-1]), esc(doc)),
-             '</div>',
-             '<div class="controls" role="toolbar" aria-label="View"><span id="tabs" role="group" aria-label="Platform"></span>'
-             '<input id="q" type="search" placeholder="Search components and files" aria-label="Search components and files">'
-             '<button id="all" type="button" aria-pressed="false">Show every entry</button>'
-             '<span id="count" class="muted" aria-live="polite"></span></div>']
-    body = [platform_html(p, version, assets[p["arch"]]) for p in platforms]
-    foot = ('<footer>Generated by <code>packaging/release/sbom_report.py</code> from %s and the release\'s Grype and '
-            'Trivy results.</footer></main><script>%s</script></body></html>\n' % (
-                esc(", ".join(a["spdx"] for a in assets.values())), JS))
+             'databases, and each file\'s SHA-256 proves exactly which bytes shipped.</p>']
+    if release:
+        repo_url = release["repo_url"]
+        doc = "%s/blob/v%s/docs" % (repo_url.rstrip("/"), release["version"])
+        intro += ['<p><b>Where this page comes from.</b> The release pipeline generates it from the SPDX and CycloneDX '
+                  'SBOMs released alongside it, which stay the authoritative record. Like every release file, it is '
+                  'listed in the release manifest and its checksum is in the signed <code>SHA256SUMS</code>.</p>',
+                  '<p><b>Built from</b> commit <code>%s</code> of <a href="%s">%s</a>. How the SBOM is made: '
+                  '<a href="%s/decisions/0009-sbom-content.md">ADR-0009</a>.</p>' % (
+                      esc(release["commit"]), esc(repo_url), esc(repo_url.split("//")[-1]), esc(doc))]
+    else:
+        intro.append('<p><b>Where this page comes from.</b> It is generated from the SPDX and CycloneDX SBOMs named '
+                     'in each view, which stay the authoritative record.</p>')
+    intro += ['</div>',
+              '<div class="controls" role="toolbar" aria-label="View"><span id="tabs" role="group" aria-label="View"></span>'
+              '<input id="q" type="search" placeholder="Search components and files" aria-label="Search components and files">'
+              '<button id="all" type="button" aria-pressed="false">Show every entry</button>'
+              '<span id="count" class="muted" aria-live="polite"></span></div>']
+    body = [view_html(p, bool(release)) for p in views]
+    scanners = [s for i, s in enumerate(s for p in views for s in p["scanners"])
+                if s not in [t for p in views for t in p["scanners"]][:i]]
+    foot = ('<footer>Generated by <code>packaging/release/sbom_report.py</code> from %s%s.</footer></main>'
+            '<script>%s</script></body></html>\n' % (
+                esc(", ".join(p["assets"]["spdx"] for p in views)),
+                " and the scan results of %s" % esc(", ".join(scanners)) if scanners else "", JS))
     return head + "\n".join(intro + body) + foot
 
 
+def load(path: str) -> Dict[str, Any]:
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    p = argparse.ArgumentParser(description="The release's SBOMs as one readable page.")
-    p.add_argument("--version", required=True)
-    p.add_argument("--commit", required=True)
-    p.add_argument("--repo-url", required=True)
+    p = argparse.ArgumentParser(description="SBOMs and their vulnerability scans as one readable page.")
     p.add_argument("--out", required=True)
-    p.add_argument("--platform", nargs=5, action="append", required=True,
-                   metavar=("ARCH", "SPDX", "CDX", "GRYPE", "TRIVY"))
+    p.add_argument("--view", nargs=4, action="append", required=True, metavar=("ID", "LABEL", "SPDX", "CDX"))
+    p.add_argument("--scan", nargs=2, action="append", default=[], metavar=("ID", "NAME=FILE"),
+                   help="a Grype or Trivy JSON result for view ID, shown as found by NAME")
+    p.add_argument("--title", help="default: wd2l VERSION: software bill of materials")
+    p.add_argument("--intro", help="the sentence under the title")
+    p.add_argument("--version")
+    p.add_argument("--commit")
+    p.add_argument("--repo-url")
     a = p.parse_args(argv)
-    plats = []
-    for arch, *paths in a.platform:
-        docs = []
-        for path in paths:
-            with open(path) as f:
-                docs.append(json.load(f))
-        plats.append(load_platform(arch, *docs))
+    if not (a.title or a.version):
+        p.error("--title is needed without --version")
+    if bool(a.commit) != bool(a.repo_url) or (a.commit and not a.version):
+        p.error("--commit and --repo-url go together, with --version")
+    ids = [v[0] for v in a.view]
+    if len(set(ids)) != len(ids):
+        p.error("each --view needs its own ID")
+    scans: Dict[str, List[Tuple[str, Dict[str, Any]]]] = {i: [] for i in ids}
+    for vid, spec in a.scan:
+        name, sep, path = spec.partition("=")
+        if vid not in scans:
+            p.error("--scan %s: no --view has that ID" % vid)
+        if not (sep and name and path):
+            p.error("--scan %s %s: give NAME=FILE" % (vid, spec))
+        scans[vid].append((name, load(path)))
+    views = []
+    for vid, label, spdx, cdx in a.view:
+        try:
+            views.append(load_view(vid, label, load(spdx), load(cdx), scans[vid],
+                                   {"spdx": os.path.basename(spdx), "cdx": os.path.basename(cdx)}))
+        except ValueError as e:                 # a scan file that is neither Grype's nor Trivy's
+            p.error(str(e))
+    labels = and_join([v["label"] for v in views])
+    title = a.title or "wd2l %s: software bill of materials" % a.version
+    lede = a.intro or (
+        "What is inside the wd2l %s container image, for %s: every component, who supplies it, its license and "
+        "version, the files it installed, and what the release's vulnerability scans found." % (a.version, labels)
+        if a.version else "Every component inside %s: who supplies it, its license and version, the files it "
+                          "installed, and what the vulnerability scans found." % labels)
+    release = {"version": a.version, "commit": a.commit, "repo_url": a.repo_url} if a.commit else None
     with open(a.out, "w", encoding="utf-8") as f:
-        f.write(page(plats, a.version, a.commit, a.repo_url))
-    for pl in plats:
-        print("sbom-report %s: %d components, %d files, %d known vulnerabilities"
-              % (pl["arch"], len(pl["components"]), pl["file_count"], len(pl["findings"])))
+        f.write(page(views, title, lede, release))
+    for v in views:
+        print("sbom-report %s: %d components, %d files, %s" % (
+            v["id"], len(v["components"]), v["file_count"],
+            "%d known vulnerabilities" % len(v["findings"]) if v["scanners"] else "not scanned"))
     return 0
 
 
