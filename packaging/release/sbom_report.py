@@ -36,9 +36,7 @@ def esc(x: Any) -> str:
     return html.escape("" if x is None else str(x), quote=True)
 
 
-def bare_version(v: str) -> str:
-    """Without an RPM epoch ("1:3.5.9-0.3" → "3.5.9-0.3"): scanners and Syft disagree on it."""
-    return re.sub(r"^\d+:", "", v or "")
+bare_version = vuln_gate.bare_version        # scanners and Syft disagree on an RPM's epoch
 
 
 def purl_of(pkg: Dict[str, Any]) -> str:
@@ -54,15 +52,13 @@ def org(s: str) -> str:
     return re.sub(r"^(Organization|Person|Tool): ", "", s or "")
 
 
-def findings_of(name: str, doc: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """A scan's findings, normalized as the review gate sees them, credited to NAME."""
-    if "matches" in doc:
-        found = vuln_gate.grype_findings(doc)
-    elif "SchemaVersion" in doc and "ArtifactName" in doc:
-        found = vuln_gate.trivy_findings(doc)
-    else:
+def read_scan(name: str, doc: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """A scan's findings and what it covered, as the review gate sees them, credited to NAME."""
+    kind = vuln_gate.scanner_of(doc)
+    if kind is None:
         raise ValueError("%s: not a Grype or Trivy JSON result" % name)
-    return [dict(f, scanner=name) for f in found]
+    found = vuln_gate.grype_findings(doc) if kind == "grype" else vuln_gate.trivy_findings(doc)
+    return [dict(f, scanner=name) for f in found], dict(vuln_gate.coverage(kind, doc), scanner=name)
 
 
 def load_view(vid: str, label: str, spdx: Dict[str, Any], cdx: Dict[str, Any],
@@ -84,17 +80,10 @@ def load_view(vid: str, label: str, spdx: Dict[str, Any], cdx: Dict[str, Any],
         elif t in ("DEPENDS_ON", "DEPENDENCY_OF"):
             deps += 1
 
-    findings = [f for name, doc in scans for f in findings_of(name, doc)]
-    merged: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
-    for f in findings:
-        key = (f["id"] or "", f["package"] or "", bare_version(f["version"] or ""))
-        m = merged.setdefault(key, dict(f, scanners=[]))
-        m["scanners"].append(f["scanner"])
-        if f["fixed_in"] and not m["fixed_in"]:
-            m["fixed_in"] = f["fixed_in"]
+    read = [read_scan(name, doc) for name, doc in scans]
     by_pkg: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
-    for (_id, name, ver), m in merged.items():
-        by_pkg.setdefault((name, ver), []).append(m)
+    for m in vuln_gate.merge([f for found, _ in read for f in found]):
+        by_pkg.setdefault((m["package"] or "", bare_version(m["version"])), []).append(m)
 
     comps = []
     for p in sorted(pkgs, key=lambda p: (p.get("name") or "").lower()):
@@ -112,6 +101,7 @@ def load_view(vid: str, label: str, spdx: Dict[str, Any], cdx: Dict[str, Any],
     sha = next((c["checksumValue"] for c in root.get("checksums") or [] if c.get("algorithm") == "SHA256"), "")
     return {
         "id": vid, "label": label, "assets": names, "scanners": [name for name, _ in scans],
+        "coverage": [c for _, c in read],
         "image": root.get("name"), "version": root.get("versionInfo"), "digest": sha,
         "created": info.get("created"), "creators": info.get("creators") or [], "comment": info.get("comment"),
         "lifecycles": [x.get("phase") for x in (cdx.get("metadata") or {}).get("lifecycles") or []],
@@ -179,6 +169,19 @@ def files_table(files: Sequence[Dict[str, Any]]) -> str:
             % rows) if files else '<p class="muted">No files of its own.</p>'
 
 
+def coverage_table(covers: Sequence[Dict[str, Any]]) -> str:
+    """What each scan covered: a scanner without data for the image's operating system checked only
+    its language packages (docs/decisions/0011-vulnerability-scanners.md)."""
+    def yes(b: bool) -> str:
+        return '<td class="ok-yes">Yes</td>' if b else '<td class="ok-no">No</td>'
+    rows = "".join('<tr><td>%s</td><td>%s</td>%s%s<td>%s</td></tr>' % (
+        esc(c["scanner"]), esc(c["os"] or "not recognized"), yes(c["os_packages"]), yes(c["language_packages"]),
+        "Yes" if c["secrets"] else "No") for c in covers)
+    return ('<table class="coverage"><thead><tr><th>Scanner</th><th>Operating system it recognized</th>'
+            '<th>Has data for its packages</th><th>Language packages</th><th>Secrets</th></tr></thead>'
+            '<tbody>%s</tbody></table>' % rows)
+
+
 def view_html(p: Dict[str, Any], release: bool) -> str:
     comps, assets = p["components"], p["assets"]
     by_sup: Dict[str, int] = {}
@@ -223,6 +226,10 @@ def view_html(p: Dict[str, Any], release: bool) -> str:
         out.append('<p>From the scans with %s. A finding with no fix yet stays listed until its supplier '
                    'ships one%s.</p>' % (esc(", ".join(p["scanners"])),
                                          "; the rescan after release checks again every week" if release else ""))
+        out.append(coverage_table(p["coverage"]))
+        if not any(c["os_packages"] for c in p["coverage"]):
+            out.append('<p><b>No scan covered the operating system\'s packages, so they weren\'t checked for known '
+                       'vulnerabilities.</b></p>')
     if p["findings"]:
         out.append('<p class="suppliers">%s.</p>' % ", ".join("%d %s" % (by_sev[s], s.title()) for s in SEVERITIES if s in by_sev))
         out.append('<table class="vulns"><thead><tr><th>ID</th><th>Severity</th><th>Component</th><th>Version</th>'
