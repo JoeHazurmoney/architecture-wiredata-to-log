@@ -209,7 +209,7 @@ REQS = ("# hash-pinned build tools\nbuild==1.6.1 \\\n    --hash=sha256:%s\nsetup
         "    --hash=sha256:%s\n" % ("e" * 64, "f" * 64))
 
 
-def python_inputs(tmp_path, record_override=None):
+def python_inputs(tmp_path, record_override=None, reqs_text=REQS):
     whl = tmp_path / "wd2l-9.9.0-py3-none-any.whl"
     with zipfile.ZipFile(str(whl), "w") as z:
         rows = []
@@ -226,7 +226,7 @@ def python_inputs(tmp_path, record_override=None):
             info.size = len(data)
             t.addfile(info, io.BytesIO(data))
     reqs = tmp_path / "requirements.txt"
-    reqs.write_text(REQS)
+    reqs.write_text(reqs_text)
     return str(whl), str(sd), str(reqs)
 
 
@@ -268,6 +268,19 @@ def test_the_build_tools_are_build_dependencies_by_their_pinned_hash(tmp_path):
     assert {r["relationshipType"] for r in builds} == {"BUILD_DEPENDENCY_OF"} and len(builds) == 2
     cdx_tool = next(x for x in c["components"] if x["name"] == "setuptools")
     assert cdx_tool["scope"] == "excluded" and cdx_tool["hashes"] == [{"alg": "SHA-256", "content": "f" * 64}]
+
+
+def test_a_build_tool_pinned_to_several_files_claims_no_one_hash(tmp_path):
+    # A pin may name each file of a release (its wheels and its sdist), and nothing says which one
+    # pip took: no single hash is the tool's, so each pin is named and none is claimed.
+    reqs = "setuptools==84.0.0 \\\n    --hash=sha256:%s \\\n    --hash=sha256:%s\n" % ("a" * 64, "b" * 64)
+    _rc, s, c, _w, _s = python_sboms(tmp_path, reqs_text=reqs)
+    tool = by_name(s["packages"], "setuptools")
+    assert "checksums" not in tool
+    assert "sha256:" + "a" * 64 in tool["comment"] and "sha256:" + "b" * 64 in tool["comment"]
+    cdx_tool = next(x for x in c["components"] if x["name"] == "setuptools")
+    assert "hashes" not in cdx_tool
+    assert "sha256:" + "a" * 64 in cdx_tool["description"] and "sha256:" + "b" * 64 in cdx_tool["description"]
 
 
 def test_a_wheel_file_that_isn_t_its_record_s_is_refused(tmp_path, capsys):

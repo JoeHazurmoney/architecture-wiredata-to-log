@@ -303,21 +303,27 @@ def python_package(wheel: str, sdist: str, tools_path: str, version: str, repo_u
         components += [cdx_file("file:%s:%s" % (kind, n), n, d) for n, d in content]
     for tool, tver, hashes in build_tools(tools_path):
         tid = sid("BuildTool", tool)
+        purl = "pkg:pypi/%s@%s" % (tool.lower(), tver)
         note = ("a build tool: it built the wheel and the sdist (packaging/build-tools/requirements.txt, "
                 "hash-pinned); not shipped")
-        packages.append({
-            "name": tool, "SPDXID": tid, "versionInfo": tver, "supplier": "NOASSERTION",
-            "downloadLocation": "NOASSERTION", "filesAnalyzed": False,
-            "checksums": [{"algorithm": "SHA256", "checksumValue": h} for h in hashes[:1]],
-            "licenseConcluded": "NOASSERTION", "licenseDeclared": "NOASSERTION", "copyrightText": "NOASSERTION",
-            "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl",
-                              "referenceLocator": "pkg:pypi/%s@%s" % (tool.lower(), tver)}],
-            "primaryPackagePurpose": "LIBRARY",
-            "comment": note + ("; pinned to %s" % ", ".join("sha256:" + h for h in hashes) if len(hashes) > 1 else "")})
+        # One pin is the file pip took. Several (a release's wheels and its sdist) say only that it
+        # was one of them, so each is named and none is claimed as the tool's hash.
+        if len(hashes) > 1:
+            note += "; pinned to one of %s" % ", ".join("sha256:" + h for h in hashes)
+        pkg = {"name": tool, "SPDXID": tid, "versionInfo": tver, "supplier": "NOASSERTION",
+               "downloadLocation": "NOASSERTION", "filesAnalyzed": False,
+               "licenseConcluded": "NOASSERTION", "licenseDeclared": "NOASSERTION", "copyrightText": "NOASSERTION",
+               "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl",
+                                 "referenceLocator": purl}],
+               "primaryPackagePurpose": "LIBRARY", "comment": note}
+        comp = {"bom-ref": purl, "type": "library", "name": tool, "version": tver, "purl": purl,
+                "scope": "excluded", "description": note}
+        if len(hashes) == 1:
+            pkg["checksums"] = [{"algorithm": "SHA256", "checksumValue": hashes[0]}]
+            comp["hashes"] = [{"alg": "SHA-256", "content": hashes[0]}]
+        packages.append(pkg)
         rels += [{"spdxElementId": tid, "relatedSpdxElement": p, "relationshipType": "BUILD_DEPENDENCY_OF"} for p in ids]
-        components.append({"bom-ref": "pkg:pypi/%s@%s" % (tool.lower(), tver), "type": "library", "name": tool,
-                           "version": tver, "purl": "pkg:pypi/%s@%s" % (tool.lower(), tver), "scope": "excluded",
-                           "hashes": [{"alg": "SHA-256", "content": h} for h in hashes[:1]], "description": note})
+        components.append(comp)
     digest = hashlib.sha256("".join(sorted(shas)).encode()).hexdigest()
     namespace = "%s/sbom/python-%s-%s" % (repo_url.rstrip("/"), version, digest)
     comment = ("Generated at release, from the built wheel and sdist (build): their files, the wheel's checked "
