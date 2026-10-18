@@ -14,8 +14,12 @@ its filesystem and its config:
   interpreter the image has, importing and calling its entry point. No other wd2l* command;
 * the labels name wd2l (not the base), the version, the commit, MIT and the exact base.
 
+The comparison image on UBI 9 (--profile ubi9, #192) is checked the same way, except that by
+design it keeps UBI 9's shell, package manager, setuid files and DEFAULT crypto policy: it is
+there to show the difference. Its labels name wd2l-ubi9, and its RPM database is in /var/lib/rpm.
+
     check_image.py --rootfs DIR --base-rootfs DIR --config INSPECT.json --wheel WHL
-                   --commit SHA --version V [--base-ref NAME:TAG@DIGEST]
+                   --commit SHA --version V [--base-ref NAME:TAG@DIGEST] [--profile ubi9]
 
 The two rootfs directories come from `podman image mount`, inside `podman unshare`."""
 
@@ -43,8 +47,11 @@ PACKAGE_MANAGERS = ("usr/bin/dnf", "usr/bin/dnf5", "usr/bin/dnf-3", "usr/bin/mic
 PIP = ("usr/local/bin/pip*", "usr/bin/pip*", "usr/local/lib*/python3*/site-packages/pip",
        "usr/lib*/python3*/site-packages/pip")
 RPMDB = "usr/lib/sysimage/rpm/rpmdb.sqlite"
+RPMDBS = {"hardened": RPMDB, "ubi9": "var/lib/rpm/rpmdb.sqlite"}
+NAMES = {"hardened": "wd2l", "ubi9": "wd2l-ubi9"}
 STICKY_OK = ("tmp", "var/tmp", "dev/shm")
 REMOVED_LABELS = ("cpe", "com.redhat.component")
+REMOVED_UBI9_LABELS = ("io.k8s.display-name", "io.openshift.tags")      # "Red Hat Universal Base Image 9"
 REQUIRED_LABELS = ("org.opencontainers.image.title", "org.opencontainers.image.version",
                    "org.opencontainers.image.revision", "org.opencontainers.image.source",
                    "org.opencontainers.image.licenses", "org.opencontainers.image.base.name",
@@ -64,7 +71,8 @@ def _sha256(path: str) -> str:
         return hashlib.sha256(f.read()).hexdigest()
 
 
-def check_config(inspect: Any, version: str, commit: str, base_ref: Optional[str]) -> List[str]:
+def check_config(inspect: Any, version: str, commit: str, base_ref: Optional[str],
+                 profile: str = "hardened") -> List[str]:
     cfg = inspect[0] if isinstance(inspect, list) else inspect
     c = cfg.get("Config") or cfg.get("config") or {}
     out = []
@@ -77,7 +85,7 @@ def check_config(inspect: Any, version: str, commit: str, base_ref: Optional[str
     for k in REQUIRED_LABELS:
         if not labels.get(k):
             out.append("label %s is missing" % k)
-    want = {"name": "wd2l", "org.opencontainers.image.licenses": "MIT",
+    want = {"name": NAMES[profile], "org.opencontainers.image.licenses": "MIT",
             "org.opencontainers.image.version": version,
             "org.opencontainers.image.revision": commit}
     if base_ref:
@@ -86,23 +94,25 @@ def check_config(inspect: Any, version: str, commit: str, base_ref: Optional[str
     for k, v in want.items():
         if labels.get(k) != v:
             out.append("label %s is %r, expected %r" % (k, labels.get(k), v))
+    removed = REMOVED_LABELS + (REMOVED_UBI9_LABELS if profile == "ubi9" else ())
     for k in sorted(labels):
-        if k in REMOVED_LABELS or k.startswith("io.hummingbird-project."):
+        if k in removed or k.startswith("io.hummingbird-project."):
             out.append("label %s from the base is still there (the image would claim to be it)" % k)
     return out
 
 
-def check_filesystem(root: str, base_root: str) -> List[str]:
+def check_filesystem(root: str, base_root: str, profile: str = "hardened") -> List[str]:
     out = []
+    if profile == "ubi9":
+        # By design (#192): UBI 9's shell, package manager, setuid files and policy stay.
+        return out + check_no_pip(root) + check_rpmdb(root, base_root, RPMDBS[profile])
     for p in SHELLS:
         if os.path.lexists(os.path.join(root, p)):
             out.append("shell present: /" + p)
     for p in PACKAGE_MANAGERS:
         if os.path.lexists(os.path.join(root, p)):
             out.append("package manager present: /" + p)
-    for pattern in PIP:
-        for path in sorted(glob.glob(os.path.join(root, pattern))):
-            out.append("package manager present: /" + os.path.relpath(path, root).replace(os.sep, "/"))
+    out += check_no_pip(root)
     for dirpath, dirnames, filenames in os.walk(root):
         rel = os.path.relpath(dirpath, root)
         if rel.split(os.sep)[0] in ("proc", "sys"):
@@ -122,12 +132,22 @@ def check_filesystem(root: str, base_root: str) -> List[str]:
     policy = (_read(os.path.join(root, "etc/crypto-policies/config")) or "").strip()
     if policy != "FIPS":
         out.append("the crypto policy is %r, not FIPS" % policy)
-    a, b = os.path.join(root, RPMDB), os.path.join(base_root, RPMDB)
+    return out + check_rpmdb(root, base_root, RPMDB)
+
+
+def check_no_pip(root: str) -> List[str]:
+    """wd2l installs nothing at run time, so no image keeps a package installer for Python."""
+    return ["package manager present: /" + os.path.relpath(path, root).replace(os.sep, "/")
+            for pattern in PIP for path in sorted(glob.glob(os.path.join(root, pattern)))]
+
+
+def check_rpmdb(root: str, base_root: str, rpmdb: str) -> List[str]:
+    a, b = os.path.join(root, rpmdb), os.path.join(base_root, rpmdb)
     if not (os.path.isfile(a) and os.path.isfile(b)):
-        out.append("the rpm database is missing in the image or the base")
-    elif _sha256(a) != _sha256(b):
-        out.append("the rpm database differs from the base's: the image changed packages")
-    return out
+        return ["the rpm database is missing in the image or the base"]
+    if _sha256(a) != _sha256(b):
+        return ["the rpm database differs from the base's: the image changed packages"]
+    return []
 
 
 def _in_image(root: str, path: str) -> Optional[str]:
@@ -249,11 +269,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--commit", required=True)
     p.add_argument("--version", required=True)
     p.add_argument("--base-ref", help="the runtime base, NAME:TAG@DIGEST")
+    p.add_argument("--profile", choices=sorted(NAMES), default="hardened",
+                   help="ubi9: the comparison image (keeps UBI 9's shell, package manager and policy)")
     a = p.parse_args(argv)
     with open(a.config) as f:
         inspect = json.load(f)
-    probs = (check_config(inspect, a.version, a.commit, a.base_ref)
-             + check_filesystem(a.rootfs, a.base_rootfs)
+    probs = (check_config(inspect, a.version, a.commit, a.base_ref, a.profile)
+             + check_filesystem(a.rootfs, a.base_rootfs, a.profile)
              + check_wheel_files(a.rootfs, a.wheel, a.commit))
     for x in probs:
         print("hardening: " + x)

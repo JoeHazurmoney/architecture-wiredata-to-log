@@ -396,6 +396,53 @@ def test_non_fips_policy_and_changed_rpmdb_are_refused(tmp_path):
     assert "not FIPS" in text and "rpm database differs" in text
 
 
+def ubi9_rootfs(tmp_path):
+    """The comparison image's case: UBI 9 has a shell, dnf, setuid files and the DEFAULT policy,
+    and keeps its RPM database in /var/lib/rpm."""
+    whl, root, base = wheel_and_rootfs(tmp_path)
+    for r in (root, base):
+        os.makedirs(os.path.join(r, "var/lib/rpm"))
+        with open(os.path.join(r, "var/lib/rpm/rpmdb.sqlite"), "wb") as f:
+            f.write(b"UBI 9's rpmdb")
+        with open(os.path.join(r, "etc/crypto-policies/config"), "w") as f:
+            f.write("DEFAULT\n")
+    for p in ("usr/bin/bash", "usr/bin/dnf", "usr/bin/su"):
+        open(os.path.join(root, p), "w").close()
+    os.chmod(os.path.join(root, "usr/bin/su"), 0o4755)
+    return whl, root, base
+
+
+def test_the_ubi9_profile_skips_the_minimal_image_rules_by_design(tmp_path):
+    whl, root, base = ubi9_rootfs(tmp_path)
+    assert ci.check_filesystem(root, base, "ubi9") == []
+    text = "\n".join(ci.check_filesystem(root, base))                       # the shipped image's rules
+    for refused in ("shell present", "package manager present: /usr/bin/dnf", "setuid", "not FIPS"):
+        assert refused in text, refused
+
+
+def test_the_ubi9_profile_still_refuses_pip_and_added_packages(tmp_path):
+    whl, root, base = ubi9_rootfs(tmp_path)
+    os.makedirs(os.path.join(root, "usr/lib/python3.9/site-packages/pip"))
+    with open(os.path.join(root, "var/lib/rpm/rpmdb.sqlite"), "wb") as f:
+        f.write(b"one more package")
+    text = "\n".join(ci.check_filesystem(root, base, "ubi9"))
+    assert "package manager present: /usr/lib/python3.9/site-packages/pip" in text
+    assert "rpm database differs" in text
+
+
+def test_the_ubi9_image_is_named_wd2l_ubi9_and_drops_ubi9_s_own_labels():
+    u9 = "%s:latest@%s" % (U, D1)
+    good = config(User="65532:65532", labels={"name": "wd2l-ubi9", "org.opencontainers.image.title": "wd2l-ubi9",
+                                               "org.opencontainers.image.base.name": U + ":latest",
+                                               "org.opencontainers.image.base.digest": D1})
+    assert ci.check_config(good, "0.3.0", SHA, u9, "ubi9") == []
+    bad = config(User="65532:65532", labels={"io.k8s.display-name": "Red Hat Universal Base Image 9",
+                                              "org.opencontainers.image.base.name": U + ":latest",
+                                              "org.opencontainers.image.base.digest": D1})
+    text = "\n".join(ci.check_config(bad, "0.3.0", SHA, u9, "ubi9"))
+    assert "label name is 'wd2l', expected 'wd2l-ubi9'" in text and "io.k8s.display-name" in text
+
+
 def test_changed_wd2l_file_and_wrong_build_are_refused(tmp_path):
     whl, root, base = wheel_and_rootfs(tmp_path)
     with open(os.path.join(root, "usr/lib/python3.12/site-packages/wd2l/__init__.py"), "a") as f:
