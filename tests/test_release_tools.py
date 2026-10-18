@@ -337,6 +337,19 @@ def test_notes_mark_retroactive_issues_and_link_the_attestation_pages():
     assert "Attestation pages: [image index](https://github.com/o/r/attestations/2)." in text
 
 
+def test_notes_name_the_comparison_image_as_not_for_deployment():
+    # #192: wd2l on UBI 9, published for comparison; the notes say what it is for, and isn't.
+    man = example_manifest()
+    text = notes.notes(versions.names("1.1.0"), **dict(ARGS, man=man))
+    section = text.split("## Comparison image (not for deployment)", 1)[1].split("\n## ", 1)[0]
+    assert "`ghcr.io/joehazurmoney/wd2l-ubi9@%s`" % man["comparison_image"]["digest"] in section
+    assert "`wd2l-1.1.0-image-ubi9-amd64-oci.tar`" in section and "`wd2l-1.1.0-sbom.html`" in section
+    assert "not hardened" in section and "not FIPS" in section and "Deploy `ghcr.io/joehazurmoney/wd2l`" in section
+    assert text.index("## Image") < text.index("## Comparison image") < text.index("## Assets")
+    man["comparison_image"] = None
+    assert "## Comparison image" not in notes.notes(versions.names("1.1.0"), **dict(ARGS, man=man))
+
+
 def test_notes_without_a_manifest_are_unchanged():
     assert "## Issues resolved" not in notes.notes(versions.names("1.1.0"), **ARGS)
     assert "Attestation pages" not in notes.notes(versions.names("1.1.0"), **ARGS)

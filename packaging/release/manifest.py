@@ -5,7 +5,8 @@ version description. release.yml's assets job makes it, before SHA256SUMS, so th
 signature, the SLSA provenance and the release attestation all cover it.
 
     manifest.py generate --assets DIR --base-record FILE [--image-digest sha256:...]
-                         [--platform-digest ARCH=sha256:...] [--dry-run] > manifest.json
+                         [--platform-digest ARCH=sha256:...] [--comparison-digest sha256:...
+                          --comparison-base-record FILE] [--dry-run] > manifest.json
     manifest.py validate manifest.json
     manifest.py render manifest.json > manifest.md
 
@@ -35,6 +36,8 @@ import check_title  # noqa: E402
 SCHEMA = os.path.join(HERE, "release-manifest.schema.json")
 IMAGE = "ghcr.io/joehazurmoney/wd2l"
 UBI9_IMAGE = "ghcr.io/joehazurmoney/wd2l-ubi9"        # the comparison image, amd64 only (#192)
+COMPARISON_PURPOSE = ("For comparison only: the same wd2l on UBI 9, to show what the base changes. It is "
+                      "not hardened, not FIPS. Deploy %s (docs/decisions/0004-container-base-image.md)." % IMAGE)
 ATT ="https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations"
 # The workflows a release runs, for the build environment (tests/test_workflow_policy.py).
 RELEASE_PATH = ("tests.yml", "image.yml", "rpm.yml", "publish.yml", "release.yml", "attest.yml")
@@ -259,7 +262,7 @@ def changes(commits: Sequence[Dict[str, Any]], forge: Any) -> Dict[str, Any]:
 
 KINDS = ((r"-sbom\.html$", "sbom-report"), (r"\.rpm$", "rpm"), (r"\.whl$", "wheel"), (r"\.tar\.gz$", "sdist"), (r"-oci\.tar$", "oci-image"),
          (r"\.(spdx|cdx)\.json$", "sbom"), (r"vuln-summary", "vulnerability-summary"),
-         (r"provenance\.json$", "provenance"), (r"^base-image-record\.json$", "base-image-record"),
+         (r"provenance\.json$", "provenance"), (r"^base-image-record(-ubi9)?\.json$", "base-image-record"),
          (r"^cosign\.pub$", "public-key"), (r"\.bundle$", "source-bundle"),
          (r"changelog\.md$", "changelog"), (r"verify-release\.py$", "verification-script"))
 
@@ -353,6 +356,7 @@ def generate(a: argparse.Namespace, env: Dict[str, str], forge: Any, repo: str =
         # would make a valid manifest saying the image wasn't published (#161).
         missing = ([] if a.image_digest else ["the image index digest"]) + [
             "the %s image digest" % arch for arch in ("amd64", "arm64") if arch not in platforms] + (
+            [] if getattr(a, "comparison_digest", "") else ["the comparison image digest"]) + (
             [] if changelog else ["the changelog"]) + (
             [] if any(x["environment"] == "release" and x["state"] == "approved" for x in approvals)
             else ["an approval of the release gate"])
@@ -360,6 +364,12 @@ def generate(a: argparse.Namespace, env: Dict[str, str], forge: Any, repo: str =
             raise SystemExit("a release's manifest needs %s" % ", ".join(missing))
     with open(a.base_record) as f:
         record = json.load(f)
+    comparison = None
+    if getattr(a, "comparison_digest", ""):
+        with open(a.comparison_base_record) as f:
+            comparison = {"name": UBI9_IMAGE, "tags": names["image_tags"], "digest": a.comparison_digest,
+                          "platform": "linux/amd64", "base_images": base_images(json.load(f)),
+                          "purpose": COMPARISON_PURPOSE}
     with open(os.path.join(repo, "cosign.pub"), "rb") as f:
         key_sha = hashlib.sha256(f.read()).hexdigest()
     now = now or datetime.datetime.now(datetime.timezone.utc)
@@ -380,6 +390,7 @@ def generate(a: argparse.Namespace, env: Dict[str, str], forge: Any, repo: str =
         "image": ({"name": IMAGE, "tags": names["image_tags"], "index_digest": a.image_digest,
                    "platforms": platforms} if a.image_digest else None),
         "base_images": base_images(record),
+        "comparison_image": comparison,
         "build_environment": build_environment(repo),
         "changelog": changelog_record(changelog, repo) if changelog else None,
         "approvals": approvals,
@@ -389,15 +400,16 @@ def generate(a: argparse.Namespace, env: Dict[str, str], forge: Any, repo: str =
             "sealed_by": ["SHA256SUMS", "SHA256SUMS.sigstore.json", "wd2l-%s-attestations.jsonl" % v],
             "attestations": [
                 {"predicate_type": "https://slsa.dev/provenance/v1", "signed_by": "attest.yml (GitHub, keyless)",
-                 "covers": "every file in SHA256SUMS, the image index and each platform image"},
+                 "covers": "every file in SHA256SUMS, the image index, each platform image and the comparison image"},
                 {"predicate_type": "https://slsa.dev/provenance/v1", "signed_by": "the release key",
-                 "covers": "the image index and each platform image (wd2l-%s-provenance.json)" % v},
+                 "covers": "the image index and each platform image (wd2l-%s-provenance.json), "
+                           "and the comparison image" % v},
                 {"predicate_type": "%s/base-image-record/v2" % ATT, "signed_by": "the release key",
-                 "covers": "the image index and each platform image"},
+                 "covers": "the image index, each platform image and the comparison image"},
                 {"predicate_type": "https://spdx.dev/Document", "signed_by": "the release key",
-                 "covers": "each platform image (its SBOM)"},
+                 "covers": "each platform image and the comparison image (its SBOM)"},
                 {"predicate_type": "%s/vuln-scan/v1" % ATT, "signed_by": "the release key",
-                 "covers": "each platform image (its scan results)"},
+                 "covers": "each platform image and the comparison image (its scan results)"},
             ]},
     }
 
@@ -504,6 +516,18 @@ def render(m: Dict[str, Any]) -> str:
     out += ["| %s | `%s` | `%s` |" % (b["stage"], b["ref"], b["source_image"]) for b in m["base_images"]]
     out.append("")
 
+    ci = m.get("comparison_image")
+    out += ["## Comparison image (UBI 9: not hardened, not FIPS)", ""]
+    if ci:
+        out += ["`%s@%s`, %s, tagged %s." % (ci["name"], ci["digest"], ci["platform"],
+                                              ", ".join("`%s`" % t for t in ci["tags"])), "",
+                "%s Deploy `%s`." % (ci["purpose"].split(" Deploy ")[0], IMAGE), "",
+                "| Stage | Base image |", "|---|---|"]
+        out += ["| %s | `%s` |" % (b["stage"], b["ref"]) for b in ci["base_images"]]
+    else:
+        out.append("Not published (dry run).")
+    out.append("")
+
     out += ["## Changes (%d pull requests)" % len(ch["pull_requests"]), "",
             "| Pull request | Title | Merged | Closes | First released in |", "|---|---|---|---|---|"]
     for p in ch["pull_requests"]:
@@ -566,6 +590,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     g.add_argument("--base-record", required=True)
     g.add_argument("--image-digest", default="")
     g.add_argument("--platform-digest", action="append", default=[], metavar="ARCH=DIGEST")
+    g.add_argument("--comparison-digest", default="", help="the UBI 9 comparison image's digest (#192)")
+    g.add_argument("--comparison-base-record", help="base-image-record-ubi9.json")
     g.add_argument("--dry-run", action="store_true", help="no version tag: nothing published")
     g.add_argument("--changelog", help="the changelog git-cliff made (one of the --assets files)")
     sub.add_parser("previous-release", help="print the previous final release's tag, if any")

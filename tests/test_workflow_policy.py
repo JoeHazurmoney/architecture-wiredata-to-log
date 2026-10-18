@@ -641,6 +641,22 @@ def test_the_release_has_the_readable_sbom_of_both_platforms_listed_and_summed()
     assert body.index('cp "sbom-$a/wd2l.spdx.json"') < report < body.index("manifest.py generate")
 
 
+def test_the_release_carries_the_comparison_image_s_files_tab_and_record():
+    # #192: its SBOMs, scan summary, base record and tar are release files, listed and summed;
+    # the SBOM page has its tab; the manifest records the image by the digest publish pushed.
+    body = jobs(read("release.yml"))["assets"]
+    assert "sbom-ubi9-amd64,vuln-ubi9-amd64,base-evidence-ubi9" in body
+    for part in ('cp sbom-ubi9-amd64/wd2l.spdx.json "assets/wd2l-$V-image-ubi9-amd64.spdx.json"',
+                 'cp sbom-ubi9-amd64/wd2l.cdx.json "assets/wd2l-$V-image-ubi9-amd64.cdx.json"',
+                 'cp vuln-ubi9-amd64/vuln-summary.md "assets/wd2l-$V-vuln-summary-ubi9-amd64.md"',
+                 "cp base-evidence-ubi9/base-image-record-ubi9.json assets/",
+                 '--view ubi9 "UBI 9 (amd64)" "assets/wd2l-$V-image-ubi9-amd64.spdx.json" "assets/wd2l-$V-image-ubi9-amd64.cdx.json"',
+                 '--scan ubi9 grype=vuln-ubi9-amd64/grype.json --scan ubi9 trivy=vuln-ubi9-amd64/trivy.json',
+                 '--comparison-digest "$DIGEST_UBI9" --comparison-base-record assets/base-image-record-ubi9.json',
+                 "DIGEST_UBI9: ${{ needs.publish.outputs.digest_ubi9 }}"):
+        assert part in body, part
+
+
 def test_the_image_name_and_the_urls_agree_everywhere():
     # Written out in five files (#180): a change to one would push, sign, attest or rescan
     # under another name.

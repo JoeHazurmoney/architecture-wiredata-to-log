@@ -63,6 +63,7 @@ def _no_platform(arch):
 
 @pytest.mark.parametrize("change", [
     lambda d: d.update(image=None),
+    lambda d: d.update(comparison_image=None),
     _no_platform("amd64"),
     _no_platform("arm64"),
     lambda d: d.update(changelog=None),
@@ -239,7 +240,9 @@ def test_an_issue_closed_by_two_prs_is_dated_by_the_first_and_released_with_the_
     ("wd2l-1.0.0-provenance.json", "provenance"), ("base-image-record.json", "base-image-record"),
     ("cosign.pub", "public-key"), ("wd2l-1.0.0-source.bundle", "source-bundle"),
     ("wd2l-1.0.0-changelog.md", "changelog"), ("wd2l-1.0.0-verify-release.py", "verification-script"),
-    ("wd2l-1.0.0-sbom.html", "sbom-report"), ("notes.txt", "other"),
+    ("wd2l-1.0.0-sbom.html", "sbom-report"), ("base-image-record-ubi9.json", "base-image-record"),
+    ("wd2l-1.0.0-image-ubi9-amd64-oci.tar", "oci-image"), ("wd2l-1.0.0-image-ubi9-amd64.spdx.json", "sbom"),
+    ("notes.txt", "other"),
 ])
 def test_each_release_file_gets_a_kind(name, kind):
     assert m.kind(name) == kind
@@ -331,6 +334,11 @@ def gen_args(tmp_path, dry_run=False, digests=True):
                                            "platforms": {"amd64": "sha256:" + "2" * 64,
                                                          "arm64": "sha256:" + "6" * 64},
                                            "release": "1", "source_image": "registry.example/python:1-source"}]}))
+    rec9 = tmp_path / "base-image-record-ubi9.json"
+    rec9.write_text(json.dumps({"images": [{"stage": "runtime", "ref": "registry.example/ubi9/ubi:latest@sha256:" + "7" * 64,
+                                            "index_digest": "sha256:" + "7" * 64,
+                                            "platforms": {"amd64": "sha256:" + "8" * 64, "arm64": "sha256:" + "9" * 64},
+                                            "release": "1791888712", "source_image": None, "provenance": None}]}))
     d = "sha256:" + "3" * 64
     changelog = None
     if not dry_run:
@@ -340,6 +348,8 @@ def gen_args(tmp_path, dry_run=False, digests=True):
                               image_digest=d if digests else "",
                               platform_digest=(["amd64=sha256:" + "4" * 64, "arm64=sha256:" + "5" * 64]
                                                if digests else ["amd64=", "arm64="]),
+                              comparison_digest="sha256:" + "a" * 64 if digests else "",
+                              comparison_base_record=str(rec9),
                               changelog=changelog and str(changelog))
 
 
@@ -364,6 +374,12 @@ def test_a_tag_run_makes_a_valid_manifest_with_image_approvals_and_summary(tmp_p
     assert [d["name"] for d in doc["deliverables"]] == ["cosign.pub", "wd2l-1.0.0rc1-changelog.md",
                                                       "wd2l-1.0.0rc1-py3-none-any.whl"]
     assert doc["verification"]["sealed_by"][-1] == "wd2l-1.0.0rc1-attestations.jsonl"
+    # The comparison image (#192): its own name and digest, one platform, its base, its purpose.
+    ci = doc["comparison_image"]
+    assert ci["name"] == "ghcr.io/joehazurmoney/wd2l-ubi9" and ci["digest"] == "sha256:" + "a" * 64
+    assert ci["tags"] == ["1.0.0rc1"] and ci["platform"] == "linux/amd64"
+    assert ci["base_images"][0]["release"] == "1791888712" and ci["base_images"][0]["source_image"] is None
+    assert "not hardened" in ci["purpose"] and "not FIPS" in ci["purpose"]
 
 
 @needs_git
@@ -373,6 +389,7 @@ def test_a_dry_run_has_no_image_and_asks_for_no_approvals(tmp_path):
     doc = m.generate(gen_args(tmp_path, dry_run=True, digests=False), {}, forge_for_repo(), repo=str(r))
     assert m.validate(doc) is None
     assert doc["image"] is None and doc["approvals"] == [] and doc["summary"] is None
+    assert doc["comparison_image"] is None
     assert doc["release"]["dry_run"] and doc["generated"]["run"] is None
 
 
@@ -394,6 +411,7 @@ def _empty_platform(arch):
     (lambda a, forge: setattr(a, "image_digest", ""), "the image index digest"),
     (_empty_platform("amd64"), "the amd64 image digest"),
     (_empty_platform("arm64"), "the arm64 image digest"),
+    (lambda a, forge: setattr(a, "comparison_digest", ""), "the comparison image digest"),
     (lambda a, forge: setattr(a, "changelog", None), "the changelog"),
     (lambda a, forge: setattr(forge, "appr", []), "an approval of the release gate"),
     (lambda a, forge: setattr(forge, "appr", [{"environment": "release", "user": "owner",
@@ -411,6 +429,16 @@ def test_a_tag_run_missing_what_publish_and_the_gate_give_is_refused(tmp_path, c
 
 
 # ---- the markdown view --------------------------------------------------------------------
+
+@needs_git
+def test_the_view_shows_the_comparison_image_as_not_for_deployment(tmp_path):
+    r = make_repo(tmp_path)
+    md = m.render(m.generate(gen_args(tmp_path), RUN_ENV, forge_for_repo(), repo=str(r)))
+    section = md.split("## Comparison image", 1)[1].split("\n## ", 1)[0]
+    assert "`ghcr.io/joehazurmoney/wd2l-ubi9@sha256:%s`" % ("a" * 64) in section
+    assert "not hardened, not FIPS" in section and "Deploy `ghcr.io/joehazurmoney/wd2l`" in section
+    assert "registry.example/ubi9/ubi:latest@sha256:" + "7" * 64 in section
+
 
 @needs_git
 def test_the_view_escapes_forge_text(tmp_path):
