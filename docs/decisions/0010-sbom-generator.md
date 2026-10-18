@@ -94,8 +94,8 @@ It leaves out wd2l, its files, and what the build changes (the base's pip is rem
   * one tool and one pin make the SBOM of every platform, and of the comparison image (#192).
 * **Harder:**
   * Syft's gaps are wd2l's to fill, and its tests have to follow Syft's output across updates;
-  * Syft runs with `-q`, which hides its own warnings, until #191 raises every tool's warnings
-    on the run.
+  * Syft's own warnings are raised on the run, as the scanners' are
+    ([ADR-0011](0011-vulnerability-scanners.md)).
 
 ## Action items
 

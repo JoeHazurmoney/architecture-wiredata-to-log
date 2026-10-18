@@ -462,7 +462,7 @@ def test_code_scanning_uploads_whatever_results_exist_unless_cancelled():
 def test_the_rescan_opens_issues_from_the_review_decision_and_fails_only_on_errors():
     # vuln_gate.py no longer fails on findings; --exit-code 3 marks "needs review" (#175).
     scan = jobs(read("image-rescan.yml"))["rescan"]
-    assert '--summary "summary-$v-$a.md" --exit-code 3 > /dev/null || rc=$?' in scan
+    assert '--summary "summary-$v-$a.md" --warnings "coverage-$v-$a.log" --exit-code 3 || rc=$?' in scan
     assert '[ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || exit "$rc"' in scan
     assert 'if [ "$rc" -eq 3 ]; then' in scan
     assert "exit $fail" not in scan
@@ -504,6 +504,60 @@ def test_one_version_parser():
             in jobs(read("image.yml"))["build"])
     with open(os.path.join(REPO, "packaging", "container", "build.sh"), encoding="utf-8") as f:
         assert 'VERSION="$(python3 "$REPO/packaging/release/versions.py" --get pep440)"' in f.read()
+
+
+def tool_runs(body: str):
+    """Each run of a scanner or Syft in a job, its continuation lines joined."""
+    joined = re.sub(r"\\\n\s*", " ", body)
+    return re.findall(r"packaging/ci/tool (?:grype|trivy|syft)\b[^\n]*", joined)
+
+
+SCAN_JOBS = (("image.yml", "lint"), ("image.yml", "vuln-scan"), ("image.yml", "sbom"),
+             ("image-rescan.yml", "rescan"))
+
+
+def test_no_scanner_or_syft_runs_quietly():
+    # --quiet hid upstream Trivy's "Unsupported os" on the Hardened image for every release (#191).
+    for name in ("image.yml", "image-rescan.yml", "publish.yml", "release.yml", "tests.yml"):
+        for job, body in jobs(read(name)).items():
+            for run in tool_runs(body):
+                assert not re.search(r"(^|\s)(-q|--quiet)(\s|$)", run), (name, job, run)
+
+
+def test_every_scanner_and_syft_log_is_kept_and_its_warnings_raised():
+    # Each tool's output goes to a log in the run's artifact, and tool_warnings.py raises every
+    # warning in it on the run, never failing it, unless tool-warnings.json expects it.
+    for name, job in SCAN_JOBS:
+        body = jobs(read(name))[job]
+        runs = tool_runs(body)
+        assert runs, (name, job)
+        (warn,) = [s for s in body.split("\n      - ") if "tool_warnings.py" in s]       # its step
+        assert "python3 packaging/container/tool_warnings.py --known packaging/container/tool-warnings.json" in warn
+        assert "if: ${{ !cancelled() }}" in warn, (name, job)
+        for run in runs:
+            m = re.search(r"2>&1 \| tee (?:-a )?(\S+)$", run)
+            assert m, (name, job, run)
+            log = m.group(1).strip('"')
+            # Named outright, or (the rescan: one log per release and platform) by a glob.
+            globbed = "for f in %s*.log; do" % log.split("$")[0]
+            assert "=%s" % log in warn or ("$" in log and globbed in warn), (name, job, log)
+
+
+def test_the_gate_s_coverage_warnings_go_through_the_reviewed_list():
+    scan = jobs(read("image.yml"))["vuln-scan"]
+    assert "--warnings vuln/coverage.log" in scan and "--log vuln-gate=vuln/coverage.log" in scan
+    assert scan.index("vuln_gate.py") < scan.index("tool_warnings.py")
+    rescan = jobs(read("image-rescan.yml"))["rescan"]
+    assert '--warnings "coverage-$v-$a.log"' in rescan
+    assert 'for f in coverage-*.log; do args+=(--log "vuln-gate=$f"); done' in rescan
+
+
+def test_the_weekly_pins_job_notices_when_red_hat_s_trivy_database_becomes_reachable():
+    # Red Hat's Trivy was dropped because its Hummingbird database refuses anonymous access
+    # (ADR-0011); when that changes, an issue says to revisit it.
+    pins = jobs(read("image-rescan.yml"))["pins"]
+    assert "packaging/ci/tool oras manifest fetch quay.io/hummingbird-ci/trivy-db:2" in pins
+    assert 'title="Red Hat\'s Trivy database for Hummingbird is reachable: revisit ADR-0011"' in pins
 
 
 def test_the_image_sbom_names_the_image_lists_every_file_and_is_completed_before_use():

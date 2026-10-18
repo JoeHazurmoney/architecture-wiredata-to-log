@@ -417,6 +417,7 @@ def test_a_scan_is_read_by_its_shape_and_shown_by_its_name(tmp_path):
     assert "<td>openssl-libs</td>" in row and "<td>3.5.10-0.1.hum1</td>" in row
     assert row.endswith("<td>trivy-redhat</td></tr>")
     assert "From the scans with trivy-redhat." in html
+    assert '<tr><td>trivy-redhat</td><td>not recognized</td><td class="ok-no">No</td>' in html
 
 
 def test_the_same_finding_from_two_scanners_is_one_row_found_by_both(tmp_path):
@@ -440,6 +441,24 @@ def test_findings_are_shown_on_their_component_and_unmatched_ones_are_counted(tm
     assert '<span class="muted">none</span>' in wd2l
     assert "1 of them name a component this SBOM doesn't list by that name and version." in html
     assert "1 High, 1 Low." in html
+
+
+def test_what_each_scan_covered_is_shown_beside_the_findings(tmp_path):
+    html = report(tmp_path, *one_view(tmp_path, ("grype", grype_doc()), ("trivy", trivy_doc())))
+    table = re.search(r'<table class="coverage">.*?</table>', html).group(0)
+    assert ('<tr><td>grype</td><td>hummingbird 20251124</td><td class="ok-yes">Yes</td>'
+            '<td class="ok-yes">Yes</td><td>No</td></tr>') in table
+    assert ('<tr><td>trivy</td><td>not recognized</td><td class="ok-no">No</td>'
+            '<td class="ok-yes">Yes</td><td>Yes</td></tr>') in table
+    assert "weren't checked" not in html
+
+
+def test_when_no_scan_covered_the_os_packages_the_page_says_so(tmp_path):
+    blind = grype_doc()
+    blind["distro"] = None
+    html = report(tmp_path, *one_view(tmp_path, ("grype", blind), ("trivy", trivy_doc())))
+    assert ("No scan covered the operating system's packages, so they weren't checked for known "
+            "vulnerabilities.") in html
 
 
 def test_a_view_with_no_scans_says_so(tmp_path):
