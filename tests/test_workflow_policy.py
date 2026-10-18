@@ -667,6 +667,39 @@ def test_the_release_carries_the_comparison_image_s_files_tab_and_record():
         assert part in body, part
 
 
+def test_each_image_s_rpms_get_their_header_digests_from_its_own_rpm_database():
+    # #190: a package-level hash on every RPM, read from the image that was built and scanned.
+    image = jobs(read("image.yml"))
+    for job, db in (("sbom", "/usr/lib/sysimage/rpm/rpmdb.sqlite"), ("ubi9-scan", "/var/lib/rpm/rpmdb.sqlite")):
+        body = image[job]
+        assert 'podman cp "$c:%s" rpmdb.sqlite' % db in body, job
+        assert body.index("rpmdb.sqlite") < body.index("--rpmdb rpmdb.sqlite"), job
+
+
+def test_the_release_has_sboms_of_its_rpms_and_python_package_and_their_tabs():
+    # #190: one SBOM per set, each in both formats, made from the release's own files; rpm2archive
+    # unpacks copies outside assets/, so no payload becomes a release file.
+    body = jobs(read("release.yml"))["assets"]
+    step = body[body.index("name: SBOMs of the RPMs and the Python package"):]
+    step = step[:step.index("\n      - ")]
+    for part in ('cp assets/*."$el".noarch.rpm "pkg-sbom/$el/"',
+                 'packaging/ci/tool ubi9 rpm2archive -n "/work/$r"',
+                 'python packaging/release/package_sbom.py rpms --set "$el" "${args[@]}"',
+                 '--out-spdx "assets/wd2l-$V-rpms-$el.spdx.json" --out-cdx "assets/wd2l-$V-rpms-$el.cdx.json"',
+                 'python packaging/release/package_sbom.py python --wheel "assets/wd2l-$V-py3-none-any.whl" --sdist "assets/wd2l-$V.tar.gz"',
+                 "--build-tools packaging/build-tools/requirements.txt",
+                 '--out-spdx "assets/wd2l-$V-python.spdx.json" --out-cdx "assets/wd2l-$V-python.cdx.json"',
+                 'created="$(date -u -d "@$(git log -1 --format=%ct)" +%Y-%m-%dT%H:%M:%SZ)"',
+                 '--created "$created"'):
+        assert part in step, part
+    assert "/work/assets" not in step and 'for r in "pkg-sbom/$el"/*.rpm' in step
+    report =body.index("python packaging/release/sbom_report.py")
+    assert body.index("name: SBOMs of the RPMs and the Python package") < report < body.index("manifest.py generate")
+    for view in ('--view "rpms-$el" "RPMs (${el^^})" "assets/wd2l-$V-rpms-$el.spdx.json" "assets/wd2l-$V-rpms-$el.cdx.json"',
+                 '--view python "Python package" "assets/wd2l-$V-python.spdx.json" "assets/wd2l-$V-python.cdx.json"'):
+        assert view in body, view
+
+
 def test_the_image_name_and_the_urls_agree_everywhere():
     # Written out in five files (#180): a change to one would push, sign, attest or rescan
     # under another name.

@@ -67,18 +67,34 @@ def load_view(vid: str, label: str, spdx: Dict[str, Any], cdx: Dict[str, Any],
     roots = {r["relatedSpdxElement"] for r in spdx.get("relationships") or []
              if r.get("spdxElementId") == "SPDXRef-DOCUMENT" and r.get("relationshipType") == "DESCRIBES"}
     files = {f["SPDXID"]: f for f in spdx.get("files") or []}
-    pkgs = [p for p in spdx.get("packages") or [] if p["SPDXID"] not in roots]
-    root = next((p for p in spdx.get("packages") or [] if p["SPDXID"] in roots), {})
+    every = {p["SPDXID"]: p for p in spdx.get("packages") or []}
+    described = [p for p in every.values() if p["SPDXID"] in roots]
+    # An image's SBOM describes the image, whose packages are its components. A package SBOM
+    # (package_sbom.py, #190) describes the packages themselves; what they need from the host, or
+    # were built with, are packages too, shown under each rather than counted as components.
+    image = any(p.get("primaryPackagePurpose") == "CONTAINER" for p in described)
+    pkgs = [p for p in every.values() if p["SPDXID"] not in roots] if image else described
+    root = described[0] if image and described else {}
     owner: Dict[str, List[Dict[str, Any]]] = {p["SPDXID"]: [] for p in pkgs}
+    links: Dict[str, Dict[str, List[str]]] = {p["SPDXID"]: {"needs": [], "depends": [], "built_with": []} for p in pkgs}
+
+    def called(p: Dict[str, Any]) -> str:
+        v = p.get("versionInfo")
+        return "%s %s" % (p.get("name"), v) if v and v not in NONE else str(p.get("name"))
+
     owned = set()
     deps = 0
     for r in spdx.get("relationships") or []:
-        t = r.get("relationshipType")
-        if t == "CONTAINS" and r["spdxElementId"] in owner and r["relatedSpdxElement"] in files:
-            owner[r["spdxElementId"]].append(files[r["relatedSpdxElement"]])
-            owned.add(r["relatedSpdxElement"])
+        t, a, b = r.get("relationshipType"), r.get("spdxElementId"), r.get("relatedSpdxElement")
+        if t == "CONTAINS" and a in owner and b in files:
+            owner[a].append(files[b])
+            owned.add(b)
         elif t in ("DEPENDS_ON", "DEPENDENCY_OF"):
             deps += 1
+            if t == "DEPENDS_ON" and a in links and b in every:
+                links[a]["depends" if b in owner else "needs"].append(called(every[b]))
+        elif t == "BUILD_DEPENDENCY_OF" and b in links and a in every:
+            links[b]["built_with"].append(called(every[a]))
 
     read = [read_scan(name, doc) for name, doc in scans]
     by_pkg: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
@@ -92,7 +108,11 @@ def load_view(vid: str, label: str, spdx: Dict[str, Any], cdx: Dict[str, Any],
         comps.append({"name": p.get("name"), "version": p.get("versionInfo"), "supplier": org(p.get("supplier")),
                       "license": lic if lic not in NONE else "", "purl": purl_of(p),
                       "verification": (p.get("packageVerificationCode") or {}).get("packageVerificationCodeValue"),
+                      "sha256": next((c["checksumValue"] for c in p.get("checksums") or []
+                                      if c.get("algorithm") == "SHA256"), ""),
                       "files": sorted(owner[p["SPDXID"]], key=lambda f: f["fileName"]),
+                      "file_name": p.get("packageFileName") or "",
+                      **{k: sorted(v) for k, v in links[p["SPDXID"]].items()},
                       "findings": sorted(by_pkg.pop(key, []), key=lambda f: SEVERITIES.index(f["severity"])
                                          if f["severity"] in SEVERITIES else 9)})
     unmatched = [f for fs in by_pkg.values() for f in fs]
@@ -100,7 +120,7 @@ def load_view(vid: str, label: str, spdx: Dict[str, Any], cdx: Dict[str, Any],
     info = spdx.get("creationInfo") or {}
     sha = next((c["checksumValue"] for c in root.get("checksums") or [] if c.get("algorithm") == "SHA256"), "")
     return {
-        "id": vid, "label": label, "assets": names, "scanners": [name for name, _ in scans],
+        "id": vid, "label": label, "assets": names, "scanners": [name for name, _ in scans], "is_image": image,
         "coverage": [c for _, c in read],
         "image": root.get("name"), "version": root.get("versionInfo"), "digest": sha,
         "created": info.get("created"), "creators": info.get("creators") or [], "comment": info.get("comment"),
@@ -140,9 +160,11 @@ def minimum_fields(p: Dict[str, Any]) -> List[Tuple[str, str, str]]:
          "%d between components, and each component's files" % p["deps"]),
         ("Author of the SBOM", "Yes" if orgs else "No", ", ".join(orgs) or "not stated"),
         ("Timestamp", "Yes" if p["created"] else "No", p["created"] or "not stated"),
-        ("Component hash", "Partly" if hashed and verified < n else rate(hashed, files_total),
-         "a SHA-256 on %s of %s files; %d of %d components carry a verification code over their files"
-         % ("{:,}".format(hashed), "{:,}".format(files_total), verified, n)),
+        # A component's own hash: its SHA-256 (an RPM's header digest, a wheel's), or SPDX's
+        # verification code over its files. Files' hashes alone are the files', not the component's.
+        ("Component hash", rate(sum(1 for c in comps if c["sha256"] or c["verification"]), n),
+         "a SHA-256 on %d of %d components, a verification code over their files on %d; a SHA-256 on %s of %s files"
+         % (sum(1 for c in comps if c["sha256"]), n, verified, "{:,}".format(hashed), "{:,}".format(files_total))),
         ("License", rate(lic, n), "%d of %d components" % (lic, n)),
         ("Tool", "Yes" if tools else "No", ", ".join(tools) or "not stated"),
         ("Generation context", "Yes" if p["comment"] or p["lifecycles"] else "No",
@@ -193,14 +215,18 @@ def view_html(p: Dict[str, Any], release: bool) -> str:
     out = ['<section class="view" id="view-%s" data-view="%s" data-label="%s">' % (
                esc(p["id"]), esc(p["id"]), esc(p["label"])),
            '<h2>%s</h2>' % esc(p["label"]),
-           '<dl class="facts">',
-           '<dt>Image</dt><dd><code>%s:%s</code></dd>' % (esc(p["image"]), esc(p["version"])),
-           '<dt>Digest</dt><dd><code class="wrap">sha256:%s</code></dd>' % esc(p["digest"]),
-           '<dt>Operating system</dt><dd>%s</dd>' % (esc("%s %s" % (p["os"].get("name"), p["os"].get("version")))
-                                                      + (" (supplier: %s)" % esc((p["os"].get("supplier") or {}).get("name"))
-                                                         if (p["os"].get("supplier") or {}).get("name") else "")
-                                                      if p["os"] else "not stated"),
-           '<dt>SBOM made</dt><dd>%s, by %s</dd>' % (esc(p["created"]), esc(", ".join(org(c) for c in p["creators"]))),
+           '<dl class="facts">']
+    if p["is_image"]:
+        out += ['<dt>Image</dt><dd><code>%s:%s</code></dd>' % (esc(p["image"]), esc(p["version"])),
+                '<dt>Digest</dt><dd><code class="wrap">sha256:%s</code></dd>' % esc(p["digest"]),
+                '<dt>Operating system</dt><dd>%s</dd>' % (
+                    esc("%s %s" % (p["os"].get("name"), p["os"].get("version")))
+                    + (" (supplier: %s)" % esc((p["os"].get("supplier") or {}).get("name"))
+                       if (p["os"].get("supplier") or {}).get("name") else "") if p["os"] else "not stated")]
+    else:
+        out.append('<dt>Packages</dt><dd>%s</dd>' % ", ".join(
+            esc(c["file_name"] or c["name"]) for c in comps))
+    out += ['<dt>SBOM made</dt><dd>%s, by %s</dd>' % (esc(p["created"]), esc(", ".join(org(c) for c in p["creators"]))),
            '<dt>The SBOM files</dt><dd><code>%s</code> (SPDX %s) and <code>%s</code> (CycloneDX %s)</dd>' % (
                esc(assets["spdx"]), esc((p["spdx_version"] or "").replace("SPDX-", "")), esc(assets["cdx"]), esc(p["cdx_version"])),
            '</dl>',
@@ -256,14 +282,24 @@ def view_html(p: Dict[str, Any], release: bool) -> str:
                    '<span class="name">%s</span><span>%s</span><span>%s</span><span>%s</span>'
                    '<span class="purl" title="%s">%s</span><span class="num">%d</span><span>%s</span></summary>%s</details>' % (
                        esc(search.lower()), esc(c["name"]), esc(c["version"]), esc(c["supplier"]), esc(c["license"]),
-                       esc(c["purl"]), esc(short_purl(c["purl"])), len(c["files"]), vulns, files_table(c["files"])))
+                       esc(c["purl"]), esc(short_purl(c["purl"])), len(c["files"]), vulns,
+                       relations_html(c) + files_table(c["files"])))
     out.append('</div>')
-    out += ['<details class="comp unowned" data-search="in no component"><summary class="row">'
-            '<span class="name">In no component</span><span></span><span></span><span></span>'
-            '<span>Operating-system and package-manager state, such as the package database</span>'
-            '<span class="num">%d</span><span></span></summary>%s</details>' % (len(p["unowned"]), files_table(p["unowned"])),
-            '</section>']
+    if p["unowned"]:
+        out.append('<details class="comp unowned" data-search="in no component"><summary class="row">'
+                   '<span class="name">In no component</span><span></span><span></span><span></span>'
+                   '<span>Operating-system and package-manager state, such as the package database</span>'
+                   '<span class="num">%d</span><span></span></summary>%s</details>' % (
+                       len(p["unowned"]), files_table(p["unowned"])))
+    out.append('</section>')
     return "\n".join(out)
+
+
+def relations_html(c: Dict[str, Any]) -> str:
+    """What a package needs from the host, depends on in this release, and was built with."""
+    return "".join('<p class="rel"><b>%s:</b> %s</p>' % (title, esc(", ".join(c[k])))
+                   for k, title in (("needs", "Needs from the host"), ("depends", "Depends on, in this release"),
+                                    ("built_with", "Built with")) if c.get(k))
 
 
 CSS = """
@@ -290,7 +326,7 @@ th{font-size:13px;color:var(--muted);font-weight:600}.check td:first-child{font-
 .comp>summary .name::before{content:"\\25B8  ";color:var(--muted)}.comp[open]>summary .name::before{content:"\\25BE  "}
 .comp>summary:hover{background:var(--card)}.comp[open]>summary{background:var(--card)}.name{font-weight:600;word-break:break-word}
 .purl{font:12px/1.4 ui-monospace,Consolas,"Courier New",monospace;word-break:break-all;color:var(--muted)}.num{text-align:right}
-.files{margin:4px 0 12px 24px;width:calc(100% - 24px)}.files td{font:12px/1.4 ui-monospace,Consolas,"Courier New",monospace;padding:3px 8px}
+.rel{margin:6px 0 2px 24px}.files{margin:4px 0 12px 24px;width:calc(100% - 24px)}.files td{font:12px/1.4 ui-monospace,Consolas,"Courier New",monospace;padding:3px 8px}
 .files .path{word-break:break-all}.files .hash{word-break:break-all;color:var(--muted);width:46%}
 .controls{display:none;flex-wrap:wrap;gap:12px;align-items:center;position:sticky;top:0;background:var(--bg);padding:10px 0;
 border-bottom:1px solid var(--line);z-index:1}.js .controls{display:flex}

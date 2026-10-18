@@ -34,7 +34,8 @@
 
 ## Decision
 
-* **Syft makes every SBOM wd2l ships,** run by digest from `packaging/ci/tools.Containerfile`.
+* **Syft makes the images' SBOMs,** run by digest from `packaging/ci/tools.Containerfile`. (The
+  release's own packages' SBOMs are written from their metadata: see the amendment below.)
   It meets each need above:
   * it reads `oci-archive:` offline;
   * it reads the RPM database on Hummingbird, an operating system upstream Trivy doesn't
@@ -97,7 +98,30 @@ It leaves out wd2l, its files, and what the build changes (the base's pip is rem
   * Syft's own warnings are raised on the run, as the scanners' are
     ([ADR-0011](0011-vulnerability-scanners.md)).
 
+## Amendment, 2026-10-18: the release's own packages (#190)
+
+* **Syft doesn't fit the RPMs or the Python package.** Run on 1.1.0's files:
+  * **On the RPM files:** one bare package per RPM in SPDX, with no supplier, no hash, no
+    files and no dependencies. Its own JSON format lists each RPM's files, but no output
+    records an RPM's `Requires`.
+  * **On the wheel and sdist files:** nothing.
+  * **Unpacked:** the wheel gives wd2l from its METADATA. The sdist gives wd2l, plus about 20
+    tools from requirement files in its source tree, which wd2l doesn't ship.
+* **So `package_sbom.py` writes those SBOMs from the packages' own metadata**
+  ([ADR-0009](0009-sbom-content.md)), with the standard library:
+  * each RPM's header, read by [`rpm_header.py`](../../packaging/container/rpm_header.py);
+  * its payload, unpacked by the pinned UBI 9 image's `rpm2archive`;
+  * the wheel's RECORD, and the sdist's members.
+
+  Everything Syft adds for an image (finding the packages in a filesystem) isn't needed for a
+  package, which describes itself.
+* **The images' RPMs** get their header digests from the same reader, applied to the image's
+  RPM database. Syft doesn't expose them.
+* **Consequence:** two generators to maintain, Syft for images and our script for packages.
+  Each has its tests, and a package whose files don't match its own metadata fails the release.
+
 ## Action items
 
 1. [x] Measured against the Trivy builds on 1.1.0's image (2026-10-17).
-2. [ ] Proven on 1.2.0rc1, then this ADR becomes Accepted.
+2. [x] The packages' SBOMs, measured against Syft on 1.1.0's files (2026-10-18, #190).
+3. [ ] Proven on 1.2.0rc1, then this ADR becomes Accepted.

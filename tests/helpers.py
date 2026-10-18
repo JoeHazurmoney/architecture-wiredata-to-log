@@ -238,3 +238,53 @@ def assert_rules_load_silently(rules):
         assert re.search(r" -k wd2l-[a-z-]+$", r), r
     b64 = [r for r in rules if "arch=b64" in r]
     assert sorted(r.replace("arch=b64", "arch=b32") for r in b64) == sorted(set(rules) - set(b64))
+
+
+INT16, INT32, STRING, STRING_ARRAY, I18N = 3, 4, 6, 8, 9
+
+
+def rpm_header_blob(tags):
+    """An RPM header's index and store, as rpm writes them: (tag, type, value), sorted by tag. As
+    an RPM database keeps it; an RPM file's headers add an 8-byte magic in front."""
+    index, store = b"", b""
+    for tag, typ, value in sorted(tags):
+        if typ == INT32:
+            store += b"\0" * (-len(store) % 4)           # 32-bit values are aligned
+            data, count = struct.pack(">%di" % len(value), *value), len(value)
+        elif typ == INT16:                               # file modes, unsigned 16-bit
+            store += b"\0" * (-len(store) % 2)
+            data, count = struct.pack(">%dH" % len(value), *value), len(value)
+        elif typ == STRING_ARRAY:
+            data, count = b"".join(v.encode() + b"\0" for v in value), len(value)
+        else:
+            data, count = value.encode() + b"\0", 1
+        index += struct.pack(">iiii", tag, typ, len(store), count)
+        store += data
+    return struct.pack(">II", len(tags), len(store)) + index + store
+
+
+def rpmdb_file(path, packages):
+    """An rpmdb.sqlite holding a header for each (name, version, release, arch, header SHA-256)."""
+    import sqlite3
+    con = sqlite3.connect(str(path))
+    con.execute("CREATE TABLE Packages (hnum INTEGER PRIMARY KEY AUTOINCREMENT, blob BLOB NOT NULL)")
+    for name, version, release, arch, digest in packages:
+        tags = [(1000, STRING, name), (1001, STRING, version), (1002, STRING, release)]
+        if arch:
+            tags.append((1022, STRING, arch))
+        if digest:
+            tags.append((273, STRING, digest))
+        con.execute("INSERT INTO Packages (blob) VALUES (?)", (rpm_header_blob(tags),))
+    con.commit()
+    con.close()
+    return str(path)
+
+
+def rpm_file(path, main, sig=((273, STRING, "ab" * 32),)):
+    """An RPM file: the 96-byte lead, the signature header padded to 8 bytes, the main header."""
+    magic = b"\x8e\xad\xe8\x01\0\0\0\0"
+    lead = b"\xed\xab\xee\xdb" + b"\0" * 92
+    s = magic + rpm_header_blob(list(sig))
+    with open(str(path), "wb") as f:
+        f.write(lead + s + b"\0" * (-len(s) % 8) + magic + rpm_header_blob(list(main)) + b"payload")
+    return str(path)

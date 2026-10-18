@@ -11,7 +11,7 @@ import zipfile
 
 import pytest
 
-from helpers import load_script
+from helpers import load_script, rpmdb_file
 
 en = load_script("packaging/container/sbom_enrich.py")
 
@@ -369,11 +369,55 @@ def write_json(path, doc):
     return str(path)
 
 
-def run_enrich(tmp_path, spdx, cdx):
+def run_enrich(tmp_path, spdx, cdx, *extra):
     wheel = make_wheel(tmp_path / "wd2l-9.9.0-py3-none-any.whl")
     s, c = write_json(tmp_path / "s.json", spdx), write_json(tmp_path / "c.json", cdx)
-    rc = en.main(["--spdx", s, "--cdx", c, "--wheel", wheel, "--arch", "amd64", "--repo-url", REPO_URL])
+    rc = en.main(["--spdx", s, "--cdx", c, "--wheel", wheel, "--arch", "amd64", "--repo-url", REPO_URL] + list(extra))
     return rc, json.loads((tmp_path / "s.json").read_text()), json.loads((tmp_path / "c.json").read_text())
+
+
+def test_with_the_image_s_rpm_database_each_rpm_carries_its_header_sha256_in_both_formats(tmp_path):
+    # #190: a package-level hash for each RPM, the one rpm itself records for that build.
+    db = rpmdb_file(tmp_path / "rpmdb.sqlite", [("openssl-libs", "3.5.9", "0.3.hum1", "x86_64", "ee" * 32),
+                                                ("gpg-pubkey", "1", "1", "(none)", None)])
+    rc, s, c = run_enrich(tmp_path, syft_spdx(), syft_cdx(), "--rpmdb", db)
+    assert rc == 0
+    ssl = package(s, SSL)
+    assert ssl["checksums"] == [{"algorithm": "SHA256", "checksumValue": "ee" * 32}]
+    assert "header" in ssl["comment"] and "rpm -q --qf '%{SHA256HEADER}'" in ssl["comment"]
+    cssl = next(x for x in c["components"] if x["name"] == "openssl-libs")
+    assert cssl["hashes"] == [{"alg": "SHA-256", "content": "ee" * 32}]
+    assert {"name": "wd2l:hash", "value": "the RPM header's SHA-256, from the image's RPM database"} in cssl["properties"]
+
+
+def test_rpm_s_signing_keys_have_no_arch_and_still_get_their_header_digest(tmp_path):
+    # Found on 1.1.0's image: rpm keeps each imported key as a gpg-pubkey "package", with no
+    # arch; Syft lists it with none in its package ID.
+    doc = syft_spdx()
+    doc["packages"].append(spdx_package("gpg-pubkey", "fd431d51-4ae0493b",
+                                        "pkg:rpm/redhat/gpg-pubkey@fd431d51-4ae0493b?distro=hummingbird-20251124",
+                                        "SPDXRef-Package-rpm-gpg-pubkey"))
+    db = rpmdb_file(tmp_path / "rpmdb.sqlite", [("openssl-libs", "3.5.9", "0.3.hum1", "x86_64", "ee" * 32),
+                                                ("gpg-pubkey", "fd431d51", "4ae0493b", None, "fe" * 32)])
+    rc, s, _c = run_enrich(tmp_path, doc, syft_cdx(), "--rpmdb", db)
+    assert rc == 0
+    assert package(s, "SPDXRef-Package-rpm-gpg-pubkey")["checksums"] == [{"algorithm": "SHA256", "checksumValue": "fe" * 32}]
+
+
+def test_wd2l_carries_the_sha256_of_the_wheel_it_was_installed_from(tmp_path):
+    rc, s, c = run_enrich(tmp_path, syft_spdx(), syft_cdx())
+    want = hashlib.sha256((tmp_path / "wd2l-9.9.0-py3-none-any.whl").read_bytes()).hexdigest()
+    w = package(s, WD2L)
+    assert rc == 0 and w["checksums"] == [{"algorithm": "SHA256", "checksumValue": want}]
+    assert w["packageFileName"] == "wd2l-9.9.0-py3-none-any.whl"
+    assert next(x for x in c["components"] if x["name"] == "wd2l")["hashes"] == [{"alg": "SHA-256", "content": want}]
+
+
+def test_an_rpm_the_image_s_database_doesn_t_have_is_a_gap(tmp_path, capsys):
+    db = rpmdb_file(tmp_path / "rpmdb.sqlite", [("glibc", "2.43", "9.2.hum1", "x86_64", "ee" * 32)])
+    rc, _s, _c = run_enrich(tmp_path, syft_spdx(), syft_cdx(), "--rpmdb", db)
+    assert rc == 1
+    assert "openssl-libs 3.5.9-0.3.hum1 (x86_64) isn't in the image's RPM database" in capsys.readouterr().out
 
 
 def test_the_command_completes_both_files_in_place(tmp_path, capsys):
@@ -531,6 +575,38 @@ def test_one_view_has_no_comparison(tmp_path):
     assert '<table class="compare">' not in report(tmp_path, *one_view(tmp_path))
 
 
+def test_a_package_sbom_view_shows_its_packages_their_files_and_what_they_need(tmp_path):
+    # #190: an RPM set's SBOM describes its RPMs, not an image; what they need from the host is
+    # listed under each, not counted as a component.
+    from test_package_sbom import rpm_sboms, two_rpms
+    rc, s, c = rpm_sboms(tmp_path, *two_rpms(tmp_path))
+    assert rc == 0
+    sp = write_json(tmp_path / "wd2l-9.9.0-rpms-el9.spdx.json", s)
+    cp = write_json(tmp_path / "wd2l-9.9.0-rpms-el9.cdx.json", c)
+    html = report(tmp_path, "--view", "rpms-el9", "RPMs (EL9)", sp, cp)
+    assert html.count('<details class="comp" role="listitem"') == 2
+    assert '<div class="tile"><b>2</b><span>components</span></div>' in html
+    sender = re.search(r'<details class="comp" role="listitem" data-search="wd2l-sender .*?</details>', html, re.S).group(0)
+    assert "<b>Needs from the host:</b> iproute" in sender
+    assert "<b>Depends on, in this release:</b> wd2l 9.9.0-1.el9" in sender
+    assert "/etc/wd2l/sender.env" in sender
+    base = re.search(r'<details class="comp" role="listitem" data-search="wd2l .*?</details>', html, re.S).group(0)
+    assert "<b>Needs from the host:</b> /bin/sh, python3 &gt;= 3.9" in base
+    assert "<dt>Image</dt>" not in html and "<dt>Packages</dt><dd>wd2l-9.9.0-1.el9.noarch.rpm" in html
+    assert '<tr><td>Component hash</td><td class="ok-yes">Yes</td>' in html
+
+
+def test_the_python_package_view_shows_what_built_it(tmp_path):
+    from test_package_sbom import python_sboms
+    rc, s, c, _w, _sd = python_sboms(tmp_path)
+    assert rc == 0
+    sp = write_json(tmp_path / "wd2l-9.9.0-python.spdx.json", s)
+    cp = write_json(tmp_path / "wd2l-9.9.0-python.cdx.json", c)
+    html = report(tmp_path, "--view", "python", "Python package", sp, cp)
+    assert html.count('<details class="comp" role="listitem"') == 2                    # the wheel and the sdist
+    assert html.count("<b>Built with:</b> build 1.6.1, setuptools 84.0.0") == 2
+
+
 def test_a_view_with_no_scans_says_so(tmp_path):
     html = report(tmp_path, *one_view(tmp_path))
     assert "No scan results were given for this view." in html
@@ -563,6 +639,23 @@ def test_the_field_check_rates_each_field_from_the_components(tmp_path):
     s, c = report_inputs(tmp_path, spdx=doc)                      # x keeps NOASSERTION: a gap
     partial = report(tmp_path, "--view", "amd64", "linux/amd64", s, c)
     assert '<tr><td>Supplier</td><td class="ok-partly">Partly</td><td>2 of 3 components</td></tr>' in partial
+
+
+def test_the_field_check_counts_component_level_hashes(tmp_path):
+    # #190: a component's own SHA-256 (an RPM's header digest, the wheel's), or SPDX's
+    # verification code over its files; file hashes alone aren't a component's.
+    doc = syft_spdx()
+    for p in doc["packages"]:
+        p.pop("packageVerificationCode", None)
+    dist_info, rec = en.record(make_wheel(tmp_path / "wd2l-9.9.0-py3-none-any.whl"))
+    en.complete_spdx(doc, dist_info, rec, "amd64", REPO_URL, rpms={}, wheel=("w.whl", "f" * 64))
+    package(doc, WD2L).pop("packageVerificationCode")          # only the wheel's SHA-256 left
+    s = write_json(tmp_path / "s.spdx.json", doc)
+    c = write_json(tmp_path / "c.cdx.json", syft_cdx())
+    html = report(tmp_path, "--view", "amd64", "linux/amd64", s, c)
+    row = re.search(r"<tr><td>Component hash</td>.*?</tr>", html).group(0)
+    assert '<td class="ok-partly">Partly</td>' in row
+    assert "a SHA-256 on 1 of 2 components, a verification code over their files on 0" in row
 
 
 def test_a_file_in_two_components_is_counted_once(tmp_path):

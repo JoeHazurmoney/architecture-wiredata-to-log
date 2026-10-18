@@ -373,8 +373,11 @@ jobs:
           { echo "### ${{ matrix.arch }}"; cat sbom/tool-warnings.md; } >> "$GITHUB_STEP_SUMMARY"
       - name: Complete the image's SBOMs (docs/decisions/0009-sbom-content.md); a gap fails the run
         run: |
+          # Each RPM's header SHA-256, from the image's own RPM database (#190).
+          IMG=$(podman load -q -i image/image.oci.tar | awk '{print $NF}')
+          c=$(podman create -q "$IMG"); podman cp "$c:/usr/lib/sysimage/rpm/rpmdb.sqlite" rpmdb.sqlite; podman rm -f "$c" > /dev/null
           python3 packaging/container/sbom_enrich.py --spdx sbom/wd2l.spdx.json --cdx sbom/wd2l.cdx.json --wheel "$WHEEL" --arch ${{ matrix.arch }} \
-            --repo-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+            --repo-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --rpmdb rpmdb.sqlite
       - run: python3 packaging/container/sbom_diff.py sbom/base.spdx.json sbom/wd2l.spdx.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -564,8 +567,11 @@ jobs:
           packaging/ci/tool syft oci-archive:/work/base.oci.tar -o spdx-json=/work/sbom/base.spdx.json 2>&1 | tee -a sbom/syft.log
       - name: Complete the image's SBOMs (docs/decisions/0009-sbom-content.md); a gap fails the run
         run: |
+          # Each RPM's header SHA-256, from the image's own RPM database (#190); UBI 9 keeps it in /var/lib/rpm.
+          IMG=$(podman load -q -i image/image.oci.tar | awk '{print $NF}')
+          c=$(podman create -q "$IMG"); podman cp "$c:/var/lib/rpm/rpmdb.sqlite" rpmdb.sqlite; podman rm -f "$c" > /dev/null
           python3 packaging/container/sbom_enrich.py --spdx sbom/wd2l.spdx.json --cdx sbom/wd2l.cdx.json --wheel "$WHEEL" --arch amd64 \
-            --repo-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+            --repo-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --rpmdb rpmdb.sqlite
       - run: python3 packaging/container/sbom_diff.py sbom/base.spdx.json sbom/wd2l.spdx.json
       - name: Every warning the scanners and Syft logged, and each scanner without data for the OS (ADR-0011)
         if: ${{ !cancelled() }}
