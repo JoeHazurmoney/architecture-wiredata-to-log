@@ -253,6 +253,56 @@ def test_record_refuses_an_index_without_arm64(tmp_path):
     assert any("arm64" in p and "index" in p for p in probs)
 
 
+def ubi9_evidence(tmp_path, att_digest=None):
+    """UBI 9's evidence, as base-verify writes it (#192): its index, the amd64 config, the Red Hat
+    signature, and the signed SBOM attestation on the amd64 image, with that SBOM. Red Hat
+    publishes no provenance for UBI 9."""
+    d, keys = tmp_path / "evidence-ubi9", tmp_path / "keys"
+    d.mkdir()
+    keys.mkdir(exist_ok=True)
+    (keys / "redhat-release3.pub").write_text("rh")
+    amd = "sha256:" + hashlib.sha256(b"ubi9 amd").hexdigest()
+    index = json.dumps({"manifests": [{"digest": amd, "platform": {"os": "linux", "architecture": "amd64"}},
+                                      {"digest": "sha256:" + "b" * 64,
+                                       "platform": {"os": "linux", "architecture": "arm64"}}]}).encode()
+    digest = "sha256:" + hashlib.sha256(index).hexdigest()
+    (d / "index-0.json").write_bytes(index)
+    (d / "config-0-amd64.json").write_text(json.dumps({"config": {"Labels": {"version": "9.8", "release": "1791888712"}}}))
+    (d / "signature-0.json").write_text(json.dumps([{"critical": {"image": {"docker-manifest-digest": digest}}}]))
+    sbom = {"spdxVersion": "SPDX-2.3", "packages": [{"name": "glibc"}, {"name": "python3"}]}
+    statement = {"_type": "https://in-toto.io/Statement/v0.1", "predicateType": "https://spdx.dev/Document",
+                 "subject": [{"name": "quay.io/redhat-prod/ubi9----ubi",
+                              "digest": {"sha256": (att_digest or amd).split(":")[1]}}], "predicate": sbom}
+    (d / "sbom-attestation-0-amd64.json").write_text(json.dumps({
+        "payloadType": "application/vnd.in-toto+json",
+        "payload": base64.b64encode(json.dumps(statement).encode()).decode()}) + "\n")
+    (d / "sbom-0-amd64.spdx.json").write_text(json.dumps(sbom))
+    for f in list(d.iterdir()):                  # both FROMs (build and runtime) are the one image
+        (d / f.name.replace("-0", "-1", 1)).write_bytes(f.read_bytes())
+    U9 = "registry.access.redhat.com/ubi9/ubi"
+    froms = [{"ref": "%s:latest@%s" % (U9, digest), "stage": "build", "name": U9, "tag": "latest", "digest": digest},
+             {"ref": "%s:latest@%s" % (U9, digest), "stage": None, "name": U9, "tag": "latest", "digest": digest}]
+    return froms, d, keys, amd
+
+
+def test_record_of_ubi9_names_its_signed_sbom_and_no_provenance(tmp_path):
+    froms, d, keys, amd = ubi9_evidence(tmp_path)
+    rec, probs = br.record(froms, str(d), str(keys), "now", "ubi9")
+    assert probs == []
+    img = rec["images"][1]
+    assert img["signature"]["verified"] and set(img["platforms"]) == {"amd64", "arm64"}
+    assert img["provenance"] is None and img["mirror"] is None
+    assert img["signed_sbom"]["subjects"] == [amd] and img["signed_sbom"]["key"] == "redhat-release3.pub"
+    assert set(img["sboms"]) == {"amd64"} and img["sboms"]["amd64"]["packages"] == 2
+    assert img["release"] == "1791888712" and list(rec["keys"]) == ["redhat-release3.pub"]
+
+
+def test_record_of_ubi9_refuses_a_signed_sbom_about_another_image(tmp_path):
+    froms, d, keys, _amd = ubi9_evidence(tmp_path, att_digest="sha256:" + "7" * 64)
+    _rec, probs = br.record(froms, str(d), str(keys), "now", "ubi9")
+    assert any("signed SBOM is about" in p for p in probs)
+
+
 import stat
 import shutil
 import zipfile
