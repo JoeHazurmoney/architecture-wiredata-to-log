@@ -193,7 +193,7 @@
         "required": ["name", "kind", "size", "sha256"],
         "properties": {
           "name": {"type": "string", "pattern": "^[^/\\\\]+$"},
-          "kind": {"enum": ["rpm", "wheel", "sdist", "oci-image", "sbom", "vulnerability-summary", "provenance",
+          "kind": {"enum": ["rpm", "wheel", "sdist", "oci-image", "sbom", "sbom-report", "vulnerability-summary", "provenance",
                             "base-image-record", "public-key", "source-bundle", "changelog",
                             "verification-script", "other"]},
           "size": {"type": "integer", "minimum": 0},

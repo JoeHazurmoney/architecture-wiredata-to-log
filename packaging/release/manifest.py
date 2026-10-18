@@ -256,7 +256,7 @@ def changes(commits: Sequence[Dict[str, Any]], forge: Any) -> Dict[str, Any]:
             "pull_requests_without_issue": [p["number"] for p in prs if not p["closes"]]}
 
 
-KINDS = ((r"\.rpm$", "rpm"), (r"\.whl$", "wheel"), (r"\.tar\.gz$", "sdist"), (r"-oci\.tar$", "oci-image"),
+KINDS = ((r"-sbom\.html$", "sbom-report"), (r"\.rpm$", "rpm"), (r"\.whl$", "wheel"), (r"\.tar\.gz$", "sdist"), (r"-oci\.tar$", "oci-image"),
          (r"\.(spdx|cdx)\.json$", "sbom"), (r"vuln-summary", "vulnerability-summary"),
          (r"provenance\.json$", "provenance"), (r"^base-image-record\.json$", "base-image-record"),
          (r"^cosign\.pub$", "public-key"), (r"\.bundle$", "source-bundle"),

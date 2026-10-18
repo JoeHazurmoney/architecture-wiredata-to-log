@@ -5,7 +5,9 @@ the FIPS variant of Red Hat Hardened Images. Every file can be checked offline, 
 enclave. Why it is built this way: [ADR-0004](decisions/0004-container-base-image.md) (the base
 image), [ADR-0005](decisions/0005-quadlet.md) (running it under systemd) and
 [ADR-0006](decisions/0006-release-artifacts-and-signing.md) (the artifacts and how they are
-signed), and [ADR-0008](decisions/0008-release-manifest.md) (the release manifest).
+signed), [ADR-0008](decisions/0008-release-manifest.md) (the release manifest), and
+[ADR-0009](decisions/0009-sbom-content.md) and [ADR-0010](decisions/0010-sbom-generator.md) (the
+SBOMs, and the tool that makes them).
 
 ## How a release is built
 
@@ -69,8 +71,14 @@ proves:
 * **security-review**: when a finding needs a decision, the run waits for a person
   ([Security review](#security-review)). A pull request or a release pauses; a push to `main`
   records without pausing.
-* **sbom**: the image's SBOM is the base's, plus wd2l, less pip
-  ([`sbom_diff.py`](../packaging/container/sbom_diff.py)).
+* **sbom**: Syft's SPDX and CycloneDX SBOMs of the image, every file listed and the image named
+  as it's published, completed by [`sbom_enrich.py`](../packaging/container/sbom_enrich.py):
+  * each component's supplier, by rule;
+  * wd2l's files, each checked against the wheel;
+  * the author and when the SBOM was made.
+
+  A gap fails the run ([ADR-0009](decisions/0009-sbom-content.md)). The image's SBOM must be the
+  base's, plus wd2l, less pip ([`sbom_diff.py`](../packaging/container/sbom_diff.py)).
 * **functional**: the lab passes with the sender and receiver running from the image.
 * **fips-tests**: the whole test suite passes in the FIPS builder image, again with none
   skipped.
@@ -90,8 +98,10 @@ proves:
   saved copies as a consumer would, the second time with no network.
 * **import-check**: on each platform's own runner, imports that platform's tar offline and
   pulls the image from the registry under Podman's signature policy.
-* **assets**: every release file; the changelog (git-cliff, [`cliff.toml`](../cliff.toml)), a
-  full-history `git bundle` of the source, and `verify-release`
+* **assets**: every release file; `wd2l-<version>-sbom.html`, both platforms' SBOMs and scan
+  results as one page that opens offline
+  ([`sbom_report.py`](../packaging/release/sbom_report.py)); the changelog (git-cliff,
+  [`cliff.toml`](../cliff.toml)), a full-history `git bundle` of the source, and `verify-release`
   ([`verify_release.py`](../packaging/release/verify_release.py)); then the **release manifest**
   ([`manifest.py`](../packaging/release/manifest.py),
   [ADR-0008](decisions/0008-release-manifest.md)), then `SHA256SUMS` over them all, made once for
@@ -432,9 +442,14 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
 * **A run's Summary tab.** Whether a security review is needed, then every finding and why
   (for example "review", "exception" or "passed: no fix yet"). A release carries the same table
   for each platform as `wd2l-<version>-vuln-summary-<arch>.md`.
+* **A release's SBOM page.** `wd2l-<version>-sbom.html` opens in any browser, offline. It has a tab
+  per platform: the image's components, each expanding to its files; each component's findings
+  and the scanner that found each one; and which of the fields an SBOM is expected to carry it
+  has. A dry run's copy is in its `release-assets` artifact. The page is a view: the SPDX and
+  CycloneDX files are the record.
 * **A run's artifacts.** `vuln-<arch>` holds Grype's and Trivy's full JSON and SARIF; `sbom-<arch>`
-  the SBOMs; `base-evidence` the base images' checks. GitHub deletes artifacts after the
-  retention period.
+  the completed SBOMs; `base-evidence` the base images' checks. GitHub deletes artifacts after
+  the retention period.
 * **GitHub's attestations page:**
   `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations` lists every
   attestation `attest.yml` made, with its subjects.
