@@ -39,8 +39,9 @@ MAX_DAYS = 90                      # an exception's life, at most (docs/releasin
 # the OS (Grype's distro, Trivy's OS family). Recognizing an OS isn't covering it: Red Hat's build
 # of Trivy recognizes Hummingbird, then checks it against a database with no advisories for it
 # (#191). Add an OS only with evidence, a scan of it that found a known advisory (ADR-0011).
-OS_DATA = {"grype": ("hummingbird",),      # 1.1.0: 7 findings in hummingbird:distro:hummingbird:rolling
-           "trivy": ()}
+OS_DATA = {"grype": ("hummingbird",       # 1.1.0: 7 findings in hummingbird:distro:hummingbird:rolling
+                     "redhat"),           # UBI 9.8 (#192): 527 findings in redhat:distro:redhat:9
+           "trivy": ("redhat",)}          # UBI 9.8 (#192): 534 findings in its os-pkgs result
 OS_TYPES = ("rpm", "deb", "apk")           # Grype's package types for an operating system's packages
 
 

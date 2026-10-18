@@ -141,6 +141,18 @@ def test_no_warnings_says_so(tmp_path, capsys):
     assert (tmp_path / "w.md").read_text() == "### Tool warnings\n\nNone.\n"
 
 
+def test_the_committed_list_expects_trivy_s_warnings_on_both_images(tmp_path, capsys):
+    # The Hardened image's three, and UBI 9's one (the comparison image, #192), as Trivy logs them.
+    ubi9 = ("2026-10-18T04:02:11Z\tWARN\tUsing severities from other vendors for some vulnerabilities. "
+            "Read https://trivy.dev/docs/v0.75/guide/scanner/vulnerability#severity-selection for details.\n")
+    p = tmp_path / "trivy.log"
+    p.write_text(TRIVY_LOG.replace("2026-10-18T03:12:55Z\tERROR\tfailed to analyze layer\tlayer=\"sha256:ab\"\n", "")
+                 + ubi9, encoding="utf-8")
+    tw.main(["--known", os.path.join(REPO, "packaging", "container", "tool-warnings.json"), "--today", TODAY,
+             "--log", "trivy=" + str(p)])
+    assert capsys.readouterr().out == ""
+
+
 def test_the_committed_list_is_valid_and_each_entry_names_its_reason():
     with open(os.path.join(REPO, "packaging", "container", "tool-warnings.json"), encoding="utf-8") as f:
         doc = json.load(f)

@@ -615,6 +615,10 @@ def test_the_same_finding_from_both_scanners_is_merged_with_both_named():
     ("grype", grype_doc(distro="wolfi"), "wolfi 20251124", False),         # an OS we have no evidence for
     ("trivy", trivy_real("none"), "", False),                              # upstream Trivy on Hummingbird
     ("trivy", trivy_real("hummingbird"), "hummingbird 20251124", False),   # Red Hat's build: recognized, no data
+    # UBI 9 (2026-10-18, the comparison image): Grype 527 findings in redhat:distro:redhat:9,
+    # Trivy 534 in its os-pkgs result.
+    ("grype", grype_doc(distro="redhat"), "redhat 20251124", True),
+    ("trivy", trivy_real("redhat"), "redhat 20251124", True),
 ])
 def test_coverage_is_judged_by_the_scanner_s_data_not_by_recognizing_the_os(name, doc, os_name, covered):
     c = vg.coverage(name, doc)
