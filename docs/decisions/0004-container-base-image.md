@@ -248,7 +248,7 @@ they change with every rebuild and every new disclosure.
   | With a fix available | 0 | 0 |
   | Shell, package manager | no | yes |
   | Crypto policy | FIPS | DEFAULT |
-  | Size | 116 MB | 315 MB |
+  | Size, unpacked | 127 MB | 315 MB |
 
 * **What it is.** `ghcr.io/joehazurmoney/wd2l-ubi9`, linux/amd64 only:
   * on `registry.access.redhat.com/ubi9/ubi`, pinned by digest, which Dependabot moves;
