@@ -7,7 +7,8 @@ image), [ADR-0005](decisions/0005-quadlet.md) (running it under systemd) and
 [ADR-0006](decisions/0006-release-artifacts-and-signing.md) (the artifacts and how they are
 signed), [ADR-0008](decisions/0008-release-manifest.md) (the release manifest), and
 [ADR-0009](decisions/0009-sbom-content.md) and [ADR-0010](decisions/0010-sbom-generator.md) (the
-SBOMs, and the tool that makes them).
+SBOMs, and the tool that makes them), and [ADR-0011](decisions/0011-vulnerability-scanners.md)
+(the vulnerability scanners).
 
 ## How a release is built
 
@@ -66,8 +67,13 @@ proves:
   exactly as in the wheel and nothing else beside them, and each command in `/usr/bin` runs
   its entry point with the image's Python
   ([`check_image.py`](../packaging/container/check_image.py)).
-* **vuln-scan**: Grype and Trivy record every finding
-  ([`vuln_gate.py`](../packaging/container/vuln_gate.py)). Findings never fail the build.
+* **vuln-scan**: Grype and Trivy record every finding, and what each scanner covered
+  ([`vuln_gate.py`](../packaging/container/vuln_gate.py),
+  [ADR-0011](decisions/0011-vulnerability-scanners.md)). Findings never fail the build. A
+  finding both scanners report is shown once, with both named. A finding one reported and the
+  other, covering that kind of package, didn't is listed for a person to look at. Every warning
+  either scanner logs, and each scanner without data for the image's OS, is raised on the run
+  ([Tool warnings](#tool-warnings)).
 * **security-review**: when a finding needs a decision, the run waits for a person
   ([Security review](#security-review)). A pull request or a release pauses; a push to `main`
   records without pausing.
@@ -447,9 +453,12 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
   and the scanner that found each one; and which of the fields an SBOM is expected to carry it
   has. A dry run's copy is in its `release-assets` artifact. The page is a view: the SPDX and
   CycloneDX files are the record.
-* **A run's artifacts.** `vuln-<arch>` holds Grype's and Trivy's full JSON and SARIF; `sbom-<arch>`
-  the completed SBOMs; `base-evidence` the base images' checks. GitHub deletes artifacts after
-  the retention period.
+* **The run's warnings.** Each tool warning, and each scanner without data for the image's OS,
+  is a warning annotation on the run and on the pull request, unless it's a known one
+  ([Tool warnings](#tool-warnings)). Every one, known or not, is in the step's summary.
+* **A run's artifacts.** `vuln-<arch>` holds Grype's and Trivy's full JSON, SARIF and logs;
+  `sbom-<arch>` the completed SBOMs and Syft's log; `base-evidence` the base images' checks. The
+  weekly rescan's are in `rescan`. GitHub deletes artifacts after the retention period.
 * **GitHub's attestations page:**
   `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations` lists every
   attestation `attest.yml` made, with its subjects.
@@ -507,6 +516,10 @@ a pin. The pins differ in what they reach:
 * **A pin is gone.** The rescan's `pins` job checks each week that every pinned digest still
   resolves, and opens "Pinned image digests no longer resolve" for any that doesn't. Re-pin that
   line.
+* **Red Hat's Trivy database becomes reachable.** The same job asks for it anonymously each week,
+  and opens "Red Hat's Trivy database for Hummingbird is reachable: revisit ADR-0011" when it
+  answers. Red Hat's build of Trivy is left out until then
+  ([ADR-0011](decisions/0011-vulnerability-scanners.md)).
 
 ### How to judge a new digest
 
@@ -567,6 +580,25 @@ a run for review again. Only the security owner approves one, and its `expires` 
 days out, counted from the scan: one that runs longer covers nothing and needs a review. An
 expired exception, used or not, needs a review again: every run pauses until it is renewed or
 removed.
+
+### Tool warnings
+
+Grype, Trivy and Syft never run quietly. After each one,
+[`tool_warnings.py`](../packaging/container/tool_warnings.py) raises every warning in its log as
+a warning annotation on the run, and never fails it. `vuln_gate.py`'s note of each scanner without
+data for the image's OS goes through it too
+([ADR-0011](decisions/0011-vulnerability-scanners.md)).
+
+[`packaging/container/tool-warnings.json`](../packaging/container/tool-warnings.json) lists the
+warnings that are expected on every run, so that a new one stands out:
+* **What an entry holds:** the tool, text from the warning, why it's expected, who reviewed it,
+  and an `expires` at most 90 days out.
+* **A listed warning** shows in the step's summary as "expected, reviewed until …", with no
+  annotation.
+* **An expired entry** raises its warning again, as a reminder to review it, then renew or
+  remove it.
+* **A new warning:** find out why the tool logged it. Fix the cause, or, if the cause is
+  understood and acceptable, add an entry with its reason, in a pull request.
 
 ## Keys
 

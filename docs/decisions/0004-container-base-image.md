@@ -49,6 +49,9 @@ Constraints:
   differs from the base's by one byte.
 * **The image removes pip.** The base installs pip with `ensurepip`, outside the RPM database.
   wd2l installs nothing at run time, so the image keeps no package installer.
+* **Two scanners check it,** Grype and Trivy. On this base only Grype's data covers the OS
+  packages. [ADR-0011](0011-vulnerability-scanners.md) records what each covers, and when a
+  finding or a gap needs a security review.
 
 ```mermaid
 flowchart LR
