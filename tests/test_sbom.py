@@ -575,6 +575,38 @@ def test_one_view_has_no_comparison(tmp_path):
     assert '<table class="compare">' not in report(tmp_path, *one_view(tmp_path))
 
 
+def test_a_package_sbom_view_shows_its_packages_their_files_and_what_they_need(tmp_path):
+    # #190: an RPM set's SBOM describes its RPMs, not an image; what they need from the host is
+    # listed under each, not counted as a component.
+    from test_package_sbom import rpm_sboms, two_rpms
+    rc, s, c = rpm_sboms(tmp_path, *two_rpms(tmp_path))
+    assert rc == 0
+    sp = write_json(tmp_path / "wd2l-9.9.0-rpms-el9.spdx.json", s)
+    cp = write_json(tmp_path / "wd2l-9.9.0-rpms-el9.cdx.json", c)
+    html = report(tmp_path, "--view", "rpms-el9", "RPMs (EL9)", sp, cp)
+    assert html.count('<details class="comp" role="listitem"') == 2
+    assert '<div class="tile"><b>2</b><span>components</span></div>' in html
+    sender = re.search(r'<details class="comp" role="listitem" data-search="wd2l-sender .*?</details>', html, re.S).group(0)
+    assert "<b>Needs from the host:</b> iproute" in sender
+    assert "<b>Depends on, in this release:</b> wd2l 9.9.0-1.el9" in sender
+    assert "/etc/wd2l/sender.env" in sender
+    base = re.search(r'<details class="comp" role="listitem" data-search="wd2l .*?</details>', html, re.S).group(0)
+    assert "<b>Needs from the host:</b> /bin/sh, python3 &gt;= 3.9" in base
+    assert "<dt>Image</dt>" not in html and "<dt>Packages</dt><dd>wd2l-9.9.0-1.el9.noarch.rpm" in html
+    assert '<tr><td>Component hash</td><td class="ok-yes">Yes</td>' in html
+
+
+def test_the_python_package_view_shows_what_built_it(tmp_path):
+    from test_package_sbom import python_sboms
+    rc, s, c, _w, _sd = python_sboms(tmp_path)
+    assert rc == 0
+    sp = write_json(tmp_path / "wd2l-9.9.0-python.spdx.json", s)
+    cp = write_json(tmp_path / "wd2l-9.9.0-python.cdx.json", c)
+    html = report(tmp_path, "--view", "python", "Python package", sp, cp)
+    assert html.count('<details class="comp" role="listitem"') == 2                    # the wheel and the sdist
+    assert html.count("<b>Built with:</b> build 1.6.1, setuptools 84.0.0") == 2
+
+
 def test_a_view_with_no_scans_says_so(tmp_path):
     html = report(tmp_path, *one_view(tmp_path))
     assert "No scan results were given for this view." in html
