@@ -506,6 +506,21 @@ def test_one_version_parser():
         assert 'VERSION="$(python3 "$REPO/packaging/release/versions.py" --get pep440)"' in f.read()
 
 
+def test_the_image_sbom_names_the_image_lists_every_file_and_is_completed_before_use():
+    # #188: Syft's SBOM named no suppliers, didn't link wd2l's own files and had a random
+    # namespace. The sbom job names the image and its version, lists every file, and completes
+    # both SBOMs (sbom_enrich.py, which fails on a gap) before the diff and the upload.
+    body = jobs(read("image.yml"))["sbom"]
+    assert "name: dist" in body
+    assert "SYFT_FILE_METADATA_SELECTION: all" in body
+    image = re.search(r"TOOL_ENV=SYFT_FILE_METADATA_SELECTION packaging/ci/tool syft "
+                      r"oci-archive:/work/image/image\.oci\.tar[^\n]*\\\n[^\n]*", body).group(0)
+    assert '--source-name ghcr.io/joehazurmoney/wd2l --source-version "$V"' in image
+    enrich = body.index('python3 packaging/container/sbom_enrich.py --spdx sbom/wd2l.spdx.json '
+                        '--cdx sbom/wd2l.cdx.json --wheel "$WHEEL" --arch ${{ matrix.arch }}')
+    assert body.index(image) < enrich < body.index("sbom_diff.py") < body.index("upload-artifact")
+
+
 def test_the_image_name_and_the_urls_agree_everywhere():
     # Written out in five files (#180): a change to one would push, sign, attest or rescan
     # under another name.

@@ -293,14 +293,27 @@ jobs:
         with:
           name: image-${{ matrix.arch }}
           path: image
-      - name: SBOMs of the image and of its base (the same platform)
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: SBOMs of the image (every file, named as published) and of its base (the same platform)
+        env:
+          SYFT_FILE_METADATA_SELECTION: all
         run: |
           mkdir -p sbom
-          packaging/ci/tool syft oci-archive:/work/image/image.oci.tar -q \
+          WHEEL=$(ls dist/wd2l-*-py3-none-any.whl); V=${WHEEL#dist/wd2l-}; V=${V%-py3-none-any.whl}
+          echo "WHEEL=$WHEEL" >> "$GITHUB_ENV"
+          TOOL_ENV=SYFT_FILE_METADATA_SELECTION packaging/ci/tool syft oci-archive:/work/image/image.oci.tar -q \
+            --source-name ghcr.io/joehazurmoney/wd2l --source-version "$V" \
             -o spdx-json=/work/sbom/wd2l.spdx.json -o cyclonedx-json=/work/sbom/wd2l.cdx.json
           BASE=$(python3 packaging/container/check_containerfile.py --base)
           podman pull -q --arch ${{ matrix.arch }} "$BASE" && podman save -q --format oci-archive -o base.oci.tar "$BASE"
           packaging/ci/tool syft oci-archive:/work/base.oci.tar -q -o spdx-json=/work/sbom/base.spdx.json
+      - name: Complete the image's SBOMs (docs/decisions/0009-sbom-content.md); a gap fails the run
+        run: |
+          python3 packaging/container/sbom_enrich.py --spdx sbom/wd2l.spdx.json --cdx sbom/wd2l.cdx.json --wheel "$WHEEL" --arch ${{ matrix.arch }} \
+            --repo-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
       - run: python3 packaging/container/sbom_diff.py sbom/base.spdx.json sbom/wd2l.spdx.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
