@@ -2,6 +2,8 @@ import json
 import os
 import subprocess
 
+import pytest
+
 from helpers import load_script
 
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -428,9 +430,13 @@ vg = load_script("packaging/container/vuln_gate.py")
 TODAY = "2026-10-07"
 
 
-def grype_doc(*matches):
-    return {"matches": [{"vulnerability": {"id": i, "severity": s, "fix": {"state": st, "versions": ["9"]}},
-                         "artifact": {"name": p, "version": "1"}} for i, s, st, p in matches]}
+def grype_doc(*matches, distro="hummingbird"):
+    """Grype's JSON: it names the OS it found (null if none), and each match's package type."""
+    return {"matches": [{"vulnerability": {"id": i, "severity": s,
+                                           "fix": {"state": st, "versions": ["9"] if st == "fixed" else []}},
+                         "artifact": {"name": p, "version": "1", "type": "rpm"}} for i, s, st, p in matches],
+            "distro": {"name": distro, "version": "20251124", "idLike": ["fedora", "redhat"]} if distro else None,
+            "descriptor": {"name": "grype", "version": "0.119.0"}}
 
 
 def trivy_doc(vulns=(), secrets=()):
@@ -558,6 +564,130 @@ def test_the_summary_lists_every_finding_and_why_it_passed_the_gate():
     assert every[1].endswith("| passed: no fix yet |")
     assert every[2].endswith("| passed: below High |")
     assert every[3].endswith("| passed: below High |")
+
+
+def trivy_real(os_family="none", os_pkgs=(), lang_pkgs=()):
+    """Trivy's JSON as 0.75 writes it: the OS it recognized ("none" if none), then one result per
+    kind of package: (id, severity, package, version, fixed version)."""
+    def vulns(rows):
+        return [{"VulnerabilityID": i, "Severity": s, "PkgName": p, "InstalledVersion": v, "FixedVersion": f}
+                for i, s, p, v, f in rows]
+    results = [{"Target": "Python", "Class": "lang-pkgs", "Type": "python-pkg", "Vulnerabilities": vulns(lang_pkgs)}]
+    if os_family != "none":
+        results.insert(0, {"Target": "img (%s 1)" % os_family, "Class": "os-pkgs", "Type": os_family,
+                           "Vulnerabilities": vulns(os_pkgs)})
+    return {"SchemaVersion": 2, "ArtifactName": "/work/image/oci", "Results": results,
+            "Metadata": {"OS": {"Family": os_family, "Name": "20251124" if os_family != "none" else ""}}}
+
+
+def grype_python(*matches):
+    """Grype finding language packages: (id, severity, package, version, fix state)."""
+    doc = grype_doc()
+    doc["matches"] = [{"vulnerability": {"id": i, "severity": s,
+                                         "fix": {"state": st, "versions": ["9"] if st == "fixed" else []}},
+                       "artifact": {"name": p, "version": v, "type": "python"}} for i, s, p, v, st in matches]
+    return doc
+
+
+def test_each_finding_has_a_kind():
+    g = vg.grype_findings(grype_python(("CVE-1", "High", "urllib3", "2.7.0", "fixed")))
+    g += vg.grype_findings(grype_doc(("CVE-2", "High", "fixed", "glibc")))
+    t = vg.trivy_findings(trivy_real("redhat", os_pkgs=[("CVE-3", "HIGH", "glibc", "1", "2")],
+                                     lang_pkgs=[("CVE-4", "LOW", "pip", "26.2", "")]))
+    t += vg.trivy_findings(trivy_doc(secrets=["aws-access-key-id"]))
+    assert [f["kind"] for f in g + t] == ["language", "os", "os", "language", "secret"]
+
+
+def test_the_same_finding_from_both_scanners_is_merged_with_both_named():
+    # Grype names an RPM's epoch and Trivy doesn't; the more severe rating and any fix win.
+    found = vg.grype_findings(grype_doc(("CVE-1", "Medium", "not-fixed", "openssl-libs")))
+    found[0]["version"] = "1:3.5.9-0.3.hum1"
+    found += vg.trivy_findings(trivy_real("redhat", os_pkgs=[("CVE-1", "HIGH", "openssl-libs", "3.5.9-0.3.hum1",
+                                                              "3.5.10-0.1.hum1")]))
+    (m,) = vg.merge(found)
+    assert m["scanners"] == ["grype", "trivy"] and m["scanner"] == "grype, trivy"
+    assert (m["severity"], m["fixable"], m["fixed_in"]) == ("HIGH", True, "3.5.10-0.1.hum1")
+
+
+@pytest.mark.parametrize("name, doc, os_name, covered", [
+    ("grype", grype_doc(), "hummingbird 20251124", True),
+    ("grype", grype_doc(distro=None), "", False),                          # no OS found
+    ("grype", grype_doc(distro="wolfi"), "wolfi 20251124", False),         # an OS we have no evidence for
+    ("trivy", trivy_real("none"), "", False),                              # upstream Trivy on Hummingbird
+    ("trivy", trivy_real("hummingbird"), "hummingbird 20251124", False),   # Red Hat's build: recognized, no data
+])
+def test_coverage_is_judged_by_the_scanner_s_data_not_by_recognizing_the_os(name, doc, os_name, covered):
+    c = vg.coverage(name, doc)
+    assert (c["scanner"], c["os"], c["os_packages"]) == (name, os_name, covered)
+    assert c["language_packages"] is True and c["secrets"] is (name == "trivy")
+
+
+def test_no_scanner_covering_the_os_packages_needs_a_review(tmp_path):
+    e = tmp_path / "e.json"
+    e.write_text(json.dumps({"exceptions": []}))
+    args = ["--exceptions", str(e), "--today", TODAY, "--summary", str(tmp_path / "s.md"),
+            "--predicate", str(tmp_path / "p.json")]
+    for name, doc in (("g", grype_doc(distro=None)), ("t", trivy_real("none"))):
+        (tmp_path / (name + ".json")).write_text(json.dumps(doc))
+    assert vg.main(args + ["--grype", str(tmp_path / "g.json"), "--trivy", str(tmp_path / "t.json"),
+                           "--exit-code", "3"]) == 3
+    pred = json.loads((tmp_path / "p.json").read_text())
+    assert pred["gate"]["review_needed"] is True and pred["gate"]["uncovered_os"] is True
+    assert "No scanner covered the operating system's packages" in (tmp_path / "s.md").read_text()
+    (tmp_path / "g.json").write_text(json.dumps(grype_doc()))               # Grype covers them
+    assert vg.main(args + ["--grype", str(tmp_path / "g.json"), "--trivy", str(tmp_path / "t.json"),
+                           "--exit-code", "3"]) == 0
+    pred = json.loads((tmp_path / "p.json").read_text())
+    assert pred["gate"]["uncovered_os"] is False
+    assert [(c["scanner"], c["os_packages"]) for c in pred["coverage"]] == [("grype", True), ("trivy", False)]
+
+
+def test_a_finding_one_scanner_missed_though_it_covers_that_kind_is_a_disagreement():
+    # The oldest base: Trivy found pip's vendored urllib3, which Syft (so Grype) never catalogs;
+    # Grype found an RPM finding Trivy can't see, which is no disagreement: Trivy has no OS data.
+    g = grype_doc(("CVE-2026-107708", "Medium", "fixed", "krb5-libs"))
+    t = trivy_real("none", lang_pkgs=[("CVE-2026-97687", "HIGH", "urllib3", "2.7.0", "2.8.0")])
+    covers = [vg.coverage("grype", g), vg.coverage("trivy", t)]
+    merged = vg.merge(vg.grype_findings(g) + vg.trivy_findings(t))
+    (d,) = vg.disagreements(merged, covers)
+    assert (d["id"], d["package"], d["found_by"], d["missed_by"]) == ("CVE-2026-97687", "urllib3", ["trivy"], ["grype"])
+
+
+def test_annotations_name_each_scanner_without_os_data(tmp_path, capsys):
+    for name, doc in (("g", grype_doc()), ("t", trivy_real("none")), ("e", {"exceptions": []})):
+        (tmp_path / (name + ".json")).write_text(json.dumps(doc))
+    vg.main(["--grype", str(tmp_path / "g.json"), "--trivy", str(tmp_path / "t.json"), "--exceptions",
+             str(tmp_path / "e.json"), "--today", TODAY, "--summary", str(tmp_path / "s.md"), "--annotate"])
+    out = capsys.readouterr().out
+    assert out == ("::warning title=trivy::trivy has no advisory data for this image's operating system "
+                   "(not recognized), so it checked only language packages and secrets. grype covered the "
+                   "OS packages.\n")
+
+
+def test_the_summary_shows_coverage_found_by_and_disagreements():
+    g = grype_doc(("CVE-1", "High", "not-fixed", "krb5-libs"))
+    t = trivy_real("none", lang_pkgs=[("CVE-2", "HIGH", "urllib3", "2.7.0", "2.8.0")])
+    covers = [vg.coverage("grype", g), vg.coverage("trivy", t)]
+    merged = vg.merge(vg.grype_findings(g) + vg.trivy_findings(t))
+    gated, excepted = vg.gate(merged, [])
+    text = vg.summary(gated, excepted, [], {"grype": 1, "trivy": 1}, merged, coverage=covers,
+                      disagreements=vg.disagreements(merged, covers))
+    assert "| grype | hummingbird 20251124 | yes | yes | no |" in text
+    assert "| trivy | not recognized | **no** | yes | yes |" in text
+    assert "**Found by one scanner, missed by another that covers it**" in text
+    assert "| CVE-2 | urllib3 | 2.7.0 | trivy | grype |" in text
+    assert "| Found by | ID | Package | Version | Severity | Fixed in | Gate |" in text
+
+
+def test_without_a_summary_file_the_summary_goes_to_stdout_and_with_one_it_doesnt(tmp_path, capsys):
+    for name, doc in (("g", grype_doc()), ("t", trivy_real("none")), ("e", {"exceptions": []})):
+        (tmp_path / (name + ".json")).write_text(json.dumps(doc))
+    args = ["--grype", str(tmp_path / "g.json"), "--trivy", str(tmp_path / "t.json"),
+            "--exceptions", str(tmp_path / "e.json"), "--today", TODAY]
+    vg.main(args)
+    assert capsys.readouterr().out.startswith("### Vulnerability scan: no review needed")
+    vg.main(args + ["--summary", str(tmp_path / "s.md")])
+    assert capsys.readouterr().out == ""
 
 
 def test_the_committed_exceptions_file_is_valid():

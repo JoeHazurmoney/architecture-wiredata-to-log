@@ -22,7 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from vuln_gate import MAX_DAYS  # noqa: E402  (the same 90-day limit as a vulnerability exception)
+from vuln_gate import MAX_DAYS, annotation  # noqa: E402  (the same 90-day limit as an exception)
 
 FIELDS = ("tool", "text", "reason", "expires", "approved_by")
 CAP = 10                                    # annotations GitHub keeps for one step
@@ -67,12 +67,6 @@ def load_known(doc: Dict[str, Any], today: str) -> Tuple[List[Dict[str, Any]], L
             continue
         valid.append(dict(e, expired=expires < t))
     return valid, probs
-
-
-def annotation(title: str, message: str) -> str:
-    def data(s: str) -> str:
-        return s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-    return "::warning title=%s::%s" % (data(title).replace(":", "%3A").replace(",", "%2C"), data(message))
 
 
 def cell(s: str) -> str:
