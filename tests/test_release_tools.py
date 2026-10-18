@@ -113,6 +113,12 @@ def test_notes_name_every_asset_the_image_and_its_bases():
     assert "Pre-release" not in text
 
 
+def test_notes_point_to_the_readable_sbom():
+    text = notes.notes(versions.names("0.3.0"), **ARGS)
+    line = next(l for l in text.splitlines() if "`wd2l-0.3.0-sbom.html`" in l)
+    assert "offline" in line and "SPDX and CycloneDX" in line
+
+
 def test_prerelease_notes_say_so_and_dry_runs_have_no_digest():
     text = notes.notes(versions.names("0.3.0rc1"), **dict(ARGS, digest=""))
     assert text.startswith("> **Pre-release**") and "not published (dry run)" in text

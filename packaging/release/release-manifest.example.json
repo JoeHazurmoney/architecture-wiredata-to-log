@@ -51,7 +51,9 @@
   {"name": "wd2l-1.1.0-changelog.md", "kind": "changelog", "size": 6123,
    "sha256": "5c9e1a7b3d2f4e6a8c0b1d3f5e7a9c2b4d6f8e0a1c3b5d7f9e2a4c6b8d0f1e3a"},
   {"name": "wd2l-1.1.0-image-amd64.spdx.json", "kind": "sbom", "size": 912034,
-   "sha256": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}
+   "sha256": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"},
+  {"name": "wd2l-1.1.0-sbom.html", "kind": "sbom-report", "size": 1729488,
+   "sha256": "7a3c5e9b1d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a4c"}
  ],
  "image": {"name": "ghcr.io/joehazurmoney/wd2l", "tags": ["1.1.0", "1.1"],
            "index_digest": "sha256:decdd94e0038de2c7899f7b960fdc9691da9c45d373bf332f8088a839c6da40b",

@@ -135,6 +135,15 @@ jobs:
           # files that way first, so SHA256SUMS lists what a download gets. Only pre-release
           # RPMs have one (X.Y.Z~rcN); the package inside keeps its version.
           for f in assets/*~*; do if [ -e "$f" ]; then mv -- "$f" "${f//\~/.}"; fi; done
+      - name: The SBOMs and their scans as one readable page (docs/decisions/0009-sbom-content.md)
+        run: |
+          views=()
+          for a in amd64 arm64; do
+            views+=(--view "$a" "linux/$a" "assets/wd2l-$V-image-$a.spdx.json" "assets/wd2l-$V-image-$a.cdx.json"
+                    --scan "$a" "grype=vuln-$a/grype.json" --scan "$a" "trivy=vuln-$a/trivy.json")
+          done
+          python packaging/release/sbom_report.py --version "$V" --commit "$(git rev-parse HEAD)" \
+            --repo-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" --out "assets/wd2l-$V-sbom.html" "${views[@]}"
       - name: The changelog, the source bundle and verify-release, to retrieve the release offline
         run: |
           # git-cliff (cliff.toml): the changes since the previous final release, or all of

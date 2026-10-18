@@ -239,7 +239,7 @@ def test_an_issue_closed_by_two_prs_is_dated_by_the_first_and_released_with_the_
     ("wd2l-1.0.0-provenance.json", "provenance"), ("base-image-record.json", "base-image-record"),
     ("cosign.pub", "public-key"), ("wd2l-1.0.0-source.bundle", "source-bundle"),
     ("wd2l-1.0.0-changelog.md", "changelog"), ("wd2l-1.0.0-verify-release.py", "verification-script"),
-    ("notes.txt", "other"),
+    ("wd2l-1.0.0-sbom.html", "sbom-report"), ("notes.txt", "other"),
 ])
 def test_each_release_file_gets_a_kind(name, kind):
     assert m.kind(name) == kind
