@@ -1,6 +1,6 @@
 # ADR-0009: What the image's SBOMs say, and a page a person can read
 
-**Status:** Proposed (to be accepted once proven on 1.2.0rc1)
+**Status:** Accepted (2026-10-18, proven on 1.2.0rc1 and 1.2.0rc2)
 **Date:** 2026-10-17
 **Deciders:** System owner. The security owner.
 
@@ -175,6 +175,6 @@ need a renderer in the pipeline.
 ## Action items
 
 1. [x] The enrichment, the page, their tests, and both in the release (#188, #189).
-2. [ ] Proven on 1.2.0rc1, then this ADR becomes Accepted.
+2. [x] Proven on 1.2.0rc1 and 1.2.0rc2 (2026-10-18); Accepted.
 3. [x] The UBI 9 image's tab (#192).
 4. [x] The RPMs', wheel's and sdist's SBOMs, and package hashes (#190).
