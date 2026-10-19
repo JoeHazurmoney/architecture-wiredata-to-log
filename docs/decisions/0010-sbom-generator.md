@@ -1,6 +1,6 @@
 # ADR-0010: Syft makes the SBOMs
 
-**Status:** Proposed (to be accepted once proven on 1.2.0rc1)
+**Status:** Accepted (2026-10-18, proven on 1.2.0rc1 and 1.2.0rc2)
 **Date:** 2026-10-17
 **Deciders:** System owner. The security owner.
 
@@ -124,4 +124,4 @@ It leaves out wd2l, its files, and what the build changes (the base's pip is rem
 
 1. [x] Measured against the Trivy builds on 1.1.0's image (2026-10-17).
 2. [x] The packages' SBOMs, measured against Syft on 1.1.0's files (2026-10-18, #190).
-3. [ ] Proven on 1.2.0rc1, then this ADR becomes Accepted.
+3. [x] Proven on 1.2.0rc1 and 1.2.0rc2 (2026-10-18); Accepted.
