@@ -118,22 +118,22 @@ jobs:
         with:
           pattern: vuln-*
       # amd64 keeps the original categories, so its alert history carries on.
-      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: ${{ hashFiles('vuln-amd64/grype.sarif') != '' }}
         with:
           sarif_file: vuln-amd64/grype.sarif
           category: grype-image
-      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: ${{ hashFiles('vuln-amd64/trivy.sarif') != '' }}
         with:
           sarif_file: vuln-amd64/trivy.sarif
           category: trivy-image
-      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: ${{ hashFiles('vuln-arm64/grype.sarif') != '' }}
         with:
           sarif_file: vuln-arm64/grype.sarif
           category: grype-image-arm64
-      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: ${{ hashFiles('vuln-arm64/trivy.sarif') != '' }}
         with:
           sarif_file: vuln-arm64/trivy.sarif
