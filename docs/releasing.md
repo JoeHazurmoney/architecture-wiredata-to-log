@@ -138,6 +138,8 @@ proves:
   * **What the manifest lists:**
     * the commit;
     * every pull request since the previous final release, and the issues it resolves;
+    * the lines added, modified and deleted since that release, per file type, with a link that
+      compares the two commits (a plain count, not SLOC);
     * known open bugs;
     * every file with its SHA-256;
     * the image and its bases;

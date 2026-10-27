@@ -47,6 +47,10 @@ def _drop(key):
     lambda d: d["changes"]["issues_resolved"][0].update(category="feature"),
     lambda d: d["release"].pop("dry_run"),
     lambda d: d.update(schema_version=2),
+    lambda d: d["changes"]["diff"].update(head="00206cd"),                   # a short SHA (#224)
+    lambda d: d["changes"]["diff"]["lines"].update(added=-1),
+    lambda d: d["changes"]["diff"]["by_type"][0].update(sloc=1),
+    lambda d: d["changes"]["diff"].update(compare_url="http://example.com"),
 ])
 def test_the_schema_refuses_a_malformed_manifest(change):
     pytest.importorskip("fastjsonschema")
@@ -97,6 +101,16 @@ def test_a_base_image_may_ship_more_platforms_than_ours():
     d = copy.deepcopy(example())
     d["image"]["platforms"]["s390x"] = "sha256:" + "9" * 64
     assert m.validate(d) is not None
+
+
+def test_manifests_from_before_the_line_counts_still_validate():
+    # 1.0.0 to 1.2.0 were published without changes.diff (#224); the schema still takes them.
+    pytest.importorskip("fastjsonschema")
+    d = copy.deepcopy(example())
+    del d["changes"]["diff"]
+    assert m.validate(d) is None
+    d["changes"]["diff"] = None
+    assert m.validate(d) is None
 
 
 def test_a_dry_run_may_have_no_image_changelog_summary_or_approval():
@@ -313,6 +327,62 @@ def test_without_a_final_release_the_changes_go_back_to_the_first_commit(tmp_pat
     assert [c["first_tag"] for c in f["commits"]] == ["v0.3.0rc1", "v0.3.0rc1", "v1.0.0rc1", "v1.0.0rc1", "v1.0.0rc1"]
 
 
+def sha(cwd, ref):
+    return subprocess.run(("git", "rev-parse", ref), cwd=cwd, check=True, capture_output=True,
+                          text=True).stdout.strip()
+
+
+@needs_git
+def test_lines_added_modified_and_deleted_since_the_previous_release(tmp_path):
+    # A plain count of lines, not SLOC (#224): per hunk, the lines both added and removed are
+    # modified, and the rest are added or deleted.
+    r = tmp_path / "r"
+    (r / "docs").mkdir(parents=True)
+    (r / "app.py").write_text("a\nb\nc\n")
+    (r / "site.yml").write_text("- hosts: all\n  roles: [wd2l]\n  become: true\n")
+    (r / "docs" / "old name.txt").write_text("".join("line %d\n" % i for i in range(10)))
+    (r / "logo.png").write_bytes(b"\x89PNG\0\0\0")
+    run_git(r, "init", "-q")
+    run_git(r, "add", "-A")
+    run_git(r, "commit", "-q", "-m", "one")
+    run_git(r, "tag", "v1.0.0")
+    (r / "app.py").write_text("A\nB\nc\nd\n")                     # 2 modified, then 1 added
+    (r / "site.yml").unlink()                                      # 3 deleted
+    (r / "Containerfile").write_text("FROM x\nRUN y\n")            # 2 added, no extension
+    os.rename(r / "docs" / "old name.txt", r / "docs" / "new name.txt")
+    (r / "docs" / "new name.txt").write_text(
+        "".join(("line %d\n" % i) if i != 5 else "five\n" for i in range(10)))   # 1 modified
+    (r / "logo.png").write_bytes(b"\x89PNG\0\0\1")                 # binary: a file, no lines
+    run_git(r, "add", "-A")
+    run_git(r, "commit", "-q", "-m", "two")
+    base, head = sha(r, "v1.0.0"), sha(r, "HEAD")
+    d = m.diff_stats({"tag": "v1.0.0", "commit": base}, head, "https://github.com/o/r", cwd=str(r))
+    assert d["base"] == {"tag": "v1.0.0", "commit": base} and d["head"] == head
+    assert d["compare_url"] == "https://github.com/o/r/compare/%s...%s" % (base, head)
+    assert d["files_changed"] == 5 and d["binary_files"] == 1
+    assert d["lines"] == {"added": 3, "modified": 3, "deleted": 3}
+    assert {t["type"]: (t["files"], t["added"], t["modified"], t["deleted"]) for t in d["by_type"]} == {
+        ".py": (1, 1, 2, 0), ".yml": (1, 0, 0, 3), "Containerfile": (1, 2, 0, 0),
+        ".txt": (1, 0, 1, 0), ".png": (1, 0, 0, 0)}
+    # Most lines first, then by name: the same order every time.
+    assert [t["type"] for t in d["by_type"]] == [".py", ".yml", "Containerfile", ".txt", ".png"]
+    # It agrees with git's own totals: insertions = added + modified, deletions = modified + deleted.
+    short = subprocess.run(("git", "diff", "--shortstat", "-M", base, head), cwd=str(r), check=True,
+                           capture_output=True, text=True).stdout
+    L = d["lines"]
+    assert "5 files changed, %d insertions(+), %d deletions(-)" % (
+        L["added"] + L["modified"], L["modified"] + L["deleted"]) in short
+
+
+@needs_git
+def test_no_changes_since_the_previous_release_count_nothing(tmp_path):
+    r = make_repo(tmp_path)          # only empty commits after v0.3.0
+    base = sha(r, "v0.3.0")
+    d = m.diff_stats({"tag": "v0.3.0", "commit": base}, sha(r, "HEAD"), "https://github.com/o/r", cwd=str(r))
+    assert d["files_changed"] == 0 and d["by_type"] == []
+    assert d["lines"] == {"added": 0, "modified": 0, "deleted": 0}
+
+
 def forge_for_repo():
     return FakeForge(
         prs={64: pr(64, "feat: release manifest", "2026-10-13T10:00:00Z"),
@@ -380,6 +450,11 @@ def test_a_tag_run_makes_a_valid_manifest_with_image_approvals_and_summary(tmp_p
     assert ci["tags"] == ["1.0.0rc1"] and ci["platform"] == "linux/amd64"
     assert ci["base_images"][0]["release"] == "1791888712" and ci["base_images"][0]["source_image"] is None
     assert "not hardened" in ci["purpose"] and "not FIPS" in ci["purpose"]
+    # The line counts (#224) start where the changes do: the previous final release.
+    diff = doc["changes"]["diff"]
+    assert diff["base"] == doc["source"]["previous_release"] and diff["head"] == doc["source"]["commit"]
+    assert diff["compare_url"] == "https://github.com/o/r/compare/%s...%s" % (
+        doc["source"]["previous_release"]["commit"], doc["source"]["commit"])
 
 
 @needs_git
@@ -391,6 +466,15 @@ def test_a_dry_run_has_no_image_and_asks_for_no_approvals(tmp_path):
     assert doc["image"] is None and doc["approvals"] == [] and doc["summary"] is None
     assert doc["comparison_image"] is None
     assert doc["release"]["dry_run"] and doc["generated"]["run"] is None
+
+
+@needs_git
+def test_without_a_final_release_there_is_nothing_to_count_from(tmp_path):
+    pytest.importorskip("fastjsonschema")
+    r = make_repo(tmp_path, final_tag=False)
+    doc = m.generate(gen_args(tmp_path), RUN_ENV, forge_for_repo(), repo=str(r))
+    assert m.validate(doc) is None and doc["changes"]["diff"] is None
+    assert "## Lines changed\n\nNo earlier final release to compare with." in m.render(doc)
 
 
 @needs_git
@@ -462,6 +546,21 @@ def test_the_view_marks_dry_runs_and_retroactive_issues():
     assert "† Recorded after its work had merged" in md
     assert "## Pull requests without an issue (1)" in md
     assert "gh attestation verify wd2l-1.1.0-release-manifest.json" in md
+
+
+def test_the_view_counts_the_lines_and_links_the_full_diff():
+    d = example()
+    diff = d["changes"]["diff"]
+    md = m.render(d)
+    section = md.split("## Lines changed since v1.0.0", 1)[1].split("\n## ", 1)[0]
+    assert "[compare on the forge](%s)" % diff["compare_url"] in section
+    assert "`git diff %s %s`" % (diff["base"]["commit"], diff["head"]) in section
+    assert "not SLOC" in section
+    assert "| `.py` | 3 | 1,207 | 18 | 2 |" in section
+    assert "| **Total** | **9** | **1,602** | **41** | **7** |" in section
+    assert md.index("## Lines changed since") < md.index("## Changes (")
+    del d["changes"]["diff"]                       # a manifest from before #224
+    assert "## Lines changed" not in m.render(d)
 
 
 def test_every_version_has_its_release_summary():

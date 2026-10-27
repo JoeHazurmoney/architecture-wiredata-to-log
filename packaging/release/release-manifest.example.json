@@ -37,7 +37,20 @@
     "category": "bug", "labels": ["bug"], "retroactive": false, "resolved_by": [81],
     "resolved_at": "2026-11-30T10:12:00Z", "first_tag": "v1.1.0rc1"}
   ],
-  "pull_requests_without_issue": [84]
+  "pull_requests_without_issue": [84],
+  "diff": {
+   "base": {"tag": "v1.0.0", "commit": "a14f8e3b7c92d06e5f81b4a7c3e09d26f5b8a410"},
+   "head": "3e7b91c05fa2d84e6b17c3a9f0d52e8b4c6a1f73",
+   "compare_url": "https://github.com/JoeHazurmoney/architecture-wiredata-to-log/compare/a14f8e3b7c92d06e5f81b4a7c3e09d26f5b8a410...3e7b91c05fa2d84e6b17c3a9f0d52e8b4c6a1f73",
+   "method": "git diff -M -U0; per hunk, modified = min(lines added, lines removed)",
+   "files_changed": 9, "binary_files": 0,
+   "lines": {"added": 1602, "modified": 41, "deleted": 7},
+   "by_type": [
+    {"type": ".py", "files": 3, "added": 1207, "modified": 18, "deleted": 2},
+    {"type": ".md", "files": 4, "added": 380, "modified": 20, "deleted": 3},
+    {"type": ".yml", "files": 2, "added": 15, "modified": 3, "deleted": 2}
+   ]
+  }
  },
  "known_issues": [
   {"number": 88, "title": "The lab's --loss 1 run sometimes misses a reconcile record",
