@@ -22,6 +22,7 @@
   },
   "definitions": {
     "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "count": {"type": "integer", "minimum": 0},
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "tag": {"type": "string", "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+((a|b|rc)[0-9]+)?$"},
@@ -180,7 +181,49 @@
             }
           }
         },
-        "pull_requests_without_issue": {"type": "array", "items": {"type": "integer", "minimum": 1}, "uniqueItems": true}
+        "pull_requests_without_issue": {"type": "array", "items": {"type": "integer", "minimum": 1}, "uniqueItems": true},
+        "diff": {
+          "description": "lines added, modified and deleted from previous_release to this commit: a plain count of lines, not SLOC; null with no earlier final release. Not required: manifests before #224 have none",
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["base", "head", "compare_url", "method", "files_changed", "binary_files", "lines", "by_type"],
+              "properties": {
+                "base": {"$ref": "#/definitions/tagRef"},
+                "head": {"$ref": "#/definitions/commit"},
+                "compare_url": {"$ref": "#/definitions/url"},
+                "method": {"type": "string"},
+                "files_changed": {"$ref": "#/definitions/count"},
+                "binary_files": {"$ref": "#/definitions/count"},
+                "lines": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["added", "modified", "deleted"],
+                  "properties": {"added": {"$ref": "#/definitions/count"}, "modified": {"$ref": "#/definitions/count"},
+                                 "deleted": {"$ref": "#/definitions/count"}}
+                },
+                "by_type": {
+                  "description": "one row per file type (the extension, or the name when there is none), most lines first",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "files", "added", "modified", "deleted"],
+                    "properties": {
+                      "type": {"type": "string", "minLength": 1},
+                      "files": {"$ref": "#/definitions/count"},
+                      "added": {"$ref": "#/definitions/count"},
+                      "modified": {"$ref": "#/definitions/count"},
+                      "deleted": {"$ref": "#/definitions/count"}
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
       }
     },
     "known_issues": {

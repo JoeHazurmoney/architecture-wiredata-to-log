@@ -50,6 +50,13 @@
       links the forge records;
     * the first release that contained each change;
     * any pull request with no issue, listed separately so gaps show.
+  * **Lines changed** since the previous final release (#224):
+    * lines added, modified and deleted, in total and per file type, with both commits and a
+      link that opens the full diff on the forge;
+    * a plain count of lines, not SLOC: logical line counts don't hold up for YAML (Ansible,
+      k8s manifests), and a plain count compares directly from release to release;
+    * within each hunk of `git diff -M -U0`, the lines both removed and added count as
+      modified.
   * **Known issues:** open bugs at release time.
   * **Deliverables:** every release file, with its SHA-256 and size.
   * **The image:** the index and per-platform digests, and the base images.
@@ -138,7 +145,7 @@ image, and `publish` runs before the files it lists are final.
   | Offline bundle and retrieval script | Adopted, alongside the existing OCI tars, RPMs and checksums |
   | Retrieval drill | Adopted (#38) |
   | Deployment binding | Out of scope: deployment records belong to the customer's site |
-  | Code-size metrics | Deferred |
+  | Code-size metrics | Adopted (#224): plain line counts (added, modified, deleted) per file type since the previous final release, with a compare link; not SLOC |
   | A separate manifest repository | Not needed: the manifest is a file of the release it describes |
 * **Retention:**
   * Release files are permanent. Nothing relies on workflow artifacts, which expire after

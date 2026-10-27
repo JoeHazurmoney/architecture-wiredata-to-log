@@ -34,6 +34,12 @@ def resolved(man: Dict[str, Any], v: str) -> List[str]:
             "%s The full record, with the pull request that resolved each one, is "
             "`wd2l-%s-release-manifest.md` (and `.json`, the authoritative copy)." % (
                 ("Since %s." % ch["since"]) if ch["since"] else "Since the first commit.", v), ""]
+    d = ch.get("diff")                  # manifests before #224 have no line counts
+    if d:
+        L = d["lines"]
+        out += ["Lines changed since {}: {:,} added, {:,} modified and {:,} deleted, in {:,} files "
+                "([compare]({})).".format(d["base"]["tag"], L["added"], L["modified"], L["deleted"],
+                                          d["files_changed"], d["compare_url"]), ""]
     if issues:
         out += ["| Issue | Category | Title |", "|---|---|---|"]
         for i in sorted(issues, key=lambda i: (order.index(i["category"]), i["number"])):

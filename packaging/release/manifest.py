@@ -10,8 +10,9 @@ signature, the SLSA provenance and the release attestation all cover it.
     manifest.py validate manifest.json
     manifest.py render manifest.json > manifest.md
 
-generate reads git (full history and tags) and the forge's API (GitHub: GH_TOKEN, and the
-GITHUB_* variables a workflow run has)."""
+generate reads git (full history and tags, and the diff from the previous final release for the
+lines changed) and the forge's API (GitHub: GH_TOKEN, and the GITHUB_* variables a workflow run
+has)."""
 
 import argparse
 import datetime
@@ -110,6 +111,72 @@ def git_facts(current_tag: str, cwd: str = REPO) -> Dict[str, Any]:
         commits.append({"sha": sha, "subject": subject, "body": body, "first_tag": earliest(containing)})
     return {"head": head, "head_date": iso(git("show", "-s", "--format=%cI", "HEAD", cwd=cwd).strip()),
             "previous_release": ref(prev_release), "previous_tag": ref(prev_tag), "commits": commits}
+
+
+DIFF_METHOD = "git diff -M -U0; per hunk, modified = min(lines added, lines removed)"
+# Every option that changes the output is given, so no git config can change the count (#224).
+DIFF_ARGS = ("-c", "core.quotePath=false", "diff", "-M", "--no-color", "--no-ext-diff",
+             "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/")
+
+
+def file_type(path: str) -> str:
+    """The lower-case extension, or the file's name when it has none (Containerfile, .gitignore)."""
+    name = path.rsplit("/", 1)[-1]
+    ext = os.path.splitext(name)[1].lower()
+    return ext or name
+
+
+def diff_stats(base: Dict[str, str], head: str, repository: str, cwd: str = REPO) -> Dict[str, Any]:
+    """Lines added, modified and deleted from the previous release to this commit: a plain count
+    of lines, not SLOC (#224). In each hunk, the lines both removed and added are modified; the
+    rest are added or deleted. So added + modified is git's insertions, and modified + deleted
+    its deletions. Binary files count as files, with no lines."""
+    def run(*args: str) -> str:          # bytes, decoded leniently: git() would fail on non-UTF-8 text
+        return subprocess.run(("git",) + DIFF_ARGS + args + (base["commit"], head), cwd=cwd, check=True,
+                              capture_output=True).stdout.decode("utf-8", "replace")
+    # The paths from --numstat -z (any name, unquoted); the hunks from the patch, file by file in
+    # the same order.
+    fields, files = run("--numstat", "-z").split("\0"), []
+    while len(fields) > 1:
+        plus, minus, path = fields.pop(0).split("\t", 2)
+        if not path:                      # a rename: the old path, then the new one
+            path = fields[1]
+            del fields[:2]
+        files.append((path, plus, minus))
+    patch = run("-U0")                   # -U0 implies --patch, so it can't share the --numstat call
+    blocks = re.split(r"^diff --git ", patch, flags=re.M)[1:]
+    if len(blocks) != len(files):
+        raise RuntimeError("git diff: %d files in the patch, %d in --numstat" % (len(blocks), len(files)))
+    types: Dict[str, Dict[str, int]] = {}
+    binary = 0
+    for (path, plus, minus), block in zip(files, blocks):
+        t = types.setdefault(file_type(path), {"files": 0, "added": 0, "modified": 0, "deleted": 0})
+        t["files"] += 1
+        if plus == "-":
+            binary += 1
+            continue
+        hunks: List[List[int]] = []        # [lines added, lines removed] per hunk
+        for line in block.split("\n")[1:]:
+            if line.startswith("@@"):
+                hunks.append([0, 0])
+            elif hunks and line.startswith("+"):
+                hunks[-1][0] += 1
+            elif hunks and line.startswith("-"):
+                hunks[-1][1] += 1
+        for p, mi in hunks:
+            mod = min(p, mi)
+            t["added"] += p - mod
+            t["modified"] += mod
+            t["deleted"] += mi - mod
+        if (sum(h[0] for h in hunks), sum(h[1] for h in hunks)) != (int(plus), int(minus)):
+            raise RuntimeError("git diff: %s's hunks don't match --numstat" % path)
+    by_type = sorted(({"type": k, **v} for k, v in types.items()),
+                     key=lambda x: (-(x["added"] + x["modified"] + x["deleted"]), x["type"]))
+    return {"base": base, "head": head,
+            "compare_url": "%s/compare/%s...%s" % (repository, base["commit"], head),
+            "method": DIFF_METHOD, "files_changed": len(files), "binary_files": binary,
+            "lines": {k: sum(x[k] for x in by_type) for k in ("added", "modified", "deleted")},
+            "by_type": by_type}
 
 
 def iso(t: str) -> str:
@@ -373,18 +440,20 @@ def generate(a: argparse.Namespace, env: Dict[str, str], forge: Any, repo: str =
     with open(os.path.join(repo, "cosign.pub"), "rb") as f:
         key_sha = hashlib.sha256(f.read()).hexdigest()
     now = now or datetime.datetime.now(datetime.timezone.utc)
+    repository = "%s/%s" % (server, slug)
+    prev = facts["previous_release"]
     return {
         "schema_version": 1,
         "release": {"product": "wd2l", "version": v, "tag": tag, "prerelease": names["prerelease"],
                     "dry_run": bool(a.dry_run)},
-        "source": {"repository": "%s/%s" % (server, slug), "commit": facts["head"],
+        "source": {"repository": repository, "commit": facts["head"],
                    "commit_date": facts["head_date"], "previous_release": facts["previous_release"],
                    "previous_tag": facts["previous_tag"]},
         "generated": {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "by": "packaging/release/manifest.py",
                       "run": run},
         "summary": summ,
-        "changes": dict(since=(facts["previous_release"] or {}).get("tag"),
-                        **changes(facts["commits"], forge)),
+        "changes": dict(since=(prev or {}).get("tag"), **changes(facts["commits"], forge),
+                        diff=diff_stats(prev, facts["head"], repository, cwd=repo) if prev else None),
         "known_issues": forge.known_issues(),
         "deliverables": deliverables(a.assets),
         "image": ({"name": IMAGE, "tags": names["image_tags"], "index_digest": a.image_digest,
@@ -440,6 +509,25 @@ def _size(n: int) -> str:
             return ("%d %s" % (n, unit)) if unit == "B" else ("%.1f %s" % (n, unit))
         n /= 1024.0
     return str(n)
+
+
+def diff_section(d: Optional[Dict[str, Any]]) -> List[str]:
+    if d is None:
+        return ["## Lines changed", "", "No earlier final release to compare with.", ""]
+    b, L = d["base"], d["lines"]
+    out = ["## Lines changed since %s" % b["tag"], "",
+           "From `%s` (%s) to `%s` (this release): [compare on the forge](%s). Offline, in a clone of "
+           "the source bundle: `git diff %s %s`." % (b["commit"], b["tag"], d["head"], d["compare_url"],
+                                                     b["commit"], d["head"]), "",
+           "A plain count of lines, not SLOC: %s. %d binary file%s changed." % (
+               d["method"], d["binary_files"], "" if d["binary_files"] == 1 else "s"), "",
+           "| Type | Files | Added | Modified | Deleted |", "|---|---|---|---|---|"]
+    n = "{:,}".format
+    out += ["| `%s` | %s | %s | %s | %s |" % (esc(t["type"]), n(t["files"]), n(t["added"]), n(t["modified"]),
+                                              n(t["deleted"])) for t in d["by_type"]]
+    out += ["| **Total** | **%s** | **%s** | **%s** | **%s** |" % (
+        n(d["files_changed"]), n(L["added"]), n(L["modified"]), n(L["deleted"])), ""]
+    return out
 
 
 def render(m: Dict[str, Any]) -> str:
@@ -528,6 +616,8 @@ def render(m: Dict[str, Any]) -> str:
         out.append("Not published (dry run).")
     out.append("")
 
+    if "diff" in ch:                     # manifests before #224 have no line counts
+        out += diff_section(ch["diff"])
     out += ["## Changes (%d pull requests)" % len(ch["pull_requests"]), "",
             "| Pull request | Title | Merged | Closes | First released in |", "|---|---|---|---|---|"]
     for p in ch["pull_requests"]:

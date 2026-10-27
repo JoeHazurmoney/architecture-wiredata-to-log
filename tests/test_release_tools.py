@@ -350,6 +350,19 @@ def test_notes_name_the_comparison_image_as_not_for_deployment():
     assert "## Comparison image" not in notes.notes(versions.names("1.1.0"), **dict(ARGS, man=man))
 
 
+def test_notes_count_the_lines_changed_and_link_the_full_diff():
+    # #224: the totals from the manifest, and the forge's compare page.
+    man = example_manifest()
+    text = notes.notes(versions.names("1.1.0"), **dict(ARGS, man=man))
+    assert ("Lines changed since v1.0.0: 1,602 added, 41 modified and 7 deleted, in 9 files "
+            "([compare](%s))." % man["changes"]["diff"]["compare_url"]) in text
+    assert text.index("Lines changed since") < text.index("## Install")
+    man["changes"]["diff"] = None
+    assert "Lines changed" not in notes.notes(versions.names("1.1.0"), **dict(ARGS, man=man))
+    del man["changes"]["diff"]
+    assert "Lines changed" not in notes.notes(versions.names("1.1.0"), **dict(ARGS, man=man))
+
+
 def test_notes_without_a_manifest_are_unchanged():
     assert "## Issues resolved" not in notes.notes(versions.names("1.1.0"), **ARGS)
     assert "Attestation pages" not in notes.notes(versions.names("1.1.0"), **ARGS)
