@@ -3,7 +3,7 @@
 # not hardened (a shell, a package manager) and not FIPS. Build it with
 # packaging/container/build.sh DIST TAG packaging/container/Containerfile.ubi9. Both stages are
 # one base, pinned by digest; Dependabot proposes new digests.
-FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:217dd5692d369799d34d09ffb6f5f3404efebc7900834490fdf9ae92fd6721d4 AS build
+FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:48393e4261b2544f652c915b3e052256ddf66ee95cd04dc0362191f302c4e94a AS build
 # Root only in this build stage, to write /out; the runtime stage runs as 65532.
 # hadolint ignore=DL3002
 USER 0
@@ -16,7 +16,7 @@ RUN python3 -m ensurepip --root /pip \
  && python3 -m compileall -q --invalidation-mode checked-hash -s /out -p / \
       /out/usr/lib/python3.9/site-packages/wd2l
 
-FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:217dd5692d369799d34d09ffb6f5f3404efebc7900834490fdf9ae92fd6721d4
+FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:48393e4261b2544f652c915b3e052256ddf66ee95cd04dc0362191f302c4e94a
 ARG VERSION=dev
 ARG REVISION=unknown
 ARG BASE_NAME=unknown
