@@ -119,9 +119,18 @@ DIFF_ARGS = ("-c", "core.quotePath=false", "diff", "-M", "--no-color", "--no-ext
              "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/")
 
 
+BUILD_FILES = ("Containerfile", "Dockerfile")
+
+
 def file_type(path: str) -> str:
-    """The lower-case extension, or the file's name when it has none (Containerfile, .gitignore)."""
+    """The lower-case extension, or the file's name when it has none (LICENSE, .gitignore). A
+    container build file is one type whatever its variant: Containerfile.ubi9 and
+    tools.Containerfile are both Containerfile (#226)."""
     name = path.rsplit("/", 1)[-1]
+    parts = name.lower().split(".")
+    for b in BUILD_FILES:
+        if b.lower() in parts:
+            return b
     ext = os.path.splitext(name)[1].lower()
     return ext or name
 

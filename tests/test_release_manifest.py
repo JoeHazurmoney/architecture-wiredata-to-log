@@ -374,6 +374,20 @@ def test_lines_added_modified_and_deleted_since_the_previous_release(tmp_path):
         L["added"] + L["modified"], L["modified"] + L["deleted"]) in short
 
 
+@pytest.mark.parametrize("path, kind", [
+    ("wd2l/receiver.py", ".py"), ("site.YML", ".yml"), ("LICENSE", "LICENSE"), (".gitignore", ".gitignore"),
+    ("docs/old name.txt", ".txt"),
+    # Container build files are one type, whatever their variant (#226).
+    ("packaging/container/Containerfile", "Containerfile"),
+    ("packaging/container/Containerfile.ubi9", "Containerfile"),
+    ("packaging/ci/tools.Containerfile", "Containerfile"),
+    ("Dockerfile.dev", "Dockerfile"), ("build/dockerfile", "Dockerfile"),
+    ("packaging/quadlet/wd2l-receiver.container", ".container"),
+])
+def test_each_file_has_one_type(path, kind):
+    assert m.file_type(path) == kind
+
+
 @needs_git
 def test_no_changes_since_the_previous_release_count_nothing(tmp_path):
     r = make_repo(tmp_path)          # only empty commits after v0.3.0

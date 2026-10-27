@@ -205,7 +205,7 @@
                                  "deleted": {"$ref": "#/definitions/count"}}
                 },
                 "by_type": {
-                  "description": "one row per file type (the extension, or the name when there is none), most lines first",
+                  "description": "one row per file type (the extension, or the name when there is none; every Containerfile or Dockerfile variant is one type), most lines first",
                   "type": "array",
                   "items": {
                     "type": "object",
