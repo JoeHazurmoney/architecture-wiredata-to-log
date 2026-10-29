@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """The release manifest (docs/decisions/0008-release-manifest.md): what one release is, as JSON
-validated against release-manifest.schema.json, and a markdown view of it, the customer's
-version description. release.yml's assets job makes it, before SHA256SUMS, so the key's
-signature, the SLSA provenance and the release attestation all cover it.
+validated against release-manifest.schema.json, and its readable view, the customer's
+version description, as markdown and as an offline HTML page (#202). release.yml's assets job
+makes it, before SHA256SUMS, so the key's signature, the SLSA provenance and the release
+attestation all cover it.
 
     manifest.py generate --assets DIR --base-record FILE [--image-digest sha256:...]
                          [--platform-digest ARCH=sha256:...] [--comparison-digest sha256:...
                           --comparison-base-record FILE] [--dry-run] > manifest.json
     manifest.py validate manifest.json
     manifest.py render manifest.json > manifest.md
+    manifest.py render --format html manifest.json > manifest.html
 
 generate reads git (full history and tags, and the diff from the previous final release for the
 lines changed) and the forge's API (GitHub: GH_TOKEN, and the GITHUB_* variables a workflow run
@@ -17,6 +19,7 @@ has)."""
 import argparse
 import datetime
 import hashlib
+import html
 import json
 import os
 import re
@@ -520,163 +523,392 @@ def _size(n: int) -> str:
     return str(n)
 
 
-def diff_section(d: Optional[Dict[str, Any]]) -> List[str]:
+# ---- the readable views (#202) ------------------------------------------------------------
+# One list of blocks, written as markdown (the .md, and the run's summary) or as one HTML page,
+# so the two can't drift. A block is ("h", level, inline), ("p", inline), ("note", inline),
+# ("md", text) (the release's summary, markdown from the repository), ("table", head, rows) or
+# ("code", lines). Inline content is a str (our own text), or a list of strs and parts:
+# forge(s), text from the forge, escaped in both formats; code(s); bold(x); link(x, url). A table
+# cell of None is empty.
+
+def code(s: Any, esc_md: bool = False) -> Tuple[str, str, bool]:
+    return ("code", str(s), esc_md)
+
+
+def forge(s: Any) -> Tuple[str, str]:
+    return ("forge", str(s))
+
+
+def bold(x: Any) -> Tuple[str, Any]:
+    return ("b", x)
+
+
+def link(x: Any, url: str) -> Tuple[str, Any, str]:
+    return ("link", x, url)
+
+
+def _parts(x: Any) -> List[Any]:
+    return x if isinstance(x, list) else [x]
+
+
+def md_inline(x: Any) -> str:
+    out = []
+    for p in _parts(x):
+        if isinstance(p, str):
+            out.append(p)
+        elif p[0] == "forge":
+            out.append(esc(p[1]))
+        elif p[0] == "code":
+            out.append("`%s`" % (esc(p[1]) if p[2] else p[1]))
+        elif p[0] == "b":
+            out.append("**%s**" % md_inline(p[1]))
+        else:
+            out.append("[%s](%s)" % (md_inline(p[1]), p[2]))
+    return "".join(out)
+
+
+def diff_section(d: Optional[Dict[str, Any]]) -> List[Tuple[Any, ...]]:
     if d is None:
-        return ["## Lines changed", "", "No earlier final release to compare with.", ""]
+        return [("h", 2, "Lines changed"), ("p", "No earlier final release to compare with.")]
     b, L = d["base"], d["lines"]
-    out = ["## Lines changed since %s" % b["tag"], "",
-           "From `%s` (%s) to `%s` (this release): [compare on the forge](%s). Offline, in a clone of "
-           "the source bundle: `git diff %s %s`." % (b["commit"], b["tag"], d["head"], d["compare_url"],
-                                                     b["commit"], d["head"]), "",
-           "A plain count of lines, not SLOC: %s. %d binary file%s changed." % (
-               d["method"], d["binary_files"], "" if d["binary_files"] == 1 else "s"), "",
-           "| Type | Files | Added | Modified | Deleted |", "|---|---|---|---|---|"]
     n = "{:,}".format
-    out += ["| `%s` | %s | %s | %s | %s |" % (esc(t["type"]), n(t["files"]), n(t["added"]), n(t["modified"]),
-                                              n(t["deleted"])) for t in d["by_type"]]
-    out += ["| **Total** | **%s** | **%s** | **%s** | **%s** |" % (
-        n(d["files_changed"]), n(L["added"]), n(L["modified"]), n(L["deleted"])), ""]
-    return out
+    return [("h", 2, "Lines changed since %s" % b["tag"]),
+            ("p", ["From ", code(b["commit"]), " (%s) to " % b["tag"], code(d["head"]), " (this release): ",
+                   link("compare on the forge", d["compare_url"]), ". Offline, in a clone of the source bundle: ",
+                   code("git diff %s %s" % (b["commit"], d["head"])), "."]),
+            ("p", "A plain count of lines, not SLOC: %s. %d binary file%s changed." % (
+                d["method"], d["binary_files"], "" if d["binary_files"] == 1 else "s")),
+            ("table", ["Type", "Files", "Added", "Modified", "Deleted"],
+             [[code(t["type"], esc_md=True), n(t["files"]), n(t["added"]), n(t["modified"]), n(t["deleted"])]
+              for t in d["by_type"]]
+             + [[bold("Total"), bold(n(d["files_changed"])), bold(n(L["added"])), bold(n(L["modified"])),
+                 bold(n(L["deleted"]))]])]
 
 
-def render(m: Dict[str, Any]) -> str:
+def blocks(m: Dict[str, Any]) -> List[Tuple[Any, ...]]:
+    """The manifest's readable view, as blocks."""
     r, s, ch = m["release"], m["source"], m["changes"]
     repo = s["repository"]
-    out = ["# wd2l %s: release manifest" % r["version"], ""]
+    out: List[Tuple[Any, ...]] = [("h", 1, "wd2l %s: release manifest" % r["version"])]
     if r["dry_run"]:
-        out += ["> **Dry run.** Built without a version tag: nothing was published or signed.", ""]
+        out.append(("note", [bold("Dry run."), " Built without a version tag: nothing was published or signed."]))
     elif r["prerelease"]:
-        out += ["> **Pre-release**, for testing.", ""]
+        out.append(("note", [bold("Pre-release"), ", for testing."]))
     run = m["generated"]["run"]
-    out += ["The version description of **wd2l %s** (tag `%s`), built from commit [`%s`](%s/commit/%s) "
-            "of %s. Generated %s by `%s`%s." % (
-                r["version"], r["tag"], s["commit"], repo, s["commit"], s["commit_date"][:10],
-                m["generated"]["at"], m["generated"]["by"],
-                " in [run %s](%s)" % (run["id"], run["url"]) if run else ""),
-            "",
-            "`wd2l-%s-release-manifest.json` is the authoritative record; this page is generated "
-            "from it (schema version %d)." % (r["version"], m["schema_version"]), ""]
+    out += [("p", ["The version description of ", bold("wd2l %s" % r["version"]), " (tag ", code(r["tag"]),
+                   "), built from commit ", link(code(s["commit"]), "%s/commit/%s" % (repo, s["commit"])),
+                   " of %s. Generated %s by " % (s["commit_date"][:10], m["generated"]["at"]),
+                   code(m["generated"]["by"])]
+                  + ([" in ", link("run %s" % run["id"], run["url"])] if run else []) + ["."]),
+            ("p", [code("wd2l-%s-release-manifest.json" % r["version"]), " is the authoritative record; this page "
+                   "is generated from it (schema version %d)." % m["schema_version"]])]
     if m["summary"]:
-        out += ["## Summary", "", m["summary"]["text"].strip(), ""]
+        out += [("h", 2, "Summary"), ("md", m["summary"]["text"].strip())]
 
     since = ch["since"]
     issues = ch["issues_resolved"]
-    out += ["## Issues resolved (%d)" % len(issues), "",
-            ("Since %s." % since) if since else "Since the first commit: there is no earlier final release.", ""]
+    out += [("h", 2, "Issues resolved (%d)" % len(issues)),
+            ("p", ("Since %s." % since) if since else "Since the first commit: there is no earlier final release.")]
     for cat, heading in SECTIONS:
         rows = [i for i in issues if i["category"] == cat]
         if not rows:
             continue
-        out += ["### %s" % heading, "", "| Issue | Title | Resolved by | Merged | First released in |",
-                "|---|---|---|---|---|"]
+        table = []
         for i in rows:
-            by = ", ".join("[#%d](%s/pull/%d)" % (n, repo, n) for n in i["resolved_by"])
-            out.append("| [#%d](%s)%s | %s | %s | %s | %s |" % (
-                i["number"], i["url"], " \u2020" if i["retroactive"] else "", esc(i["title"]), by,
-                i["resolved_at"][:10], "`%s`" % i["first_tag"] if i["first_tag"] else "this release"))
-        out.append("")
+            by: List[Any] = []
+            for k, n in enumerate(i["resolved_by"]):
+                by += ([", "] if k else []) + [link("#%d" % n, "%s/pull/%d" % (repo, n))]
+            table.append([[link("#%d" % i["number"], i["url"])] + ([" †"] if i["retroactive"] else []),
+                          forge(i["title"]), by, i["resolved_at"][:10],
+                          code(i["first_tag"]) if i["first_tag"] else "this release"])
+        out += [("h", 3, heading),
+                ("table", ["Issue", "Title", "Resolved by", "Merged", "First released in"], table)]
     if any(i["retroactive"] for i in issues):
-        out += ["\u2020 Recorded after its work had merged, to complete the record; dated by its "
-                "pull request's merge.", ""]
+        out.append(("p", "† Recorded after its work had merged, to complete the record; dated by its "
+                         "pull request's merge."))
     if ch["pull_requests_without_issue"]:
         by_num = {p["number"]: p for p in ch["pull_requests"]}
-        out += ["## Pull requests without an issue (%d)" % len(ch["pull_requests_without_issue"]), "",
-                "| Pull request | Title | Merged |", "|---|---|---|"]
-        for n in ch["pull_requests_without_issue"]:
-            p = by_num[n]
-            out.append("| [#%d](%s) | %s | %s |" % (n, p["url"], esc(p["title"]), p["merged_at"][:10]))
-        out.append("")
-    out += ["## Known issues", ""]
+        out += [("h", 2, "Pull requests without an issue (%d)" % len(ch["pull_requests_without_issue"])),
+                ("table", ["Pull request", "Title", "Merged"],
+                 [[link("#%d" % n, by_num[n]["url"]), forge(by_num[n]["title"]), by_num[n]["merged_at"][:10]]
+                  for n in ch["pull_requests_without_issue"]])]
+    out.append(("h", 2, "Known issues"))
     if m["known_issues"]:
-        out += ["| Issue | Title |", "|---|---|"]
-        out += ["| [#%d](%s) | %s |" % (k["number"], k["url"], esc(k["title"])) for k in m["known_issues"]]
+        out.append(("table", ["Issue", "Title"],
+                    [[link("#%d" % k["number"], k["url"]), forge(k["title"])] for k in m["known_issues"]]))
     else:
-        out.append("No open bugs when this manifest was made.")
-    out.append("")
+        out.append(("p", "No open bugs when this manifest was made."))
 
-    out += ["## Deliverables", "", "| File | Kind | Size | SHA-256 |", "|---|---|---|---|"]
-    out += ["| `%s` | %s | %s | `%s` |" % (d["name"], d["kind"], _size(d["size"]), d["sha256"])
-            for d in m["deliverables"]]
-    out += ["", "Made after this manifest, and covering it: %s." % ", ".join(
-        "`%s`" % x for x in m["verification"]["sealed_by"]), ""]
+    sealed: List[Any] = ["Made after this manifest, and covering it: "]
+    for k, x in enumerate(m["verification"]["sealed_by"]):
+        sealed += ([", "] if k else []) + [code(x)]
+    out += [("h", 2, "Deliverables"),
+            ("table", ["File", "Kind", "Size", "SHA-256"],
+             [[code(d["name"]), d["kind"], _size(d["size"]), code(d["sha256"])] for d in m["deliverables"]]),
+            ("p", sealed + ["."])]
 
     img = m["image"]
-    out += ["## Container image", ""]
+    out.append(("h", 2, "Container image"))
     if img:
-        out += ["`%s@%s`, tagged %s." % (img["name"], img["index_digest"],
-                                         ", ".join("`%s`" % t for t in img["tags"])), "",
-                "| Platform | Digest |", "|---|---|"]
-        out += ["| linux/%s | `%s` |" % (p, d) for p, d in sorted(img["platforms"].items())]
+        tags: List[Any] = []
+        for k, t in enumerate(img["tags"]):
+            tags += ([", "] if k else []) + [code(t)]
+        out += [("p", [code("%s@%s" % (img["name"], img["index_digest"])), ", tagged "] + tags + ["."]),
+                ("table", ["Platform", "Digest"],
+                 [["linux/%s" % p, code(d)] for p, d in sorted(img["platforms"].items())])]
     else:
-        out.append("Not published (dry run).")
-    out += ["", "| Stage | Base image | Source (SRPMs) |", "|---|---|---|"]
-    out += ["| %s | `%s` | `%s` |" % (b["stage"], b["ref"], b["source_image"]) for b in m["base_images"]]
-    out.append("")
+        out.append(("p", "Not published (dry run)."))
+    out.append(("table", ["Stage", "Base image", "Source (SRPMs)"],
+                [[b["stage"], code(b["ref"]), code(b["source_image"])] for b in m["base_images"]]))
 
     ci = m.get("comparison_image")
-    out += ["## Comparison image (UBI 9: not hardened, not FIPS)", ""]
+    out.append(("h", 2, "Comparison image (UBI 9: not hardened, not FIPS)"))
     if ci:
-        out += ["`%s@%s`, %s, tagged %s." % (ci["name"], ci["digest"], ci["platform"],
-                                              ", ".join("`%s`" % t for t in ci["tags"])), "",
-                "%s Deploy `%s`." % (ci["purpose"].split(" Deploy ")[0], IMAGE), "",
-                "| Stage | Base image |", "|---|---|"]
-        out += ["| %s | `%s` |" % (b["stage"], b["ref"]) for b in ci["base_images"]]
+        tags = []
+        for k, t in enumerate(ci["tags"]):
+            tags += ([", "] if k else []) + [code(t)]
+        out += [("p", [code("%s@%s" % (ci["name"], ci["digest"])), ", %s, tagged " % ci["platform"]] + tags + ["."]),
+                ("p", ["%s Deploy " % ci["purpose"].split(" Deploy ")[0], code(IMAGE), "."]),
+                ("table", ["Stage", "Base image"], [[b["stage"], code(b["ref"])] for b in ci["base_images"]])]
     else:
-        out.append("Not published (dry run).")
-    out.append("")
+        out.append(("p", "Not published (dry run)."))
 
     if "diff" in ch:                     # manifests before #224 have no line counts
         out += diff_section(ch["diff"])
-    out += ["## Changes (%d pull requests)" % len(ch["pull_requests"]), "",
-            "| Pull request | Title | Merged | Closes | First released in |", "|---|---|---|---|---|"]
-    for p in ch["pull_requests"]:
-        closes = ", ".join("#%d" % n for n in p["closes"]) or "\u2014"
-        out.append("| [#%d](%s) | %s | %s | %s | %s |" % (
-            p["number"], p["url"], esc(p["title"]), p["merged_at"][:10], closes,
-            "`%s`" % p["first_tag"] if p["first_tag"] else "this release"))
-    for d in ch["direct_commits"]:
-        out.append("| `%s` | %s | | \u2014 | %s |" % (d["commit"][:7], esc(d["subject"]),
-                                                      "`%s`" % d["first_tag"] if d["first_tag"] else "this release"))
-    out.append("")
+    rows = [[link("#%d" % p["number"], p["url"]), forge(p["title"]), p["merged_at"][:10],
+             ", ".join("#%d" % n for n in p["closes"]) or "—",
+             code(p["first_tag"]) if p["first_tag"] else "this release"] for p in ch["pull_requests"]]
+    rows += [[code(d["commit"][:7]), forge(d["subject"]), None, "—",
+              code(d["first_tag"]) if d["first_tag"] else "this release"] for d in ch["direct_commits"]]
+    out += [("h", 2, "Changes (%d pull requests)" % len(ch["pull_requests"])),
+            ("table", ["Pull request", "Title", "Merged", "Closes", "First released in"], rows)]
     if m["changelog"]:
-        out += ["The changelog, grouped by commit type, is `%s`." % m["changelog"]["file"], ""]
+        out.append(("p", ["The changelog, grouped by commit type, is ", code(m["changelog"]["file"]), "."]))
 
     env = m["build_environment"]
-    out += ["## Build environment", "",
-            "Pinned at the commit. Runners: %s." % ", ".join("`%s`" % x for x in env["runners"]), "",
-            "| Action | Commit | Version |", "|---|---|---|"]
-    out += ["| `%s` | `%s` | %s |" % (x["action"], x["commit"], x["version"]) for x in env["actions"]]
-    out += ["", "| Tool | Image |", "|---|---|"]
-    out += ["| %s | `%s` |" % (x["name"], x["ref"]) for x in env["tool_images"]]
-    out.append("")
+    runners: List[Any] = []
+    for k, x in enumerate(env["runners"]):
+        runners += ([", "] if k else []) + [code(x)]
+    out += [("h", 2, "Build environment"),
+            ("p", ["Pinned at the commit. Runners: "] + runners + ["."]),
+            ("table", ["Action", "Commit", "Version"],
+             [[code(x["action"]), code(x["commit"]), x["version"]] for x in env["actions"]]),
+            ("table", ["Tool", "Image"], [[x["name"], code(x["ref"])] for x in env["tool_images"]])]
 
-    out += ["## Approvals", ""]
+    out.append(("h", 2, "Approvals"))
     if m["approvals"]:
-        out += ["| Environment | Approved by | State | Comment |", "|---|---|---|---|"]
-        out += ["| %s | %s | %s | %s |" % (esc(x["environment"]), esc(x["user"]), esc(x["state"]),
-                                           esc(x["comment"])) for x in m["approvals"]]
-        out += ["", "The `release` gate, approved after this manifest was made, approves signing it."]
+        out += [("table", ["Environment", "Approved by", "State", "Comment"],
+                 [[forge(x["environment"]), forge(x["user"]), forge(x["state"]), forge(x["comment"])]
+                  for x in m["approvals"]]),
+                ("p", ["The ", code("release"), " gate, approved after this manifest was made, approves signing it."])]
     else:
-        out.append("None recorded (a dry run has no approval gates).")
-    out.append("")
+        out.append(("p", "None recorded (a dry run has no approval gates)."))
 
     ver = m["verification"]
     v = r["version"]
-    out += ["## Verifying this release", "",
-            "Offline, with a `cosign.pub` obtained from a trusted channel (SHA-256 `%s`):" % ver["public_key_sha256"],
-            "", "```bash",
-            "cosign verify-blob --key cosign.pub --insecure-ignore-tlog --bundle SHA256SUMS.sigstore.json SHA256SUMS",
-            "sha256sum -c SHA256SUMS      # this manifest is one of the files it lists",
-            "```", "",
-            "With the GitHub CLI (`--bundle wd2l-%s-attestations.jsonl` works offline):" % v, "",
-            "```bash",
-            "gh attestation verify wd2l-%s-release-manifest.json --repo %s --signer-workflow %s"
-            % (v, repo.split("github.com/", 1)[-1], ver["signer_workflow"]),
-            "gh release verify %s" % r["tag"],
-            "```", "",
-            "| Attestation | Signed by | Covers |", "|---|---|---|"]
-    out += ["| `%s` | %s | %s |" % (x["predicate_type"], x["signed_by"], x["covers"]) for x in ver["attestations"]]
+    out += [("h", 2, "Verifying this release"),
+            ("p", ["Offline, with a ", code("cosign.pub"), " obtained from a trusted channel (SHA-256 ",
+                   code(ver["public_key_sha256"]), "):"]),
+            ("code", ["cosign verify-blob --key cosign.pub --insecure-ignore-tlog --bundle SHA256SUMS.sigstore.json SHA256SUMS",
+                      "sha256sum -c SHA256SUMS      # this manifest is one of the files it lists"]),
+            ("p", ["With the GitHub CLI (", code("--bundle wd2l-%s-attestations.jsonl" % v), " works offline):"]),
+            ("code", ["gh attestation verify wd2l-%s-release-manifest.json --repo %s --signer-workflow %s"
+                      % (v, repo.split("github.com/", 1)[-1], ver["signer_workflow"]),
+                      "gh release verify %s" % r["tag"]]),
+            ("table", ["Attestation", "Signed by", "Covers"],
+             [[code(x["predicate_type"]), x["signed_by"], x["covers"]] for x in ver["attestations"]])]
+    return out
+
+
+def to_markdown(bl: Sequence[Tuple[Any, ...]]) -> str:
+    out: List[str] = []
+    for b in bl:
+        if b[0] == "h":
+            out += ["#" * b[1] + " " + md_inline(b[2]), ""]
+        elif b[0] == "p":
+            out += [md_inline(b[1]), ""]
+        elif b[0] == "note":
+            out += ["> " + md_inline(b[1]), ""]
+        elif b[0] == "md":
+            out += [b[1], ""]
+        elif b[0] == "code":
+            out += ["```bash"] + list(b[1]) + ["```", ""]
+        else:
+            out += ["| " + " | ".join(b[1]) + " |", "|" + "---|" * len(b[1])]
+            out += ["|" + "".join(" |" if c is None else " %s |" % md_inline(c) for c in row) for row in b[2]]
+            out.append("")
+    if out and out[-1] == "":
+        out.pop()
     return "\n".join(out) + "\n"
+
+
+def render(m: Dict[str, Any]) -> str:
+    """The markdown view: wd2l-<version>-release-manifest.md, and the run's summary."""
+    return to_markdown(blocks(m))
+
+
+# The HTML view: wd2l-<version>-release-manifest.html, for a reviewer with nothing that renders
+# markdown. It looks like the SBOM page (the same stylesheet), loads nothing and runs nothing.
+HTML_CSS = ("nav{background:var(--card);border-radius:8px;padding:8px 16px;margin:16px 0;max-width:820px}"
+            "nav ul{margin:4px 0;padding-left:20px;columns:2}main code{overflow-wrap:anywhere}"
+            "blockquote{border-left:4px solid var(--accent);margin:12px 0;padding:4px 12px;background:var(--card)}"
+            "pre{background:var(--card);padding:10px 12px;border-radius:6px;overflow-x:auto}pre code{white-space:pre}"
+            "table{margin:8px 0 16px}"
+            "@media print{thead{display:table-header-group}tr{break-inside:avoid}h2,h3{break-after:avoid}nav{display:none}}")
+
+
+def _h(text: Any, quote: bool = True) -> str:
+    return html.escape(str(text), quote=quote)
+
+
+def html_inline(x: Any) -> str:
+    out = []
+    for p in _parts(x):
+        if isinstance(p, str) or p[0] == "forge":
+            out.append(_h(p if isinstance(p, str) else p[1]))
+        elif p[0] == "code":
+            out.append("<code>%s</code>" % _h(p[1]))
+        elif p[0] == "b":
+            out.append("<b>%s</b>" % html_inline(p[1]))
+        elif p[2].startswith("https://"):
+            out.append('<a href="%s">%s</a>' % (_h(p[2]), html_inline(p[1])))
+        else:                            # a link only to an https URL; anything else stays text
+            out.append(html_inline(p[1]))
+    return "".join(out)
+
+
+def summary_inline_html(text: str) -> str:
+    """The summary's own markdown inline: `code`, **bold** and [text](https://...)."""
+    out = []
+    for k, part in enumerate(text.split("`")):
+        if k % 2:
+            out.append("<code>%s</code>" % _h(part))
+            continue
+        t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _h(part))
+        out.append(re.sub(r"\[([^\]]+)\]\((https://[^)\s]+)\)", r'<a href="\2">\1</a>', t))
+    return "".join(out)
+
+
+ITEM = re.compile(r"(\s*)([*-]|\d+\.) (.*)")
+
+
+def summary_html(text: str, heading: Any) -> List[str]:
+    """The release's summary (docs/releases/<version>.md): headings, paragraphs, nested lists and
+    code blocks, the markdown those files use. heading(level, html) writes a heading."""
+    out: List[str] = []
+    para: List[str] = []
+    stack: List[List[Any]] = []          # the open lists: [indent, tag]
+    lines = text.splitlines()
+
+    def flush() -> None:
+        if para:
+            out.append("<p>%s</p>" % summary_inline_html(" ".join(para)))
+            del para[:]
+
+    def close(deeper_than: int = -1) -> None:
+        while stack and stack[-1][0] > deeper_than:
+            out.append("</li></%s>" % stack.pop()[1])
+
+    i = 0
+    while i < len(lines):
+        line, i = lines[i], i + 1
+        bare = line.strip()
+        if bare.startswith("```"):
+            flush()
+            close()
+            body = []
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                body.append(lines[i])
+                i += 1
+            i += 1
+            out.append("<pre><code>%s</code></pre>" % _h("\n".join(body), quote=False))
+            continue
+        hm = re.match(r"(#{1,6}) (.*)", line)
+        if hm:
+            flush()
+            close()
+            out.append(heading(len(hm.group(1)), summary_inline_html(hm.group(2))))
+            continue
+        im = ITEM.match(line)
+        if im:
+            flush()
+            indent, tag = len(im.group(1)), "ol" if im.group(2)[0].isdigit() else "ul"
+            words = [im.group(3)]
+            while (i < len(lines) and lines[i].strip() and not ITEM.match(lines[i])
+                   and not lines[i].strip().startswith("```")
+                   and len(lines[i]) - len(lines[i].lstrip()) > indent):
+                words.append(lines[i].strip())
+                i += 1
+            close(indent)
+            if stack and stack[-1][0] == indent:
+                out.append("</li>")
+            else:
+                out.append("<%s>" % tag)
+                stack.append([indent, tag])
+            out.append("<li>%s" % summary_inline_html(" ".join(words)))
+            continue
+        if not bare:
+            flush()
+            nxt = next((l for l in lines[i:] if l.strip()), "")
+            if not ITEM.match(nxt):
+                close()
+            continue
+        close()
+        para.append(bare)
+    flush()
+    close()
+    return out
+
+
+def render_html(m: Dict[str, Any]) -> str:
+    """The HTML view, from the same blocks as the markdown."""
+    import sbom_report                   # the SBOM page's stylesheet, so the two read as one set
+    v = m["release"]["version"]
+    body: List[str] = []
+    nav: List[Tuple[str, str]] = []
+    ids: Dict[str, int] = {}
+
+    def heading(level: int, inner: str) -> str:
+        if level != 2:
+            return "<h%d>%s</h%d>" % (level, inner, level)
+        text = re.sub(r"<[^>]+>", "", inner)
+        slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "section"
+        ids[slug] = ids.get(slug, 0) + 1
+        if ids[slug] > 1:
+            slug += "-%d" % ids[slug]
+        nav.append((slug, inner))
+        return '<h2 id="%s">%s</h2>' % (slug, inner)
+
+    for b in blocks(m):
+        if b[0] == "h":
+            body.append(heading(b[1], html_inline(b[2])))
+        elif b[0] == "p":
+            body.append("<p>%s</p>" % html_inline(b[1]))
+        elif b[0] == "note":
+            body.append("<blockquote>%s</blockquote>" % html_inline(b[1]))
+        elif b[0] == "md":
+            body += summary_html(b[1], heading)
+        elif b[0] == "code":
+            body.append("<pre><code>%s</code></pre>" % _h("\n".join(b[1]), quote=False))
+        else:
+            body.append("<table><thead><tr>%s</tr></thead><tbody>%s</tbody></table>" % (
+                "".join("<th>%s</th>" % _h(c) for c in b[1]),
+                "".join("<tr>%s</tr>" % "".join("<td>%s</td>" % ("" if c is None else html_inline(c)) for c in row)
+                        for row in b[2])))
+    first = next((k for k, x in enumerate(body) if x.startswith("<h2")), len(body))
+    sbom = "wd2l-%s-sbom.html" % v
+    intro = ['<p>Its SBOMs and scan results, as one readable page: <a href="%s">%s</a>.</p>' % (_h(sbom), _h(sbom)),
+             '<nav aria-label="Sections"><b>Sections</b><ul>%s</ul></nav>' % "".join(
+                 '<li><a href="#%s">%s</a></li>' % (slug, inner) for slug, inner in nav)]
+    title = "wd2l %s: release manifest" % v
+    return ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; '
+            'img-src data:; base-uri \'none\'; form-action \'none\'">'
+            '<title>%s</title><style>%s%s</style></head><body><main>\n%s\n'
+            '<footer>Generated by <code>packaging/release/manifest.py render --format html</code> from '
+            '<code>wd2l-%s-release-manifest.json</code>.</footer></main></body></html>\n' % (
+                _h(title), sbom_report.CSS, HTML_CSS, "\n".join(body[:first] + intro + body[first:]), _h(v)))
 
 
 # ---- command line -------------------------------------------------------------------------
@@ -696,7 +928,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sub.add_parser("previous-release", help="print the previous final release's tag, if any")
     val = sub.add_parser("validate", help="check a manifest against the schema")
     val.add_argument("manifest")
-    ren = sub.add_parser("render", help="the markdown view (on stdout)")
+    ren = sub.add_parser("render", help="the readable view (on stdout): markdown, or HTML (#202)")
+    ren.add_argument("--format", choices=("md", "html"), default="md")
     ren.add_argument("manifest")
     a = p.parse_args(argv)
     if a.cmd == "generate":
@@ -722,7 +955,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 1
         print("manifest %s: valid" % a.manifest)
         return 0
-    sys.stdout.write(render(doc))
+    sys.stdout.write(render_html(doc) if a.format == "html" else render(doc))
     return 0
 
 

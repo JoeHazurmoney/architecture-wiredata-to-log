@@ -148,7 +148,12 @@ proves:
   * **How it's checked:** against [its schema](../packaging/release/release-manifest.schema.json),
     and an invalid one fails the run. `wd2l-<version>-release-manifest.json` is the
     authoritative copy; `.md` is the readable view (the customer's version description), shown
-    in the run's summary for whoever approves the `release` gate.
+    in the run's summary for whoever approves the `release` gate. `.html` is the same view as a
+    page that opens in any browser, offline, for a reviewer with nothing that renders markdown.
+    It loads nothing and runs no script, prints with each table's header kept with its rows,
+    and links to the SBOM page. One renderer (`manifest.py render`, `--format html`) makes
+    both views from the same sections, so they can't drift. Like the `.md`, it's in
+    `SHA256SUMS` but isn't one of the manifest's own deliverables.
   * **Permissions:** the job has no secrets, and only reads git and the forge's API.
   * **A self-check:** last, the job runs the `verify-release` it ships against its own files,
     the way a customer would. The signature check is skipped there, because signing comes
@@ -476,6 +481,9 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
 
 ## Seeing the scan results and attestations
 
+* **A release's manifest page.** `wd2l-<version>-release-manifest.html`, the version description
+  in a browser, offline: what changed, the issues resolved and still known, every file, and how
+  to verify them. It links to the SBOM page, and the SBOM page links back.
 * **Security > Code scanning.** Every Grype and Trivy finding for the image built from
   `main`, one alert each, with filters and history (`tests.yml`'s `code-scanning` job uploads
   the SARIF files after each push to `main`, even when another image check failed).

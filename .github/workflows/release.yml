@@ -216,7 +216,9 @@ jobs:
             --changelog "assets/wd2l-$V-changelog.md" "${dry[@]}" > "wd2l-$V-release-manifest.json"
           python packaging/release/manifest.py validate "wd2l-$V-release-manifest.json"
           python packaging/release/manifest.py render "wd2l-$V-release-manifest.json" > "wd2l-$V-release-manifest.md"
-          mv "wd2l-$V-release-manifest.json" "wd2l-$V-release-manifest.md" assets/
+          # The same view as a page that opens in any browser, offline (#202).
+          python packaging/release/manifest.py render --format html "wd2l-$V-release-manifest.json" > "wd2l-$V-release-manifest.html"
+          mv "wd2l-$V-release-manifest.json" "wd2l-$V-release-manifest.md" "wd2l-$V-release-manifest.html" assets/
           # The person approving the release gate reads what they're about to sign.
           cat "assets/wd2l-$V-release-manifest.md" >> "$GITHUB_STEP_SUMMARY"
       - name: SHA256SUMS over every file, the manifest included

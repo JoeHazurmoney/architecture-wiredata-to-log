@@ -613,3 +613,84 @@ def test_previous_release_is_the_last_final_tag_before_this_one(tmp_path):
     r = make_repo(tmp_path)
     assert m.previous_release("v1.0.0rc1", cwd=str(r)) == "v0.3.0"
     assert m.previous_release("v1.0.0rc1", cwd=str(make_repo(tmp_path / "b", final_tag=False))) is None
+
+
+# ---- the HTML view (#202) -----------------------------------------------------------------
+# The same sections as the markdown, from the same blocks, as one page that loads nothing.
+
+import html as _html  # noqa: E402
+import re as _re  # noqa: E402
+
+
+def _md_headings_and_rows(md):
+    lines, fenced = [], False
+    for l in md.splitlines():                  # a "# comment" in a code block is no heading
+        if l.startswith("```"):
+            fenced = not fenced
+        elif not fenced:
+            lines.append(l)
+    heads = [l.lstrip("#").strip() for l in lines if _re.match(r"#{1,3} ", l)]
+    rows = [l for l in lines if l.startswith("|") and not _re.match(r"\|(-+\|)+$", l)]
+    return heads, len(rows)
+
+
+def _html_headings_and_rows(page):
+    heads = [_html.unescape(_re.sub(r"<[^>]+>", "", h)).strip()
+             for h in _re.findall(r"<h[123][^>]*>(.*?)</h[123]>", page)]
+    return heads, len(_re.findall(r"<tr>", page))
+
+
+@pytest.mark.parametrize("dry", [False, True])
+def test_the_html_and_the_markdown_have_the_same_sections_and_table_rows(dry):
+    d = example()
+    if dry:
+        d["release"]["dry_run"], d["image"], d["approvals"] = True, None, []
+    md_heads, md_rows = _md_headings_and_rows(m.render(d))
+    html_heads, html_rows = _html_headings_and_rows(m.render_html(d))
+    # The markdown's headings and backticks are plain text in the page.
+    assert [h.replace("`", "") for h in md_heads] == html_heads and md_rows == html_rows
+
+
+def test_the_html_page_links_each_section_and_names_the_record():
+    page = m.render_html(example())
+    v = example()["release"]["version"]
+    assert page.startswith("<!doctype html>") and "<title>wd2l %s: release manifest</title>" % v in page
+    nav = page.split('<nav', 1)[1].split("</nav>", 1)[0]
+    for h in ("Issues resolved", "Known issues", "Deliverables", "Container image", "Build environment",
+              "Approvals", "Verifying this release"):
+        assert h in nav, h
+    assert "<code>wd2l-%s-release-manifest.json</code> is the authoritative record" % v in page
+    assert '<a href="wd2l-%s-sbom.html">' % v in page            # the pair read as one set
+
+
+def test_forge_text_is_escaped_in_the_html():
+    d = example()
+    evil = '<script>alert("x")</script> & [a](javascript:x) `y` **z**'
+    d["changes"]["issues_resolved"][0]["title"] = evil
+    d["changes"]["pull_requests"][0]["title"] = evil
+    page = m.render_html(d)
+    assert "<script" not in page                              # shown as text, never run
+    assert page.count(_html.escape(evil, quote=True)) == 2
+    assert 'href="javascript' not in page and "<b>z</b>" not in page and "<code>y</code>" not in page
+
+
+def test_the_html_page_loads_nothing_and_links_only_plainly():
+    page = m.render_html(example())
+    assert "<script" not in page and " src=" not in page
+    assert "default-src 'none'" in page                       # a Content-Security-Policy, like the SBOM page
+    for href in _re.findall(r'href="([^"]*)"', page):
+        assert href.startswith("https://") or href.startswith("#") or _re.match(r"wd2l-[^/]+-sbom\.html$", href), href
+
+
+def test_the_html_page_keeps_table_headers_with_their_rows_in_print():
+    page = m.render_html(example())
+    assert "thead{display:table-header-group}" in page and "tr{break-inside:avoid}" in page
+
+
+def test_render_writes_either_format(tmp_path, capsys):
+    path = tmp_path / "m.json"
+    path.write_text(json.dumps(example()))
+    assert m.main(["render", str(path)]) == 0
+    assert capsys.readouterr().out == m.render(example())
+    assert m.main(["render", "--format", "html", str(path)]) == 0
+    assert capsys.readouterr().out == m.render_html(example())

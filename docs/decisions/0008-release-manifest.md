@@ -41,6 +41,9 @@
     still looks authoritative.
   * A generated markdown view, `wd2l-<version>-release-manifest.md`, is the customer's version
     description. The JSON is the source of truth, and the markdown is only a view.
+  * **Update (2026-10-29, #202):** the readable view comes in two formats from one renderer:
+    the `.md` and `wd2l-<version>-release-manifest.html`, a page that opens offline in any
+    browser and looks like the SBOM page.
 * **What it records:**
   * **Identity and source:** the version, the tag, the full 40-character commit, the previous
     final release, and the run that made it.
