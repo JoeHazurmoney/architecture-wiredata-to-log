@@ -174,7 +174,7 @@ job has a time limit well above its usual time: 30 minutes for the lab, which ta
 A PR that changes only files under `docs/` skips the lab, the image and the RPMs, which nothing
 there reaches, and still runs pytest, whose tests read the docs. `ci-ok` passes with them
 skipped. `README.md` isn't docs-only: the wheel, the sdist and the RPM carry it. A push to
-`main` always runs everything.
+`main` still runs everything.
 
 ## Conventions
 
