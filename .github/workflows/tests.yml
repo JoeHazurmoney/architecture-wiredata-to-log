@@ -29,6 +29,31 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    # Whether a pull request changes only files under docs/ (#244). Nothing there reaches the lab,
+    # the image or the RPMs, so they're skipped; pytest still runs, because its tests read the
+    # docs. README.md isn't docs-only: the wheel, the sdist and the RPM carry it. Every other
+    # event, release.yml's call included, runs everything.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.diff.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          docs_only=false
+          if [ "$EVENT" = pull_request ]; then
+            # The checkout is the pull request merged into its base: its first parent is the base.
+            git diff --name-only HEAD^1 HEAD | tee changed.txt
+            if [ -s changed.txt ] && ! grep -qv '^docs/' changed.txt; then docs_only=true; fi
+          fi
+          echo "docs_only=$docs_only" | tee -a "$GITHUB_OUTPUT"
+
   pytest:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -54,6 +79,8 @@ jobs:
 
   lab:
     # The full one-way path in network namespaces, including loss, outage and crash runs.
+    needs: [changes]
+    if: ${{ needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30        # it takes about 11
     steps:
@@ -89,15 +116,16 @@ jobs:
   image:
     # The container image's checks (.github/workflows/image.yml); nothing is published.
     # format(): on push, PR and workflow_dispatch there are no inputs, and in expressions
-    # null == false.
-    if: ${{ format('{0}', inputs.image) != 'false' }}
+    # null == false. A docs-only pull request skips it (the changes job).
+    needs: [changes]
+    if: ${{ format('{0}', inputs.image) != 'false' && needs.changes.outputs.docs_only != 'true' }}
     uses: ./.github/workflows/image.yml
 
   rpm:
     # The RPMs, from the dist artifact the image job's build made. release.yml calls tests.yml
-    # with image: false and calls rpm.yml itself.
-    if: ${{ format('{0}', inputs.image) != 'false' }}
-    needs: [image]
+    # with image: false and calls rpm.yml itself. Skipped with the image on a docs-only PR.
+    if: ${{ format('{0}', inputs.image) != 'false' && needs.changes.outputs.docs_only != 'true' }}
+    needs: [changes, image]
     uses: ./.github/workflows/rpm.yml
 
   code-scanning:
@@ -169,9 +197,10 @@ jobs:
 
   ci-ok:
     # The one check main's ruleset requires: every job above passed, or was skipped by design
-    # (release.yml calls this workflow with image: false).
+    # (release.yml calls this workflow with image: false; a docs-only PR skips three). It needs
+    # changes too, so a failed changes job can't skip the rest and still pass.
     if: ${{ always() }}
-    needs: [pytest, lab, image, rpm]
+    needs: [changes, pytest, lab, image, rpm]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

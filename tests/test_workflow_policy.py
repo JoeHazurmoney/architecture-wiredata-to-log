@@ -175,6 +175,21 @@ def test_main_fails_if_the_signing_key_is_a_repository_secret():
     assert "signing-key-scope" not in t["ci-ok"]      # on main only, like landed-title
 
 
+def test_a_docs_only_pull_request_skips_the_lab_image_and_rpms_but_not_pytest():
+    # #244: a change under docs/ only ran the whole pipeline. pytest still runs: its tests read
+    # the docs. ci-ok needs changes too, or a failed changes job would skip the rest and pass.
+    t = jobs(read("tests.yml"))
+    diff = t["changes"]
+    assert "fetch-depth: 2" in diff and '[ "$EVENT" = pull_request ]' in diff
+    assert "git diff --name-only HEAD^1 HEAD | tee changed.txt" in diff
+    assert "if [ -s changed.txt ] && ! grep -qv '^docs/' changed.txt; then docs_only=true; fi" in diff
+    skip = "needs.changes.outputs.docs_only != 'true'"
+    for job in ("lab", "image", "rpm"):
+        assert skip in t[job] and "changes" in re.search(r"needs: \[([^\]]*)\]", t[job]).group(1), job
+    assert "needs:" not in t["pytest"] and "docs_only" not in t["pytest"]
+    assert "needs: [changes, pytest, lab, image, rpm]" in t["ci-ok"] and "if: ${{ always() }}" in t["ci-ok"]
+
+
 def test_attest_signs_the_image_keylessly_and_checks_the_identity():
     att = jobs(read("attest.yml"))["attest"]
     assert "TOOL_ENV: ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN" in att
@@ -471,7 +486,7 @@ def test_scan_findings_pause_for_a_security_review_instead_of_failing():
     assert ("if: ${{ needs.vuln-review.outputs.needed == 'true' && "
             "!(github.event_name == 'push' && github.ref == 'refs/heads/main') }}") in gate
     # Every later step waits for the review: tests.yml's ci-ok and rpm, release.yml's publish.
-    assert "needs: [pytest, lab, image, rpm]" in jobs(read("tests.yml"))["ci-ok"]
+    assert "needs: [changes, pytest, lab, image, rpm]" in jobs(read("tests.yml"))["ci-ok"]
     assert "needs: [version, tests, image, rpm]" in jobs(read("release.yml"))["publish"]
 
 
