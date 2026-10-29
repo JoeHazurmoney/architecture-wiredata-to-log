@@ -494,7 +494,7 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
   ([Tool warnings](#tool-warnings)). Every one, known or not, is in the step's summary.
 * **A run's artifacts.** `vuln-<arch>` holds Grype's and Trivy's full JSON, SARIF and logs;
   `sbom-<arch>` the completed SBOMs and Syft's log; `base-evidence` the base images' checks. The
-  weekly rescan's are in `rescan`. GitHub deletes artifacts after the retention period.
+  monthly rescan's are in `rescan`. GitHub deletes artifacts after the retention period.
 * **GitHub's attestations page:**
   `https://github.com/JoeHazurmoney/architecture-wiredata-to-log/attestations` lists every
   attestation `attest.yml` made, with its subjects.
@@ -534,15 +534,19 @@ a pin. The pins differ in what they reach:
   by digest only, the builder and the runtime in one PR: its Python version is a decision
   ([ADR-0004](decisions/0004-container-base-image.md)), so `dependabot.yml` ignores new minor
   and major versions of `hi/python`.
-* **A fixable High or Critical in a released image.** The weekly rescan
-  ([`image-rescan.yml`](../.github/workflows/image-rescan.yml)) rescans the three latest full
-  releases (not pre-releases) with fresh vulnerability data, each by the image digest its
+* **A fixable High or Critical in a released image.** The monthly rescan
+  ([`image-rescan.yml`](../.github/workflows/image-rescan.yml)), on the 1st at 06:17 UTC, rescans
+  the latest and the previous full release (not pre-releases) with fresh vulnerability data, each by the image digest its
   manifest records, and opens an issue for each one that needs a review (or comments on its
   open issue). The issue is labelled `security` and `bug`, so until it's closed, each
   release's manifest lists it under Known issues.
   Ship a patch release on a base with the fix **within 7 days for a Critical, and 30 days for a
   High**, counted from the later of the issue and that base's publication. Until the base exists,
   the finding needs an exception (below).
+  The timelines count from the issue, but a CVE disclosed just after a rescan is found up to a
+  month later. Pull requests and releases scan with fresh data every time, so a release never
+  ships one unseen. Run the rescan by hand (`gh workflow run image-rescan.yml`) when a CVE that
+  may touch the base makes the news.
   * **The PR that moves the base to the fix closes the issues**, with `Closes #…` in its body.
     For a Dependabot PR, which can't be edited that way, the release PR closes them. The
     release's manifest then lists them under Issues resolved, and not under Known issues.
@@ -557,9 +561,10 @@ a pin. The pins differ in what they reach:
   exception so the next PRs don't pause for the same finding.
 * **Before every release** ([Cutting a release](#cutting-a-release), step 1): the base is the
   newest that passes the pipeline, or the release's summary says why not, and every pin resolves.
-* **A pin is gone.** The rescan's `pins` job checks each week that every pinned digest still
-  resolves, and opens "Pinned image digests no longer resolve" for any that doesn't. Re-pin that
-  line.
+* **A pin is gone.** [`pin-check.yml`](../.github/workflows/pin-check.yml) checks each week
+  (Mondays, 06:17 UTC) that every pinned digest still resolves, and opens "Pinned image digests
+  no longer resolve" for any that doesn't. Re-pin that line. It stays weekly while the rescan is
+  monthly, because a registry can delete a retired digest within a day (#89).
 * **Red Hat's Trivy database becomes reachable.** The same job asks for it anonymously each week,
   and opens "Red Hat's Trivy database for Hummingbird is reachable: revisit ADR-0011" when it
   answers. Red Hat's build of Trivy is left out until then
@@ -614,7 +619,7 @@ exception covers; so does an exception that has expired or lacks a field.
   then **Approve and deploy** to go on, or **Reject**, which fails the run.
 * **On a push to `main`** it records the findings without pausing: the change has merged, and
   its pull request was reviewed.
-* **The weekly rescan** opens an issue for a released image that needs a review.
+* **The monthly rescan** opens an issue for a released image that needs a review.
 
 ### Vulnerability exceptions
 

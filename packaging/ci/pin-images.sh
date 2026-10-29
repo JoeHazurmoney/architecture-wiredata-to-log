@@ -6,7 +6,7 @@
 # A file is rewritten only when every FROM in it resolved.
 #
 # --check rewrites nothing. It exits 1 naming each FROM that isn't pinned, or whose pinned
-# digest the registry no longer serves (image-rescan.yml, weekly; docs/releasing.md, before a tag):
+# digest the registry no longer serves (pin-check.yml, weekly; docs/releasing.md, before a tag):
 #   pin-images.sh --check packaging/container/Containerfile packaging/ci/tools.Containerfile
 set -euo pipefail
 resolve() {

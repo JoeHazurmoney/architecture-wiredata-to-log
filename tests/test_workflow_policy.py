@@ -632,7 +632,7 @@ def test_the_gate_s_coverage_warnings_go_through_the_reviewed_list():
 
 
 def test_the_rescan_reports_the_comparison_image_and_opens_no_issue_for_it():
-    # #192: wd2l-ubi9, by the digest its release's manifest records, scanned weekly too; its
+    # #192: wd2l-ubi9, by the digest its release's manifest records, rescanned too; its
     # findings are shown, never an issue (ADR-0004's amendment).
     scan = jobs(read("image-rescan.yml"))["rescan"]
     assert "d9=$(jq -r '.comparison_image.digest // empty' \"manifest-$v.json\")" in scan
@@ -641,12 +641,25 @@ def test_the_rescan_reports_the_comparison_image_and_opens_no_issue_for_it():
     assert '--warnings "coverage-ubi9-$v.log"' in block and "gh issue" not in block and "--exit-code" not in block
 
 
-def test_the_weekly_pins_job_notices_when_red_hat_s_trivy_database_becomes_reachable():
+def test_the_pins_job_notices_when_red_hat_s_trivy_database_becomes_reachable():
     # Red Hat's Trivy was dropped because its Hummingbird database refuses anonymous access
     # (ADR-0011); when that changes, an issue says to revisit it.
-    pins = jobs(read("image-rescan.yml"))["pins"]
+    pins = jobs(read("pin-check.yml"))["pins"]
     assert "packaging/ci/tool oras manifest fetch quay.io/hummingbird-ci/trivy-db:2" in pins
     assert 'title="Red Hat\'s Trivy database for Hummingbird is reachable: revisit ADR-0011"' in pins
+
+
+def test_the_rescan_is_monthly_over_two_releases_and_the_pins_stay_weekly():
+    # #240: the rescan monthly, the latest and previous final release only. The pins check has
+    # its own workflow, still weekly: a registry can delete a retired digest within a day (#89).
+    resc, pins = read("image-rescan.yml"), read("pin-check.yml")
+    assert 'cron: "17 6 1 * *"' in header(resc) and "workflow_dispatch:" in header(resc)
+    assert list(jobs(resc)) == ["rescan"]
+    assert "gh release list --limit 2 --exclude-drafts --exclude-pre-releases" in jobs(resc)["rescan"]
+    assert 'cron: "17 6 * * 1"' in header(pins) and "workflow_dispatch:" in header(pins)
+    assert list(jobs(pins)) == ["pins"]
+    assert "packaging/ci/pin-images.sh --check" in jobs(pins)["pins"]
+    assert "group: pin-check\n" in header(pins) and "cancel-in-progress: false" in header(pins)
 
 
 def test_the_image_sbom_names_the_image_lists_every_file_and_is_completed_before_use():

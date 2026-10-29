@@ -671,7 +671,7 @@ def test_cli_exit_codes_summary_and_predicate(tmp_path):
     assert pred["review_needed"] is True and pred["passed"] is False
     assert s.read_text().startswith("### Vulnerability scan: security review needed")
     assert "CVE-1" in s.read_text()
-    assert vg.main(args + ["--exit-code", "3"]) == 3          # the weekly rescan's issue trigger
+    assert vg.main(args + ["--exit-code", "3"]) == 3          # the rescan's issue trigger
     e.write_text(json.dumps({"exceptions": [exc("CVE-1", "openssl-libs")]}))
     assert vg.main(args + ["--exit-code", "3"]) == 0
     assert json.loads(p.read_text())["gate"]["review_needed"] is False
