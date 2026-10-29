@@ -693,6 +693,61 @@ def test_an_exception_problem_needs_a_review_too(tmp_path):
     assert "**Exceptions to review**" in text and "CVE-9" in text
 
 
+def rescan_args(tmp_path, older, latest):
+    """An older release's scan, gated against the latest release's (#239). Each is (grype, trivy)."""
+    paths = []
+    for name, doc in (("g", older[0]), ("t", older[1]), ("lg", latest[0]), ("lt", latest[1]),
+                      ("e", {"exceptions": []})):
+        f = tmp_path / ("%s.json" % name)
+        f.write_text(json.dumps(doc))
+        paths.append(str(f))
+    s, p = tmp_path / "s.md", tmp_path / "p.json"
+    return ["--grype", paths[0], "--trivy", paths[1], "--exceptions", paths[4], "--today", TODAY,
+            "--latest-grype", paths[2], "--latest-trivy", paths[3], "--latest", "1.3.0",
+            "--summary", str(s), "--predicate", str(p), "--exit-code", "3"], s, p
+
+
+def test_a_finding_the_latest_release_fixed_opens_no_issue(tmp_path):
+    # #218-#223: 1.3.0 fixed expat's CVE, but the rescan of 1.2.0 would open its issue again each run.
+    older = (grype_doc(("CVE-1", "High", "fixed", "expat")), trivy_doc([("CVE-1", "HIGH", "2.7", "expat")]))
+    args, s, p = rescan_args(tmp_path, older, (grype_doc(), trivy_doc()))
+    assert vg.main(args) == 0
+    gate = json.loads(p.read_text())["gate"]
+    assert gate["review_needed"] is False and gate["gated"] == []
+    assert [f["id"] for f in gate["fixed_in_latest"]] == ["CVE-1"]
+    text = s.read_text()
+    assert text.startswith("### Vulnerability scan: no review needed")
+    assert "**Fixed in 1.3.0: upgrade**" in text and "| fixed in 1.3.0 |" in text
+
+
+def test_a_finding_the_latest_release_still_has_opens_an_issue(tmp_path):
+    # The latest's version may differ (a newer build, still vulnerable): same ID and package is enough.
+    older = (grype_doc(("CVE-1", "High", "fixed", "expat")), trivy_doc())
+    latest = (grype_doc(), trivy_doc([("CVE-1", "HIGH", "2.7", "expat")]))
+    args, s, p = rescan_args(tmp_path, older, latest)
+    assert vg.main(args) == 3
+    gate = json.loads(p.read_text())["gate"]
+    assert [f["id"] for f in gate["gated"]] == ["CVE-1"] and gate["fixed_in_latest"] == []
+    assert "Fixed in 1.3.0" not in s.read_text()
+
+
+def test_only_the_findings_the_latest_fixed_drop_out(tmp_path):
+    older = (grype_doc(("CVE-1", "High", "fixed", "expat"), ("CVE-2", "Critical", "fixed", "glibc")), trivy_doc())
+    latest = (grype_doc(("CVE-2", "Critical", "fixed", "glibc")), trivy_doc())
+    args, _s, p = rescan_args(tmp_path, older, latest)
+    assert vg.main(args) == 3
+    gate = json.loads(p.read_text())["gate"]
+    assert [f["id"] for f in gate["gated"]] == ["CVE-2"]
+    assert [f["id"] for f in gate["fixed_in_latest"]] == ["CVE-1"]
+
+
+def test_the_latest_options_go_together(tmp_path):
+    args, _s, _p = rescan_args(tmp_path, (grype_doc(), trivy_doc()), (grype_doc(), trivy_doc()))
+    i = args.index("--latest")
+    with pytest.raises(SystemExit):
+        vg.main(args[:i] + args[i + 2:])
+
+
 def test_the_summary_lists_every_finding_and_why_it_passed_the_gate():
     # The run's Summary tab and the release's vuln-summary.md show what was found, not only
     # what was gated.

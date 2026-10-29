@@ -72,6 +72,8 @@ jobs:
           mkdir -p .cache
           gh release list --limit 3 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName' > tags.txt
           mapfile -t tags < tags.txt
+          # Newest first, so the latest release is scanned before the ones it replaced (#239).
+          latest=${tags[0]#v}
           for tag in "${tags[@]}"; do
             v=${tag#v}
             # What shipped, by the digest its manifest records: a tag can move (#177). Every final
@@ -86,8 +88,12 @@ jobs:
                 --format json --output "/work/trivy-$v-$a.json" "$ref" 2>&1 | tee "trivy-$v-$a.log"
               # Findings don't fail the run (#175): one that needs a review (exit 3) opens its
               # issue, or comments on the open one. Any other exit is the gate itself failing.
+              # An older release's finding that the latest doesn't have is reported as fixed
+              # there, and opens no issue (#239).
+              latest_args=()
+              [ "$v" = "$latest" ] || latest_args=(--latest-grype "grype-$latest-$a.json" --latest-trivy "trivy-$latest-$a.json" --latest "$latest")
               rc=0
-              python3 packaging/container/vuln_gate.py --grype "grype-$v-$a.json" --trivy "trivy-$v-$a.json" \
+              python3 packaging/container/vuln_gate.py --grype "grype-$v-$a.json" --trivy "trivy-$v-$a.json" "${latest_args[@]}" \
                 --exceptions packaging/container/vuln-exceptions.json --summary "summary-$v-$a.md" --warnings "coverage-$v-$a.log" --exit-code 3 || rc=$?
               [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ] || exit "$rc"
               if [ "$rc" -eq 3 ]; then

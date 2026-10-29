@@ -512,6 +512,17 @@ def test_the_rescan_scans_what_shipped_and_labels_its_issues():
     assert 'gh issue create --title "$title" --label security --label bug --body-file "summary-$v-$a.md"' in scan
 
 
+def test_the_rescan_gates_each_older_release_against_the_latest():
+    # #239: 1.2.0's expat finding, fixed in 1.3.0, would have opened a new issue each run.
+    scan = jobs(read("image-rescan.yml"))["rescan"]
+    assert "latest=${tags[0]#v}" in scan
+    assert ('[ "$v" = "$latest" ] || latest_args=(--latest-grype "grype-$latest-$a.json" '
+            '--latest-trivy "trivy-$latest-$a.json" --latest "$latest")') in scan
+    gate = scan.index('python3 packaging/container/vuln_gate.py --grype "grype-$v-$a.json"')
+    assert scan.index("latest_args=()") < gate
+    assert '"${latest_args[@]}"' in scan[gate:scan.index("--exit-code 3", gate)]
+
+
 def test_no_secret_is_pasted_into_a_script():
     # An expression in run: is pasted into the script's text; `echo "${{ secrets.GITHUB_TOKEN }}"`
     # did that for each podman login (#178). Secrets reach scripts through env, as variables.
