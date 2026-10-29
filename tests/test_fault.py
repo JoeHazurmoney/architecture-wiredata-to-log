@@ -228,6 +228,34 @@ def test_a_start_after_downtime_is_not_a_stale_archive():
     assert faults(out)[-1] == ("amber", "e2-capture", 11)
 
 
+def _sender_back_after_downtime():
+    # The archive was last written at 0; the sender is down until 101, between two samples.
+    arch = {"archive_age_s": 0.0}
+    r, out = rxf(archive_probe=lambda: dict(arch), sample_interval=5)
+    feed(r, evt(1) + hbf(1), 0)
+    for t in range(0, 101, 5):
+        arch["archive_age_s"] = float(t)
+        r.tick(t)
+    feed(r, evt(2) + hbf(2), 101)
+    r.tick(101)
+    return r, out, arch
+
+
+def test_the_first_packet_after_downtime_is_not_judged_by_an_older_sample():
+    # The sample at 100 was taken before the packet at 101 was written, so it says nothing.
+    r, out, arch = _sender_back_after_downtime()
+    arch["archive_age_s"] = 0.2                     # tcpdump wrote it
+    r.tick(105)
+    assert ("amber", "e2-capture", 11) not in faults(out)
+
+
+def test_packets_after_downtime_with_no_archive_written_are_a_stale_archive():
+    r, out, arch = _sender_back_after_downtime()
+    arch["archive_age_s"] = 105.0
+    r.tick(105)
+    assert faults(out)[-1] == ("amber", "e2-capture", 11)
+
+
 def test_flat_input_is_the_aggregator():
     r, out = rxf(input_flat_after=5)
     for t in range(8):
