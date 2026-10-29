@@ -501,7 +501,10 @@ def page(views: Sequence[Dict[str, Any]], title: str, lede: str,
                   'listed in the release manifest and its checksum is in the signed <code>SHA256SUMS</code>.</p>',
                   '<p><b>Built from</b> commit <code>%s</code> of <a href="%s">%s</a>. How the SBOM is made: '
                   '<a href="%s/decisions/0009-sbom-content.md">ADR-0009</a>.</p>' % (
-                      esc(release["commit"]), esc(repo_url), esc(repo_url.split("//")[-1]), esc(doc))]
+                      esc(release["commit"]), esc(repo_url), esc(repo_url.split("//")[-1]), esc(doc)),
+                  '<p><b>The release as a whole</b>, what changed and how to verify it, is its version description: '
+                  '<a href="wd2l-%s-release-manifest.html">wd2l-%s-release-manifest.html</a> (#202).</p>' % (
+                      esc(release["version"]), esc(release["version"]))]
     else:
         intro.append('<p><b>Where this page comes from.</b> It is generated from the SPDX and CycloneDX SBOMs named '
                      'in each view, which stay the authoritative record.</p>')
