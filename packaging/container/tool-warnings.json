@@ -8,13 +8,13 @@
      "reason": "The same gap, as vuln_gate.py records it: upstream Trivy doesn't recognize Hummingbird. Grype's data covers it. A scanner that recognizes the OS but has no data for it, as Red Hat's build of Trivy does, isn't matched by this entry and is raised.",
      "expires": "2027-01-15", "approved_by": "system owner"},
     {"tool": "trivy", "text": "Third-party SBOM may lead to inaccurate vulnerability detection",
-     "reason": "Trivy reads the SBOM Red Hat ships inside the base image. Its findings are compared with Grype's, which reads the image itself, in every scan summary.",
+     "reason": "Trivy reads any SBOM file it finds in an image as a list of packages. The runtime base has two that come with pip: dist-info/sboms/rpm.cdx.json (from Red Hat's RPM build) and pip/_vendor/bom.cdx.json (pip's vendored libraries). The Containerfile removes pip in a later layer, but Trivy reads each layer before deletions, so it still sees them. They change no finding: Trivy's only language package is wd2l's own (#236).",
      "expires": "2027-01-15", "approved_by": "system owner"},
     {"tool": "trivy", "text": "Using severities from other vendors for some vulnerabilities",
      "reason": "On UBI 9 (the comparison image), Red Hat gives some vulnerabilities no severity of its own, and Trivy then uses another source's rating, as its documentation describes. The rating Trivy reports is the one each summary shows.",
      "expires": "2027-01-15", "approved_by": "system owner"},
     {"tool": "trivy", "text": "Recommend using Trivy to generate SBOMs",
-     "reason": "wd2l's SBOMs are made by Syft, which lists every RPM with a package ID and every file with its SHA-256; Trivy's own SBOM of the image does neither (docs/decisions/0010-sbom-generator.md).",
+     "reason": "The other half of the same event: Trivy logs this line with the one above whenever it reads an SBOM it didn't make, here pip's two in the base layer. It never sees wd2l's own SBOMs, which Syft makes for the release (docs/decisions/0010-sbom-generator.md) (#236).",
      "expires": "2027-01-15", "approved_by": "system owner"}
   ]
 }

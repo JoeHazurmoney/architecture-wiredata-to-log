@@ -28,9 +28,15 @@
     scanner could match them against advisories.
   * **Red Hat makes its own base SBOM with Syft** (1.51.1), with its build tools hermeto and
     Mobster, by its `creators` (`base-evidence/sbom-0-amd64.spdx.json`, run 39034618013).
-  * **Both Trivy builds warn about the SBOM inside the image.** Reading the SBOM Red Hat ships in
-    the base, they log "Third-party SBOM may lead to inaccurate vulnerability detection" and
-    recommend Trivy-made SBOMs. Their own SBOMs, above, list no files.
+  * **Both Trivy builds warn about SBOM files inside the image.** They log "Third-party SBOM may
+    lead to inaccurate vulnerability detection" and "Recommend using Trivy to generate SBOMs",
+    one event with two lines. Their own SBOMs, above, list no files.
+    * **Corrected 2026-10-29 (#236):** the files aren't an SBOM Red Hat ships for the base, which
+      has none of its own. They're pip's two CycloneDX files in the runtime base:
+      `pip-<version>.dist-info/sboms/rpm.cdx.json` (from Red Hat's RPM build) and
+      `pip/_vendor/bom.cdx.json` (pip's vendored libraries). The Containerfile removes pip in a
+      later layer, but Trivy reads each layer before deletions. They change no finding. The
+      decision below doesn't change.
 
 ## Decision
 
