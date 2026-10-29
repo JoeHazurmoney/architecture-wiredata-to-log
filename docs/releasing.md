@@ -171,6 +171,10 @@ To run it on a branch with no PR: `gh workflow run tests.yml --ref <branch>`. A 
 on a PR cancels its older run, and a newer dry run of a branch cancels the older one. Runs on
 `main` and tag runs are never cancelled; a second run of the same tag waits for the first. Every
 job has a time limit well above its usual time: 30 minutes for the lab, which takes about 11.
+A PR that changes only files under `docs/` skips the lab, the image and the RPMs, which nothing
+there reaches, and still runs pytest, whose tests read the docs. `ci-ok` passes with them
+skipped. `README.md` isn't docs-only: the wheel, the sdist and the RPM carry it. A push to
+`main` always runs everything.
 
 ## Conventions
 
