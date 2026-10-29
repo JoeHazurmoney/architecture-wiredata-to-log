@@ -778,15 +778,14 @@ def html_inline(x: Any) -> str:
 
 
 def summary_inline_html(text: str) -> str:
-    """The summary's own markdown inline: `code`, **bold** and [text](https://...)."""
-    out = []
-    for k, part in enumerate(text.split("`")):
-        if k % 2:
-            out.append("<code>%s</code>" % _h(part))
-            continue
-        t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _h(part))
-        out.append(re.sub(r"\[([^\]]+)\]\((https://[^)\s]+)\)", r'<a href="\2">\1</a>', t))
-    return "".join(out)
+    """The summary's own markdown inline: `code`, **bold** and [text](https://...). The code is
+    held aside while bold and links are matched, so **`a`** is bold, as on GitHub."""
+    parts = text.split("`")
+    code = ["<code>%s</code>" % _h(p) for p in parts[1::2]]
+    t = "".join("\x00%d\x00" % (k // 2) if k % 2 else _h(p) for k, p in enumerate(parts))
+    t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+    t = re.sub(r"\[([^\]]+)\]\((https://[^)\s]+)\)", r'<a href="\2">\1</a>', t)
+    return re.sub("\x00(\\d+)\x00", lambda c: code[int(c.group(1))], t)
 
 
 ITEM = re.compile(r"(\s*)([*-]|\d+\.) (.*)")
@@ -797,7 +796,7 @@ def summary_html(text: str, heading: Any) -> List[str]:
     code blocks, the markdown those files use. heading(level, html) writes a heading."""
     out: List[str] = []
     para: List[str] = []
-    stack: List[List[Any]] = []          # the open lists: [indent, tag]
+    stack: List[List[Any]] = []          # the open lists: [indent, tag, the items' text column]
     lines = text.splitlines()
 
     def flush() -> None:
@@ -805,9 +804,13 @@ def summary_html(text: str, heading: Any) -> List[str]:
             out.append("<p>%s</p>" % summary_inline_html(" ".join(para)))
             del para[:]
 
-    def close(deeper_than: int = -1) -> None:
-        while stack and stack[-1][0] > deeper_than:
+    def close(deeper_than: int = -1, key: int = 0) -> None:
+        """Close the lists whose indent (key 0) or text column (key 2) is deeper."""
+        while stack and stack[-1][key] > deeper_than:
             out.append("</li></%s>" % stack.pop()[1])
+
+    def indent_of(l: str) -> int:
+        return len(l) - len(l.lstrip())
 
     i = 0
     while i < len(lines):
@@ -836,7 +839,7 @@ def summary_html(text: str, heading: Any) -> List[str]:
             words = [im.group(3)]
             while (i < len(lines) and lines[i].strip() and not ITEM.match(lines[i])
                    and not lines[i].strip().startswith("```")
-                   and len(lines[i]) - len(lines[i].lstrip()) > indent):
+                   and indent_of(lines[i]) > indent):
                 words.append(lines[i].strip())
                 i += 1
             close(indent)
@@ -844,16 +847,16 @@ def summary_html(text: str, heading: Any) -> List[str]:
                 out.append("</li>")
             else:
                 out.append("<%s>" % tag)
-                stack.append([indent, tag])
+                stack.append([indent, tag, indent + len(im.group(2)) + 1])
             out.append("<li>%s" % summary_inline_html(" ".join(words)))
             continue
         if not bare:
             flush()
             nxt = next((l for l in lines[i:] if l.strip()), "")
-            if not ITEM.match(nxt):
-                close()
+            if not ITEM.match(nxt):      # a paragraph indented to an item's text continues it
+                close(indent_of(nxt), 2)
             continue
-        close()
+        close(indent_of(line), 2)
         para.append(bare)
     flush()
     close()

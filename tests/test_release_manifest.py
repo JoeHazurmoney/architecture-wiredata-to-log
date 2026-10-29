@@ -687,6 +687,40 @@ def test_the_html_page_keeps_table_headers_with_their_rows_in_print():
     assert "thead{display:table-header-group}" in page and "tr{break-inside:avoid}" in page
 
 
+def _summary(text):
+    return "\n".join(m.summary_html(text, lambda level, inner: "<h%d>%s</h%d>" % (level, inner, level)))
+
+
+def test_the_summary_keeps_bold_around_code():
+    assert _summary("* **`a.html`** is the page.") == (
+        "<ul>\n<li><b><code>a.html</code></b> is the page.\n</li></ul>")
+    assert _summary("**`a`, `b` and [c](https://x/c)**") == (
+        '<p><b><code>a</code>, <code>b</code> and <a href="https://x/c">c</a></b></p>')
+    assert _summary("`**not bold**`") == "<p><code>**not bold**</code></p>"
+
+
+def test_a_paragraph_that_continues_a_list_item_stays_in_it():
+    text = ("* Two checks:\n"
+            "  * the base;\n"
+            "  * the wheel.\n"
+            "\n"
+            "  A mismatch fails the release.\n"
+            "* A reading aid.\n"
+            "\n"
+            "After.")
+    assert _summary(text) == "\n".join([
+        "<ul>", "<li>Two checks:", "<ul>", "<li>the base;", "</li>", "<li>the wheel.",
+        "</li></ul>", "<p>A mismatch fails the release.</p>", "</li>", "<li>A reading aid.",
+        "</li></ul>", "<p>After.</p>"])
+
+
+@pytest.mark.parametrize("name", sorted(os.listdir(os.path.join(REPO, "docs", "releases"))))
+def test_every_release_summary_renders_its_bold(name):
+    with open(os.path.join(REPO, "docs", "releases", name), encoding="utf-8") as f:
+        page = _summary(f.read())
+    assert "**" not in _re.sub(r"<code>.*?</code>", "", page), name
+
+
 def test_render_writes_either_format(tmp_path, capsys):
     path = tmp_path / "m.json"
     path.write_text(json.dumps(example()))
