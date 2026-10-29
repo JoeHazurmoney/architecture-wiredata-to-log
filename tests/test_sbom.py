@@ -682,7 +682,7 @@ def test_a_page_for_another_system_has_its_own_title_and_none_of_wd2l_s_release_
                   *one_view(tmp_path), release=False)
     assert "<title>AlmaLinux 9 &lt;Server&gt;</title>" in html and "<h1>AlmaLinux 9 &lt;Server&gt;</h1>" in html
     assert '<p class="lede">A full server, for comparison.</p>' in html
-    for wd2l_only in ("SHA256SUMS", "release manifest", "Built from", "every week", "ADR-0009"):
+    for wd2l_only in ("SHA256SUMS", "release manifest", "Built from", "every month", "ADR-0009"):
         assert wd2l_only not in html, wd2l_only
 
 

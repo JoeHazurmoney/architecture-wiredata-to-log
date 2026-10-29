@@ -1,0 +1,55 @@
+name: pin-check
+# Checks each week that every pinned image digest still resolves: a registry that deletes retired digests
+# otherwise breaks the next run that pulls (#97; #89: quay.io deleted every fedora:44 digest within a day).
+# Weekly on its own, so the monthly image rescan doesn't make a gone pin wait a month (#240).
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+concurrency:
+  # One run at a time: two could both find no open issue and file the same one twice.
+  group: pin-check
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+permissions:
+  contents: read
+  packages: read
+  issues: write
+jobs:
+  pins:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Every pinned digest still resolves
+        run: |
+          if packaging/ci/pin-images.sh --check packaging/container/Containerfile packaging/container/Containerfile.ubi9 packaging/ci/tools.Containerfile 2> pins.txt; then
+            cat pins.txt; exit 0
+          fi
+          { echo 'The registry no longer serves these pins. Re-pin each (docs/releasing.md, "Keeping the pins current"):'
+            echo; echo '```'; grep '^pin-images:' pins.txt; echo '```'; } > body.md
+          title="Pinned image digests no longer resolve"
+          n=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then gh issue comment "$n" --body-file body.md
+          else gh issue create --title "$title" --body-file body.md; fi
+          cat body.md >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+      - name: Whether Red Hat's Trivy database for Hummingbird has become reachable (ADR-0011)
+        run: |
+          # Red Hat's Trivy build was left out because this database refuses anonymous access, so
+          # the build silently uses upstream's, which has no Hummingbird advisories. An issue says
+          # when that changes.
+          if ! packaging/ci/tool oras manifest fetch quay.io/hummingbird-ci/trivy-db:2 > /dev/null 2> oras.log; then
+            echo "Still not reachable: $(tail -1 oras.log)"; exit 0
+          fi
+          title="Red Hat's Trivy database for Hummingbird is reachable: revisit ADR-0011"
+          printf '%s\n\n%s\n' "quay.io/hummingbird-ci/trivy-db:2 now answers anonymously." \
+            "Red Hat's Trivy build (the trivy RPM in the Hummingbird repository) may now cover the Hardened image's OS packages. Check it on an image with known fixed findings, then revisit docs/decisions/0011-vulnerability-scanners.md." > trivy-db.md
+          n=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then gh issue comment "$n" --body-file trivy-db.md
+          else gh issue create --title "$title" --body-file trivy-db.md; fi
+          cat trivy-db.md >> "$GITHUB_STEP_SUMMARY"

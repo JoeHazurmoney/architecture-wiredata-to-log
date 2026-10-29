@@ -251,7 +251,7 @@ def view_html(p: Dict[str, Any], release: bool) -> str:
     else:
         out.append('<p>From the scans with %s. A finding with no fix yet stays listed until its supplier '
                    'ships one%s.</p>' % (esc(", ".join(p["scanners"])),
-                                         "; the rescan after release checks again every week" if release else ""))
+                                         "; the rescan after release checks again every month" if release else ""))
         out.append(coverage_table(p["coverage"]))
         if not any(c["os_packages"] for c in p["coverage"]):
             out.append('<p><b>No scan covered the operating system\'s packages, so they weren\'t checked for known '

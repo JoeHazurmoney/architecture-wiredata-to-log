@@ -28,7 +28,7 @@ should look at those.
 --warnings writes a warning for each scanner without data for the image's OS, in a log that
 tool_warnings.py reads, so the same reviewed list decides which are expected. Without --summary,
 the summary goes to stdout. Exit 0, or N with --exit-code when a review is needed (the
-weekly rescan opens an issue)."""
+monthly rescan opens an issue)."""
 
 import argparse
 import json

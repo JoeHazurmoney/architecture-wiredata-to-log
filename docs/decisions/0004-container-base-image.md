@@ -281,6 +281,18 @@ they change with every rebuild and every new disclosure.
   `wd2l-ubi9`, and the release notes and manifest say it is for comparison only.
 * **Revisit** if building and publishing it costs more than the comparison is worth.
 
+## Amendment, 2026-10-29: the rescan is monthly, over two releases (#240)
+
+* **The change.** The rescan of released images (`image-rescan.yml`) runs monthly, on the 1st,
+  instead of weekly. It scans the latest and the previous final release, instead of the three
+  latest. Where this ADR says "weekly rescan", read "monthly". The pins check moved to
+  `pin-check.yml` and stays weekly.
+* **Why.** It's the system owner's decision. The older release is always the one the latest just
+  replaced, and a rescan of it no longer reopens a finding the latest fixed (#239).
+* **What it costs.** A CVE disclosed just after a rescan is found up to a month later, instead of a
+  week. The patch timelines in `docs/releasing.md` still count from the issue. Every pull request
+  and release scans with fresh data, and a rescan can be run by hand at any time.
+
 ## Action items
 
 1. [ ] **Receiver capture container.** The archive is the recovery source, so it must stay
