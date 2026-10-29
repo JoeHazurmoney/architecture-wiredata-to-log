@@ -207,7 +207,8 @@ work had merged. It's linked from that PR's description and dated by the PR's me
 
 1. Bring the pins up to date ([Keeping the pins current](#keeping-the-pins-current)). Merge any
    open Dependabot PR for the base images, or say in the release's summary why it ships on an
-   older base. Then check that every pin still resolves:
+   older base. If a Dependabot base move fixed an open rescan issue, the release PR closes it
+   (`Closes #…`). Then check that every pin still resolves:
 
    ```bash
    packaging/ci/pin-images.sh --check packaging/container/Containerfile packaging/container/Containerfile.ubi9 packaging/ci/tools.Containerfile
@@ -533,11 +534,19 @@ a pin. The pins differ in what they reach:
   ([`image-rescan.yml`](../.github/workflows/image-rescan.yml)) rescans the three latest full
   releases (not pre-releases) with fresh vulnerability data, each by the image digest its
   manifest records, and opens an issue for each one that needs a review (or comments on its
-  open issue). The issue is labelled `security` and `bug`, so the next release's manifest lists
-  it under Known issues.
+  open issue). The issue is labelled `security` and `bug`, so until it's closed, each
+  release's manifest lists it under Known issues.
   Ship a patch release on a base with the fix **within 7 days for a Critical, and 30 days for a
   High**, counted from the later of the issue and that base's publication. Until the base exists,
   the finding needs an exception (below).
+  * **The PR that moves the base to the fix closes the issues**, with `Closes #…` in its body.
+    For a Dependabot PR, which can't be edited that way, the release PR closes them. The
+    release's manifest then lists them under Issues resolved, and not under Known issues.
+    Closing one by hand leaves it in the next manifest's Known issues (#239).
+  * **An older release that the latest one fixed opens no issue.** The rescan scans the latest
+    release first, and gates each older one against it: a finding the latest doesn't have (the
+    same ID in the same package) is listed in the run's summary as "Fixed in <latest>: upgrade".
+    The images that shipped never change, so the fix for those is to upgrade.
 * **A PR pauses for review because of the base, not the change.** A CVE published since the
   base last moved makes every PR wait at `security-review`. Move the base first, in its own PR.
   If no newer base has the fix yet, the security owner approves the review, and records an

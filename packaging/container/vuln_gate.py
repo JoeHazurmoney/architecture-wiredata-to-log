@@ -11,6 +11,10 @@ This records them, and says whether a security review is needed:
 * when no scanner covered the operating system's packages. A scanner with no advisory data for the
   image's OS checks only its language packages (and secrets), and reports nothing else (#191).
 
+A rescan of an older release also takes the latest release's results (--latest-grype,
+--latest-trivy, --latest): a gated finding whose ID and package the latest release doesn't have is
+fixed there, so it's listed as "fixed in <latest>: upgrade" and needs no review (#239).
+
 image.yml then pauses at the security-review environment until a reviewer approves. The same
 finding from both scanners is shown once, with both named. The summary also shows what each
 scanner covered, and each finding one scanner reported that another, covering that kind of
@@ -19,6 +23,7 @@ should look at those.
 
     vuln_gate.py --grype G.json --trivy T.json --exceptions E.json [--today YYYY-MM-DD]
                  [--summary OUT.md] [--predicate OUT.json] [--warnings OUT.log] [--exit-code N]
+                 [--latest-grype G.json --latest-trivy T.json --latest VERSION]
 
 --warnings writes a warning for each scanner without data for the image's OS, in a log that
 tool_warnings.py reads, so the same reviewed list decides which are expected. Without --summary,
@@ -196,13 +201,25 @@ def gate(findings: List[Dict[str, Any]],
     return gated, excepted
 
 
+def fixed_in_latest(gated: List[Dict[str, Any]], latest: Sequence[Dict[str, Any]]
+                    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Split an older release's gated findings: those the latest release still has (by ID and
+    package, whatever its version), and those it fixed (#239)."""
+    there = {(f["id"], f["package"]) for f in latest}
+    still = [f for f in gated if (f["id"], f["package"]) in there]
+    return still, [f for f in gated if (f["id"], f["package"]) not in there]
+
+
 SEVERITY_ORDER = ("SECRET", "CRITICAL", "HIGH", "MEDIUM", "LOW", "NEGLIGIBLE", "UNKNOWN")
 
 
 def _gate_reason(f: Dict[str, Any], gated: List[Dict[str, Any]],
-                 excepted: List[Dict[str, Any]]) -> str:
+                 excepted: List[Dict[str, Any]], fixed: Sequence[Dict[str, Any]] = (),
+                 latest: str = "") -> str:
     if any(f is g for g in gated):
         return "review"
+    if any(f is x for x in fixed):
+        return "fixed in %s" % latest
     if any(f is e for e in excepted):
         return "exception"
     return "passed: no fix yet" if f["severity"] in GATED else "passed: below High"
@@ -210,7 +227,8 @@ def _gate_reason(f: Dict[str, Any], gated: List[Dict[str, Any]],
 
 def summary(gated: List[Dict[str, Any]], excepted: List[Dict[str, Any]], probs: List[str],
             counts: Dict[str, int], findings: Sequence[Dict[str, Any]] = (),
-            coverage: Sequence[Dict[str, Any]] = (), disagreements: Sequence[Dict[str, Any]] = ()) -> str:
+            coverage: Sequence[Dict[str, Any]] = (), disagreements: Sequence[Dict[str, Any]] = (),
+            fixed: Sequence[Dict[str, Any]] = (), latest: str = "") -> str:
     uncovered = bool(coverage) and not any(c["os_packages"] for c in coverage)
     lines = ["### Vulnerability scan: %s" % ("security review needed" if gated or probs or uncovered
                                              else "no review needed"), "",
@@ -229,6 +247,7 @@ def summary(gated: List[Dict[str, Any]], excepted: List[Dict[str, Any]], probs: 
                       "for this image's operating system, so its packages weren't checked: a person must check "
                       "them, and a security review is needed.", ""]
     for title, rows in (("Needs review (fixable High/Critical, or a secret)", gated),
+                        ("Fixed in %s: upgrade" % latest, fixed),
                         ("Covered by an exception", excepted)):
         if rows:
             lines += ["**%s**" % title, "", "| Found by | ID | Package | Version | Severity | Fixed in |",
@@ -245,7 +264,7 @@ def summary(gated: List[Dict[str, Any]], excepted: List[Dict[str, Any]], probs: 
                                                  f["scanner"], str(f["id"]))):
             lines.append("| %s | %s | %s | %s | %s | %s | %s |" % (
                 f["scanner"], f["id"], f["package"], f["version"], f["severity"], f["fixed_in"],
-                _gate_reason(f, gated, excepted)))
+                _gate_reason(f, gated, excepted, fixed, latest)))
         lines.append("")
     if disagreements:
         lines += ["**Found by one scanner, missed by another that covers it**", "",
@@ -272,9 +291,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                    help="write a warning for each scanner without data for the image's OS, for tool_warnings.py")
     p.add_argument("--exit-code", type=int, default=0, metavar="N",
                    help="exit N when a review is needed (default 0: findings never fail)")
+    p.add_argument("--latest-grype", metavar="G.json", help="the latest release's Grype results (a rescan)")
+    p.add_argument("--latest-trivy", metavar="T.json", help="the latest release's Trivy results")
+    p.add_argument("--latest", metavar="VERSION", help="the latest release's version, for the summary")
     a = p.parse_args(argv)
+    given = [x is not None for x in (a.latest_grype, a.latest_trivy, a.latest)]
+    if any(given) and not all(given):
+        p.error("--latest-grype, --latest-trivy and --latest go together")
     docs = {}
-    for name in ("grype", "trivy", "exceptions"):
+    for name in ("grype", "trivy", "exceptions", "latest_grype", "latest_trivy"):
+        if getattr(a, name) is None:
+            continue
         with open(getattr(a, name)) as f:
             docs[name] = json.load(f)
     g, t = grype_findings(docs["grype"]), trivy_findings(docs["trivy"])
@@ -284,9 +311,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     uncovered = not any(c["os_packages"] for c in covers)
     valid, probs = load_exceptions(docs["exceptions"], a.today)
     gated, excepted = gate(found, valid)
+    fixed: List[Dict[str, Any]] = []
+    if a.latest:
+        latest = merge(grype_findings(docs["latest_grype"]) + trivy_findings(docs["latest_trivy"]))
+        gated, fixed = fixed_in_latest(gated, latest)
     review = bool(gated or probs or uncovered)
     text = summary(gated, excepted, probs, {"grype": len(g), "trivy": len(t)}, found,
-                   coverage=covers, disagreements=dis)
+                   coverage=covers, disagreements=dis, fixed=fixed, latest=a.latest or "")
     if a.warnings:
         with open(a.warnings, "w") as f:
             f.writelines("[0000]  WARN %s\n" % w for w in coverage_warnings(covers))     # Grype's log format
@@ -305,7 +336,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                 "rule": "fixable High/Critical, a secret, or no scanner covering the "
                                         "operating system's packages: a security review",
                                 "uncovered_os": uncovered,
-                                "gated": gated, "excepted": excepted, "problems": probs},
+                                "gated": gated, "excepted": excepted, "problems": probs,
+                                "fixed_in_latest": fixed, "latest": a.latest},
                        "findings": {"grype": len(g), "trivy": len(t), "merged": len(found)},
                        "disagreements": dis}, f, indent=1)
     return a.exit_code if review else 0
