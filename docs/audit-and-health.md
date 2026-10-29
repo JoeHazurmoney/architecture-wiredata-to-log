@@ -165,8 +165,9 @@ The receiver reads its own probes every 5 s and puts them in every summary.
 
 "Is tcpdump running?" is answered without seeing other users' processes: if packets arrive but
 the newest archive file hasn't been written for 15 s, `archive_stale` is set (rule 11). That also
-catches a stuck tcpdump. Before the first packet after a start it isn't set: after downtime the
-newest file is old because nothing was sent. The delays (`wd2l_rx_time − wd2l_tx_time`, index time − `wd2l_rx_time`)
+catches a stuck tcpdump. The archive is judged against the newest packet seen when it was
+sampled (every 5 s), so it isn't set before the first packet after a start, or on the first
+packet after downtime: the newest file is old because nothing was sent. The delays (`wd2l_rx_time − wd2l_tx_time`, index time − `wd2l_rx_time`)
 are SIEM searches ([operations.md](operations.md#measuring-delays)).
 
 **Code:** `wd2l/hostinfo.py`, `wd2l/sender.py`, `wd2l/receiver.py`, `wd2l/outputs.py`.

@@ -489,6 +489,7 @@ class Receiver:
         self.sample: Dict[str, Any] = {}
         self.last_sample: Optional[float] = None
         self.last_packet: Optional[float] = None   # any frame on the capture NIC
+        self.sample_packet: Optional[float] = None  # last_packet when the sample was taken
         self.last_wd2l: Optional[float] = None     # a valid wd2l frame
         if state_path and os.path.exists(state_path):
             self._load_state()
@@ -795,7 +796,7 @@ class Receiver:
         self._prune(now)
         if self.sample_interval and (self.last_sample is None
                                      or now - self.last_sample >= self.sample_interval):
-            self.last_sample = now
+            self.last_sample, self.sample_packet = now, self.last_packet
             self._take_sample()
         ref = self.last_hb if self.last_hb is not None else self.started
         if not self.hb_stale and now - ref > self.hb_timeout:
@@ -914,10 +915,12 @@ class Receiver:
             nic_errors=ft.delta("nic_errors"), kernel_drops=ft.delta("kernel_drops"),
             output_dropped=ft.delta("output_dropped"), spool_growing=ft.delta("spool_files") > 0,
             hec_errors=ft.delta("hec_errors"),
-            # Only once a packet has arrived: after downtime the newest file is old (#187).
+            # Against the newest packet seen when the archive was sampled: after downtime the newest
+            # file is old (#187), and a sample taken just before the first packet says nothing.
             archive_stale=(None if archive_age is None else
-                           self.last_packet is not None and packet_age < self.hb_timeout
-                           and archive_age > self.archive_stale_after))
+                           self.sample_packet is not None and packet_age < self.hb_timeout
+                           and archive_age - (self.last_sample - self.sample_packet)
+                           > self.archive_stale_after))
         f = fault.evaluate(sig)
         prev, ft.current = ft.current, f
         if f.key() != prev.key():
