@@ -11,7 +11,14 @@ component expanding to its files; JavaScript adds tabs, a search box and a switc
 components and every entry. The JSON SBOMs stay the authoritative record.
 
     sbom_report.py --version V --commit C --repo-url URL --out wd2l-V-sbom.html \\
-        --view ID LABEL SPDX.json CDX.json [--view ...] [--scan ID NAME=SCAN.json ...]
+        --view ID LABEL SPDX.json CDX.json [--view ...] [--scan ID NAME=SCAN.json ...] \\
+        [--provenance ID PROVENANCE.json ...]
+
+--provenance gives an image view a "Where it came from" section, read from the provenance
+provenance.py made for it (#201), with two cross-checks against that view's SBOMs: the runtime
+base is the one the image's label names, and the wheel is the one wd2l was installed from. A
+mismatch exits 1 once the page is written, like any SBOM gap (ADR-0009). The section is a reading
+aid: the signed attestation on the image is the record, and the page says so.
 
 With --commit and --repo-url, the page states the release's facts (the commit, the signed
 SHA256SUMS, ADR-0009). Without them, --title (and --intro) describe some other system: the
@@ -30,6 +37,9 @@ import vuln_gate  # noqa: E402  (the findings, normalized as the review gate saw
 
 SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "NEGLIGIBLE", "UNKNOWN")
 NONE = ("", "NOASSERTION", "NONE")
+BASE_LABEL = "syft:image:labels:org.opencontainers.image.base.digest"     # the Containerfiles' label
+VERIFY_PROVENANCE = ("cosign verify-attestation --key cosign.pub --insecure-ignore-tlog "
+                     "--type slsaprovenance1 --local-image wd2l-oci")
 
 
 def esc(x: Any) -> str:
@@ -119,6 +129,8 @@ def load_view(vid: str, label: str, spdx: Dict[str, Any], cdx: Dict[str, Any],
     os_comp = next((c for c in cdx.get("components") or [] if c.get("type") == "operating-system"), None)
     info = spdx.get("creationInfo") or {}
     sha = next((c["checksumValue"] for c in root.get("checksums") or [] if c.get("algorithm") == "SHA256"), "")
+    base = next((x.get("value") for x in (cdx.get("metadata") or {}).get("properties") or []
+                 if x.get("name") == BASE_LABEL), "")
     return {
         "id": vid, "label": label, "assets": names, "scanners": [name for name, _ in scans], "is_image": image,
         "coverage": [c for _, c in read],
@@ -133,7 +145,90 @@ def load_view(vid: str, label: str, spdx: Dict[str, Any], cdx: Dict[str, Any],
         "findings": sorted((f for c in comps for f in c["findings"]), key=lambda f: (
             SEVERITIES.index(f["severity"]) if f["severity"] in SEVERITIES else 9, f["id"] or "")) + unmatched,
         "spdx_version": spdx.get("spdxVersion"), "cdx_version": cdx.get("specVersion"),
+        "base_digest": base or "", "wd2l_sha256": next((c["sha256"] for c in comps
+                                                         if c["purl"].startswith("pkg:pypi/wd2l@")), ""),
+        "provenance": None,
     }
+
+
+def read_provenance(name: str, doc: Dict[str, Any]) -> Dict[str, Any]:
+    """The parts of provenance.py's predicate a reader needs. name: the file it's released as."""
+    bd, rd = doc.get("buildDefinition") or {}, doc.get("runDetails") or {}
+    wf = (bd.get("externalParameters") or {}).get("workflow") or {}
+    deps = bd.get("resolvedDependencies") or []
+    src = next((d for d in deps if (d.get("digest") or {}).get("gitCommit")), {})
+    wheel = next((d for d in deps if str(d.get("uri", "")).endswith(".whl")), {})
+    meta = rd.get("metadata") or {}
+    ref = str(wf.get("ref") or "")
+    return {"file": name, "repo": str(wf.get("repository") or ""),
+            "tag": ref[len("refs/tags/"):] if ref.startswith("refs/tags/") else ref,
+            "commit": (src.get("digest") or {}).get("gitCommit", ""),
+            "builder": (rd.get("builder") or {}).get("id", ""), "run": meta.get("invocationId", ""),
+            "started": meta.get("startedOn", ""), "finished": meta.get("finishedOn", ""),
+            "runner": ((bd.get("internalParameters") or {}).get("github") or {}).get("runner_environment", ""),
+            "wheel": {"name": wheel.get("uri", ""), "sha256": (wheel.get("digest") or {}).get("sha256", "")},
+            "bases": [{"stage": (d.get("annotations") or {}).get("stage", ""), "uri": d.get("uri", ""),
+                       "digest": (d.get("digest") or {}).get("sha256", ""),
+                       "mirror": (d.get("annotations") or {}).get("mirror", "")}
+                      for d in deps if (d.get("annotations") or {}).get("stage")]}
+
+
+def provenance_checks(p: Dict[str, Any]) -> List[Tuple[str, bool, str]]:
+    """Each cross-check of a view's provenance with its SBOMs: (what, it matches, the detail)."""
+    prov = p["provenance"]
+    runtime = next((b["digest"] for b in prov["bases"] if b["stage"] == "runtime"), "")
+    base = p["base_digest"].split(":", 1)[-1]
+    return [("The runtime base is the base this SBOM describes", bool(runtime) and runtime == base,
+             "provenance sha256:%s; the image's base label %s" % (runtime or "none", p["base_digest"] or "none")),
+            ("The wheel is the one this SBOM's wd2l was installed from",
+             bool(prov["wheel"]["sha256"]) and prov["wheel"]["sha256"] == p["wd2l_sha256"],
+             "provenance %s; the SBOM's wd2l component %s" % (prov["wheel"]["sha256"] or "none",
+                                                              p["wd2l_sha256"] or "none"))]
+
+
+def link(url: str, text: str) -> str:
+    """text, linked only to an https URL."""
+    return '<a href="%s">%s</a>' % (esc(url), esc(text)) if url.startswith("https://") else esc(text)
+
+
+def provenance_html(p: Dict[str, Any], release: bool) -> List[str]:
+    """The "Where it came from" section (#201): only on a wd2l release's page."""
+    if not release:
+        return []
+    out = ['<h3>Where it came from</h3>']
+    prov = p["provenance"]
+    if not p["is_image"]:
+        return out + ['<p>These packages have no provenance file of their own. GitHub\'s build provenance covers them, '
+                      'in the release\'s <code>attestations.jsonl</code>: see "GitHub build provenance, offline" in '
+                      '<code>docs/releasing.md</code>.</p>']
+    if prov is None:
+        return out + ['<p>Dry run: no provenance. A release carries it.</p>']
+    repo = prov["repo"].rstrip("/")
+    out += ['<p>From the build provenance, <code>%s</code>. This section is a reading aid, not the evidence: the record '
+            'is the signed attestation on the image. Check it with <code>%s</code>, or with <code>verify-release</code>, '
+            'which checks the image\'s signature.</p>' % (esc(prov["file"]), esc(VERIFY_PROVENANCE)),
+            '<table class="check"><tbody>',
+            '<tr><th>Source</th><td>%s, commit %s</td></tr>' % (
+                link("%s/tree/%s" % (repo, prov["tag"]), prov["tag"]),
+                link("%s/commit/%s" % (repo, prov["commit"]), prov["commit"])),
+            '<tr><th>Built by</th><td><code class="wrap">%s</code></td></tr>' % esc(prov["builder"]),
+            '<tr><th>The run</th><td>%s, from %s to %s%s</td></tr>' % (
+                link(prov["run"], prov["run"]), esc(prov["started"]), esc(prov["finished"]),
+                ", on GitHub-hosted runners" if prov["runner"] == "github-hosted"
+                else (", on %s runners" % esc(prov["runner"]) if prov["runner"] else "")),
+            '<tr><th>The wheel</th><td><code>%s</code>, SHA-256 <code class="wrap">%s</code></td></tr>' % (
+                esc(prov["wheel"]["name"]), esc(prov["wheel"]["sha256"]))]
+    for b in prov["bases"]:
+        out.append('<tr><th>Base image (%s stage)</th><td><code class="wrap">%s@sha256:%s</code>%s</td></tr>' % (
+            esc(b["stage"]), esc(b["uri"]), esc(b["digest"]),
+            ', mirrored at <code class="wrap">%s</code>' % esc(b["mirror"]) if b["mirror"] else ""))
+    out += ['</tbody></table>',
+            '<table class="check"><thead><tr><th>Cross-check with this SBOM</th><th>Result</th><th>Detail</th></tr>'
+            '</thead><tbody>']
+    out += ['<tr><td>%s</td><td class="ok-%s">%s</td><td><code class="wrap">%s</code></td></tr>' % (
+                esc(what), "yes" if ok else "no", "matches" if ok else "does not match", esc(detail))
+            for what, ok, detail in provenance_checks(p)]
+    return out + ['</tbody></table>']
 
 
 def minimum_fields(p: Dict[str, Any]) -> List[Tuple[str, str, str]]:
@@ -241,8 +336,10 @@ def view_html(p: Dict[str, Any], release: bool) -> str:
                ", ".join("%s (%d)" % (esc(k), n) for k, n in sorted(by_sup.items(), key=lambda kv: -kv[1])),
                " %d files belong to two components, and are listed under both." % p["shared_files"]
                if p["shared_files"] else ""),
-           '<h3>The fields an SBOM is expected to carry</h3>',
-           '<table class="check"><thead><tr><th>Field</th><th>Present</th><th>In this SBOM</th></tr></thead><tbody>']
+           ]
+    out += provenance_html(p, release)
+    out += ['<h3>The fields an SBOM is expected to carry</h3>',
+            '<table class="check"><thead><tr><th>Field</th><th>Present</th><th>In this SBOM</th></tr></thead><tbody>']
     for field, ok, detail in minimum_fields(p):
         out.append('<tr><td>%s</td><td class="ok-%s">%s</td><td>%s</td></tr>' % (esc(field), esc(ok.lower()), esc(ok), esc(detail)))
     out += ['</tbody></table>', '<h3>Known vulnerabilities</h3>']
@@ -435,6 +532,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--view", nargs=4, action="append", required=True, metavar=("ID", "LABEL", "SPDX", "CDX"))
     p.add_argument("--scan", nargs=2, action="append", default=[], metavar=("ID", "NAME=FILE"),
                    help="a Grype or Trivy JSON result for view ID, shown as found by NAME")
+    p.add_argument("--provenance", nargs=2, action="append", default=[], metavar=("ID", "FILE"),
+                   help="the provenance of view ID's image (provenance.py), for its section on where it came from")
     p.add_argument("--title", help="default: wd2l VERSION: software bill of materials")
     p.add_argument("--intro", help="the sentence under the title")
     p.add_argument("--version")
@@ -456,6 +555,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not (sep and name and path):
             p.error("--scan %s %s: give NAME=FILE" % (vid, spec))
         scans[vid].append((name, load(path)))
+    provs: Dict[str, Dict[str, Any]] = {}
+    for vid, path in a.provenance:
+        if vid not in scans:
+            p.error("--provenance %s: no --view has that ID" % vid)
+        if not os.path.isfile(path):
+            p.error("--provenance %s %s: no such file" % (vid, path))
+        provs[vid] = read_provenance(os.path.basename(path), load(path))
     views = []
     for vid, label, spdx, cdx in a.view:
         try:
@@ -463,6 +569,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                    {"spdx": os.path.basename(spdx), "cdx": os.path.basename(cdx)}))
         except ValueError as e:                 # a scan file that is neither Grype's nor Trivy's
             p.error(str(e))
+        views[-1]["provenance"] = provs.get(vid)
     labels = and_join([v["label"] for v in views])
     title = a.title or "wd2l %s: software bill of materials" % a.version
     lede = a.intro or (
@@ -473,11 +580,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     release = {"version": a.version, "commit": a.commit, "repo_url": a.repo_url} if a.commit else None
     with open(a.out, "w", encoding="utf-8") as f:
         f.write(page(views, title, lede, release))
+    failed = 0
     for v in views:
         print("sbom-report %s: %d components, %d files, %s" % (
             v["id"], len(v["components"]), v["file_count"],
             "%d known vulnerabilities" % len(v["findings"]) if v["scanners"] else "not scanned"))
-    return 0
+        for what, ok, detail in provenance_checks(v) if v["provenance"] else ():
+            if not ok:
+                failed += 1
+                print("sbom-report %s: the provenance does not match: %s (%s)" % (v["id"], what, detail),
+                      file=sys.stderr)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
