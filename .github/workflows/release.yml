@@ -136,6 +136,9 @@ jobs:
           if [ -d image-release ]; then
             cp "image-release/wd2l-$V-image-"*-oci.tar assets/
             cp image-release/provenance.json "assets/wd2l-$V-provenance.json"
+            # The comparison image's too (#201): every image the release signs has its provenance
+            # among the files.
+            cp image-release/provenance-ubi9.json "assets/wd2l-$V-provenance-ubi9.json"
           fi
           # GitHub serves an asset whose name has "~" under a name with "." instead: name the
           # files that way first, so SHA256SUMS lists what a download gets. Only pre-release
@@ -165,13 +168,17 @@ jobs:
             --out-spdx "assets/wd2l-$V-python.spdx.json" --out-cdx "assets/wd2l-$V-python.cdx.json"
       - name: The SBOMs and their scans as one readable page (docs/decisions/0009-sbom-content.md)
         run: |
+          # Each image's provenance, where it came from (#201): only a tag has it. A dry run's page
+          # says so.
           views=()
           for a in amd64 arm64; do
             views+=(--view "$a" "linux/$a" "assets/wd2l-$V-image-$a.spdx.json" "assets/wd2l-$V-image-$a.cdx.json"
                     --scan "$a" "grype=vuln-$a/grype.json" --scan "$a" "trivy=vuln-$a/trivy.json")
+            if [ -f "assets/wd2l-$V-provenance.json" ]; then views+=(--provenance "$a" "assets/wd2l-$V-provenance.json"); fi
           done
           views+=(--view ubi9 "UBI 9 (amd64)" "assets/wd2l-$V-image-ubi9-amd64.spdx.json" "assets/wd2l-$V-image-ubi9-amd64.cdx.json"
                   --scan ubi9 grype=vuln-ubi9-amd64/grype.json --scan ubi9 trivy=vuln-ubi9-amd64/trivy.json)
+          if [ -f "assets/wd2l-$V-provenance-ubi9.json" ]; then views+=(--provenance ubi9 "assets/wd2l-$V-provenance-ubi9.json"); fi
           for el in el9 el10; do
             views+=(--view "rpms-$el" "RPMs (${el^^})" "assets/wd2l-$V-rpms-$el.spdx.json" "assets/wd2l-$V-rpms-$el.cdx.json")
           done

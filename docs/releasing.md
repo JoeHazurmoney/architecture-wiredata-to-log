@@ -482,8 +482,15 @@ cosign verify ghcr.io/joehazurmoney/wd2l@sha256:<digest> \
   with a table comparing its views, the comparison image on UBI 9 included. It has a tab per
   view: the image's components, each expanding to its files; each component's findings
   and the scanner that found each one; and which of the fields an SBOM is expected to carry it
-  has. A dry run's copy is in its `release-assets` artifact. The page is a view: the SPDX and
-  CycloneDX files are the record.
+  has. Each image's tab also shows where it came from, from its provenance
+  (`wd2l-<version>-provenance.json`, and `wd2l-<version>-provenance-ubi9.json` for the
+  comparison image): the tag and commit, the run, the wheel and the bases. It also checks that
+  the provenance's runtime base and wheel are the ones the SBOM describes, and a mismatch fails
+  `assets`. That section is a reading aid. The record is the signed attestation, checked by
+  `cosign verify-attestation --type slsaprovenance1` ([Bringing a release into an
+  enclave](#bringing-a-release-into-an-enclave)) or by `verify-release`. A dry run has no provenance, and its
+  page says so. A dry run's copy is in its `release-assets` artifact. The page is a view: the
+  SPDX and CycloneDX files are the record.
 * **The run's warnings.** Each tool warning, and each scanner without data for the image's OS,
   is a warning annotation on the run and on the pull request, unless it's a known one
   ([Tool warnings](#tool-warnings)). Every one, known or not, is in the step's summary.

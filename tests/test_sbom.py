@@ -707,3 +707,108 @@ def test_without_a_title_the_version_is_required(tmp_path):
     with pytest.raises(SystemExit) as e:
         rep.main(["--out", str(tmp_path / "r.html")] + one_view(tmp_path))
     assert e.value.code == 2
+
+
+# "Where it came from" (#201): each image view, from its provenance, with two cross-checks.
+WHEEL = "wd2l-9.9.0-py3-none-any.whl"
+WHEEL_SHA = "5e" * 32
+BASE = "92" * 32
+BASE_LABEL = "syft:image:labels:org.opencontainers.image.base.digest"
+RUN = "https://github.com/o/r/actions/runs/123/attempts/1"
+
+
+def provenance_doc(wheel_sha=WHEEL_SHA, runtime=BASE, mirror=True):
+    """provenance.py's predicate, as the release ships it (wd2l-<v>-provenance.json)."""
+    def base(uri, digest, stage):
+        notes = {"stage": stage}
+        if mirror:
+            notes["mirror"] = "ghcr.io/joehazurmoney/wd2l-base/python@sha256:" + digest
+        return {"uri": uri, "digest": {"sha256": digest}, "annotations": notes}
+    return {"buildDefinition": {
+        "buildType": "https://github.com/o/r/blob/main/docs/releasing.md#how-a-release-is-built",
+        "externalParameters": {"workflow": {"ref": "refs/tags/v9.9.0", "repository": REPO_URL,
+                                            "path": ".github/workflows/release.yml"},
+                               "containerfile": "packaging/container/Containerfile"},
+        "internalParameters": {"github": {"event_name": "push", "runner_environment": "github-hosted",
+                                          "repository_id": "1"}},
+        "resolvedDependencies": [
+            {"uri": "git+%s@refs/tags/v9.9.0" % REPO_URL, "digest": {"gitCommit": "e" * 40}},
+            {"uri": WHEEL, "digest": {"sha256": wheel_sha}},
+            base("registry.access.redhat.com/hi/python:3.12-fips-builder", "9f" * 32, "build"),
+            base("registry.access.redhat.com/hi/python:3.12-fips", runtime, "runtime")]},
+        "runDetails": {"builder": {"id": REPO_URL + "/.github/workflows/release.yml@refs/tags/v9.9.0"},
+                       "metadata": {"invocationId": RUN, "startedOn": "2026-10-28T23:33:31Z",
+                                    "finishedOn": "2026-10-29T00:10:58Z"}}}
+
+
+def provenance_view(tmp_path, base=BASE):
+    """An image view whose SBOMs record the wheel's SHA-256 (sbom_enrich.py) and the base label."""
+    doc = syft_spdx()
+    dist_info, rec = en.record(make_wheel(tmp_path / WHEEL))
+    en.complete_spdx(doc, dist_info, rec, "amd64", REPO_URL, wheel=(WHEEL, WHEEL_SHA))
+    cdx = syft_cdx()
+    en.complete_cdx(cdx)
+    cdx["metadata"]["properties"] = [{"name": BASE_LABEL, "value": "sha256:" + base}]
+    return ["--view", "amd64", "linux/amd64", write_json(tmp_path / "wd2l-9.9.0-image-amd64.spdx.json", doc),
+            write_json(tmp_path / "wd2l-9.9.0-image-amd64.cdx.json", cdx)]
+
+
+def with_provenance(tmp_path, doc, name="wd2l-9.9.0-provenance.json"):
+    return ["--provenance", "amd64", write_json(tmp_path / name, doc)]
+
+
+def test_an_image_view_shows_where_it_came_from(tmp_path):
+    html = report(tmp_path, *provenance_view(tmp_path), *with_provenance(tmp_path, provenance_doc()))
+    sec = html.split("<h3>Where it came from</h3>", 1)[1].split("<h3>", 1)[0]
+    assert "<code>wd2l-9.9.0-provenance.json</code>" in sec
+    assert '<a href="https://github.com/o/r/commit/%s">' % ("e" * 40) in sec and "v9.9.0" in sec
+    assert '<a href="%s">' % RUN in sec and "2026-10-28T23:33:31Z" in sec and "2026-10-29T00:10:58Z" in sec
+    assert ".github/workflows/release.yml@refs/tags/v9.9.0" in sec and "GitHub-hosted" in sec
+    assert WHEEL in sec and WHEEL_SHA in sec
+    assert "registry.access.redhat.com/hi/python:3.12-fips" in sec and "sha256:" + BASE in sec
+    assert "ghcr.io/joehazurmoney/wd2l-base/python@sha256:" + BASE in sec
+    # A reading aid, and it says so: the signed attestation is the record.
+    assert "cosign verify-attestation --key cosign.pub --insecure-ignore-tlog --type slsaprovenance1 " \
+           "--local-image wd2l-oci" in sec and "verify-release" in sec
+    assert sec.count('class="ok-yes">matches<') == 2 and "does not match" not in sec
+
+
+@pytest.mark.parametrize("which", ["wheel", "base"])
+def test_a_provenance_that_disagrees_with_the_sbom_fails_and_says_so(tmp_path, capsys, which):
+    out = tmp_path / "report.html"
+    doc = provenance_doc(wheel_sha="00" * 32) if which == "wheel" else provenance_doc(runtime="11" * 32)
+    rc = rep.main(["--out", str(out)] + WD2L_ARGS + provenance_view(tmp_path) + with_provenance(tmp_path, doc))
+    assert rc == 1                                  # the assets job fails, like any SBOM gap (ADR-0009)
+    sec = out.read_text(encoding="utf-8").split("<h3>Where it came from</h3>", 1)[1].split("<h3>", 1)[0]
+    assert sec.count('class="ok-no">does not match<') == 1 and sec.count('class="ok-yes">matches<') == 1
+    assert "amd64" in capsys.readouterr().err
+
+
+def test_a_release_page_without_provenance_says_it_is_a_dry_run(tmp_path):
+    html = report(tmp_path, *provenance_view(tmp_path))
+    sec = html.split("<h3>Where it came from</h3>", 1)[1].split("<h3>", 1)[0]
+    assert "Dry run: no provenance. A release carries it." in sec
+
+
+def test_a_package_view_points_to_github_s_build_provenance(tmp_path):
+    s, c = report_inputs(tmp_path)
+    spdx = json.loads(open(s, encoding="utf-8").read())
+    for p in spdx["packages"]:
+        p.pop("primaryPackagePurpose", None)        # a package SBOM describes packages, not an image
+    html = report(tmp_path, "--view", "python", "Python package", write_json(tmp_path / "p.spdx.json", spdx), c)
+    sec = html.split("<h3>Where it came from</h3>", 1)[1].split("<h3>", 1)[0]
+    assert "GitHub build provenance, offline" in sec and "Dry run" not in sec
+
+
+def test_a_page_for_another_system_has_no_provenance_section(tmp_path):
+    html = report(tmp_path, "--title", "Other", *provenance_view(tmp_path), release=False)
+    assert "Where it came from" not in html
+
+
+@pytest.mark.parametrize("bad", [["--provenance", "arm64", "P"], ["--provenance", "amd64", "missing.json"]])
+def test_a_provenance_for_no_view_or_a_missing_file_is_refused(tmp_path, bad):
+    write_json(tmp_path / "P", provenance_doc())
+    bad = [bad[0], bad[1], str(tmp_path / bad[2])]
+    with pytest.raises(SystemExit) as e:
+        rep.main(["--out", str(tmp_path / "r.html")] + WD2L_ARGS + provenance_view(tmp_path) + bad)
+    assert e.value.code == 2

@@ -338,7 +338,7 @@ def changes(commits: Sequence[Dict[str, Any]], forge: Any) -> Dict[str, Any]:
 
 KINDS = ((r"-sbom\.html$", "sbom-report"), (r"\.rpm$", "rpm"), (r"\.whl$", "wheel"), (r"\.tar\.gz$", "sdist"), (r"-oci\.tar$", "oci-image"),
          (r"\.(spdx|cdx)\.json$", "sbom"), (r"vuln-summary", "vulnerability-summary"),
-         (r"provenance\.json$", "provenance"), (r"^base-image-record(-ubi9)?\.json$", "base-image-record"),
+         (r"provenance(-ubi9)?\.json$", "provenance"), (r"^base-image-record(-ubi9)?\.json$", "base-image-record"),
          (r"^cosign\.pub$", "public-key"), (r"\.bundle$", "source-bundle"),
          (r"changelog\.md$", "changelog"), (r"verify-release\.py$", "verification-script"))
 
@@ -481,7 +481,7 @@ def generate(a: argparse.Namespace, env: Dict[str, str], forge: Any, repo: str =
                  "covers": "every file in SHA256SUMS, the image index, each platform image and the comparison image"},
                 {"predicate_type": "https://slsa.dev/provenance/v1", "signed_by": "the release key",
                  "covers": "the image index and each platform image (wd2l-%s-provenance.json), "
-                           "and the comparison image" % v},
+                           "and the comparison image (wd2l-%s-provenance-ubi9.json)" % (v, v)},
                 {"predicate_type": "%s/base-image-record/v2" % ATT, "signed_by": "the release key",
                  "covers": "the image index, each platform image and the comparison image"},
                 {"predicate_type": "https://spdx.dev/Document", "signed_by": "the release key",

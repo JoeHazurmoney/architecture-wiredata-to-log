@@ -100,7 +100,14 @@
     * "Show every entry", and a search box;
     * each component's known vulnerabilities, merged across the scanners, with which scanner
       found each one;
-    * the fields an SBOM is expected to carry, and whether this one carries each.
+    * the fields an SBOM is expected to carry, and whether this one carries each;
+    * for each image, where it came from (#201): the tag and commit, the workflow and run, the
+      wheel and the base images, from its provenance (`wd2l-<version>-provenance.json`, and
+      `-provenance-ubi9.json` for the comparison image). Two cross-checks with the image's SBOMs
+      are shown too: the runtime base is the one the image's base label names, and the wheel is
+      the one the SBOM's `wd2l` was installed from. A mismatch fails the `assets` job. The section
+      says it's a reading aid: the signed attestation on the image is the record. A dry run has
+      no provenance, and its page says so.
   * **It loads nothing.** There is no external stylesheet, script, font or image, and a
     Content-Security-Policy forbids them, so it opens offline inside an enclave. Without
     JavaScript it shows every image in turn.
@@ -178,3 +185,4 @@ need a renderer in the pipeline.
 2. [x] Proven on 1.2.0rc1 and 1.2.0rc2 (2026-10-18); Accepted.
 3. [x] The UBI 9 image's tab (#192).
 4. [x] The RPMs', wheel's and sdist's SBOMs, and package hashes (#190).
+5. [x] Where each image came from, from its provenance, with two cross-checks (#201).
