@@ -914,8 +914,10 @@ class Receiver:
             nic_errors=ft.delta("nic_errors"), kernel_drops=ft.delta("kernel_drops"),
             output_dropped=ft.delta("output_dropped"), spool_growing=ft.delta("spool_files") > 0,
             hec_errors=ft.delta("hec_errors"),
+            # Only once a packet has arrived: after downtime the newest file is old (#187).
             archive_stale=(None if archive_age is None else
-                           packet_age < self.hb_timeout and archive_age > self.archive_stale_after))
+                           self.last_packet is not None and packet_age < self.hb_timeout
+                           and archive_age > self.archive_stale_after))
         f = fault.evaluate(sig)
         prev, ft.current = ft.current, f
         if f.key() != prev.key():

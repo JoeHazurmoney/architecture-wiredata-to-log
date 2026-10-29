@@ -216,6 +216,18 @@ def test_stale_archive():
     assert faults(out) == [("amber", "e2-capture", 11)]
 
 
+def test_a_start_after_downtime_is_not_a_stale_archive():
+    # #187: nothing was sent while it was down, so the newest capture file is old. Before the
+    # first packet, packet_age counted from the start, and rule 11 fired until rule 2 outranked it.
+    r, out = rxf(archive_probe=lambda: {"archive_age_s": 60.0}, sample_interval=1)
+    r.tick(0)
+    r.tick(3)
+    assert ("amber", "e2-capture", 11) not in faults(out)
+    feed(r, evt(1) + hbf(1), 4)                     # packets now, and still no archive written
+    r.tick(4)
+    assert faults(out)[-1] == ("amber", "e2-capture", 11)
+
+
 def test_flat_input_is_the_aggregator():
     r, out = rxf(input_flat_after=5)
     for t in range(8):
