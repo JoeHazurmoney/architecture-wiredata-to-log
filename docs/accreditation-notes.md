@@ -1,7 +1,10 @@
 # Notes for the accreditation package
 
 Material for a security review of this transfer: the one-way argument, what each side trusts, and
-the risks that remain. This is an engineering write-up, not a formal assessment.
+the risks that remain. This is an engineering write-up, not a formal assessment. How the
+software itself is built, signed and delivered (SLSA Build L3, the supply-chain controls and
+their gaps) is in [supply-chain-security.md](supply-chain-security.md) and
+[supply-chain-controls.md](supply-chain-controls.md).
 
 ## The transfer
 
