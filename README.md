@@ -141,6 +141,9 @@ vulnerable package would be hard to notice and harder to recall, so the release 
 as a complete, working example of supply-chain controls. CI runs the build-time checks on every
 release, and whoever receives the files can check the signatures, checksums, provenance and SBOM
 again offline. [docs/releasing.md](docs/releasing.md) has the details and the commands.
+[docs/supply-chain-security.md](docs/supply-chain-security.md) shows how it meets SLSA Build
+Level 3, requirement by requirement, and what's still missing.
+[docs/supply-chain-controls.md](docs/supply-chain-controls.md) maps it to NIST SP 800-53 Rev 5.
 
 | Practice | What wd2l does | Why it matters |
 |---|---|---|

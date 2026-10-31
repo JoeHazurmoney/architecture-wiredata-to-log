@@ -83,6 +83,9 @@ Stays as the offline base, but it tops out at about L2: our workflow signs its o
   only through `main`'s rules. Both are enforced (the policy test, the rulesets).
 * **Update (0.3.0rc5):** the GitHub attestations and keyless signatures cover the image index
   and both platform images (linux/amd64, linux/arm64), each built on a GitHub-hosted runner.
+* **Update (2026-10-30):** each Build L3 requirement, with its evidence and the gaps that remain,
+  is in [supply-chain-security.md](../supply-chain-security.md); the NIST SP 800-53 Rev 5 mapping
+  is in [supply-chain-controls.md](../supply-chain-controls.md).
 
 ## Action items
 
