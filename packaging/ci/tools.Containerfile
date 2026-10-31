@@ -13,4 +13,4 @@ FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:48393e4261b2544f652c915b3
 FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:a75ad754aa048d808dd3260243452f8c9a665831d0493b4c9d92f0c88fe2f8c3 AS ubi10
 # A real chronyd for packaging/ci/chrony-smoke.sh (UBI has no chrony): EL10's, as the hosts run.
 # Not Fedora: quay.io deletes each fedora:44 digest when the daily rebuild re-tags it (#97).
-FROM docker.io/library/almalinux:10@sha256:838c2fafefb1a8a0d7f8cdbc3b0551c2a2b1eb0cd87aad6d62aecadb18311f1b AS alma10
+FROM docker.io/library/almalinux:10@sha256:5a4b41a427c9717be8f4ac2a32aa22efbae5f9124fbcb79a6765394f312acfe8 AS alma10
