@@ -10,7 +10,7 @@ FROM docker.io/hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b
 # The changelog in every release (cliff.toml, docs/decisions/0008-release-manifest.md).
 FROM docker.io/orhunp/git-cliff:2.14.2@sha256:1e696a381a1b0366bb6ccbb6bd4e50e73473fda88eab3a757b95e0d0d66c9531 AS git-cliff
 FROM registry.access.redhat.com/ubi9/ubi:latest@sha256:1963e00991088221a3405be7eb315a3dbc0be0f1f7440f0bd537d481cf33c83e AS ubi9
-FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:a75ad754aa048d808dd3260243452f8c9a665831d0493b4c9d92f0c88fe2f8c3 AS ubi10
+FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:1e9193f051ac70582821c8a941325c5053488c54c75cd0c31b577d871ac29dba AS ubi10
 # A real chronyd for packaging/ci/chrony-smoke.sh (UBI has no chrony): EL10's, as the hosts run.
 # Not Fedora: quay.io deletes each fedora:44 digest when the daily rebuild re-tags it (#97).
 FROM docker.io/library/almalinux:10@sha256:5a4b41a427c9717be8f4ac2a32aa22efbae5f9124fbcb79a6765394f312acfe8 AS alma10
