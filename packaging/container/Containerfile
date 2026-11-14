@@ -2,7 +2,7 @@
 # Build with packaging/container/build.sh DIST TAG: the context is dist/ (the wheel), and the
 # script passes the labels. Both bases are pinned by digest. Dependabot proposes new ones, and
 # .github/workflows/image.yml verifies their signatures and provenance before every build.
-FROM registry.access.redhat.com/hi/python:3.12-fips-builder@sha256:05e48345c0adcd2f8879c3c6d5cbed1af19ae8d757d4aaa4a22769b2a2219c94 AS build
+FROM registry.access.redhat.com/hi/python:3.12-fips-builder@sha256:acb7cef11b755ddd2a0596f92fb68fb077699cda20bd1b04b58cdbcb5d269681 AS build
 # Root only in this build stage, to write /out; the runtime stage runs as 65532.
 # hadolint ignore=DL3002
 USER 0
@@ -14,7 +14,7 @@ RUN python3 -m pip install --no-deps --no-index --no-cache-dir --no-compile \
  && python3 -m compileall -q --invalidation-mode checked-hash -s /out -p / \
       /out/usr/lib/python3.12/site-packages/wd2l
 
-FROM registry.access.redhat.com/hi/python:3.12-fips@sha256:9f286c243ccd5edad2a9450332ee0cd69078a907998aac404d323c249c8bcab2
+FROM registry.access.redhat.com/hi/python:3.12-fips@sha256:fbfee6b57028a5599211f7be02460c2db937640a85c049a4dd32e1ba5c8678ff
 ARG VERSION=dev
 ARG REVISION=unknown
 ARG BASE_NAME=unknown
